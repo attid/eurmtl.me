@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<table>
+    <thead>
+        <tr>
+            <th>№</th>
+            <th>Date</th>
+            <th>Transaction</th>
+            <th>Description</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for transaction in transactions %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ transaction.add_dt }}</td>
+                <td><a href="/sign_tools/{{ transaction.hash }}">{{ transaction.hash }}</a></td>
+                <td>{{ transaction.description }}</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

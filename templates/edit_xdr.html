@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<form action="" method="post">
+    <fieldset id="create-tx">
+        <legend>New transaction</legend>
+        <p>
+            <label>Copy link and paste to browser</label>
+        </p>
+        <p>
+        <div class="row">
+            <div class="col">
+                <span class="tx-body">{{tx_body}}</span>
+            </div>
+        </div>
+        </p>
+    </fieldset>
+</form>
+
+{% endblock %}

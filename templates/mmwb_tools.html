@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8">
+    <title>MMWB tools</title>
+    <link rel="stylesheet" href="/static/css/chota.min.css">
+    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/10.4.1/stellar-sdk.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+<div class="container">
+    <section id="main">
+	<h1>Sign transaction</h1>
+        <p>
+            <label for="tx_body">Transaction body</label>
+            <textarea id="tx_body" name="tx_body" placeholder="Transaction body from Stellar laboratory or other XDR encoded string" style="width: 1154px; height: 221px;"></textarea>
+        </p>
+        <br><br>
+        <button class="button primary" onclick="signTransaction()">Подписать</button>
+
+
+        <br><br>
+
+        <label for="secretKey">Private key</label>
+        <input type="text" id="secretKey" name="secretKey" placeholder="Private key start with S" value="">
+        <br>
+
+
+        <button class="button primary" onclick="saveKey()">Сохранить</button>
+        <button class="button primary" onclick="loadKey()">Загрузить</button>
+
+    </section>
+</div>
+<script>
+
+var WebApp = window.Telegram.WebApp;
+
+WebApp.showAlert(`Добро пожаловать, @${WebApp.initDataUnsafe.user.username}.`);
+//WebApp.showAlert(JSON.stringify(WebApp.user));
+//document.getElementById('tx_body').value = JSON.stringify(WebApp.initDataUnsafe.user.username);
+
+function signTransaction() {
+  // Извлекаем ключ из локального хранилища
+  const keypair = StellarSdk.Keypair.fromSecret(localStorage.getItem('secretKey'));
+  const xdr = document.getElementById('tx_body').value;
+
+  // Создаем экземпляр сервера Stellar
+  // const server = new StellarSdk.Server('https://horizon-testnet.stellar.org');
+  var transaction = StellarSdk.TransactionBuilder.fromXDR(xdr, StellarSdk.Networks.PUBLIC);
+
+  transaction.sign(keypair)
+
+  //console.log(transaction.toXDR());
+
+  document.getElementById('tx_body').value = transaction.toXDR();
+
+  //console.log(JSON.stringify(transaction));
+
+}
+
+function saveKey() {
+  const secretKey = document.getElementById('secretKey').value;
+
+  localStorage.setItem('secretKey', secretKey);
+
+  console.log('Ключ сохранен в локальное хранилище.');
+}
+
+function loadKey() {
+  const secretKey = localStorage.getItem('secretKey');
+
+  document.getElementById('secretKey').value = secretKey;
+
+  console.log('Ключ загружен из локального хранилища.');
+}
+
+</script>
+
+</body>
+</html>

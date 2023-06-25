@@ -1,0 +1,40 @@
+# Montelibero Stellar Anchor <https://montelibero.org>
+# https://github.com/stellar/stellar-protocol/tree/master/ecosystem
+VERSION="2.5.0"
+
+NETWORK_PASSPHRASE="Public Global Stellar Network ; September 2015"
+#HORIZON_URL="https://horizon.stellar.lobstr.co"
+
+FEDERATION_SERVER="https://eurmtl.me/federation/"
+
+ACCOUNTS=[
+    "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI",
+    "GBGFMV5YARGIIYVDAFR6OE2CDGDC76FH2YAV7XZVYQV7OVZZFWMHSV7A"
+]
+
+[DOCUMENTATION]
+ORG_NAME="Montelibero"
+ORG_DBA="Montelibero"
+ORG_URL="https://eurmtl.me"
+ORG_LOGO="https://montelibero.org/images/logo.png"
+ORG_DESCRIPTION="Montelibero - investment crypto corporation for the development and support of projects in the field of individual freedom"
+ORG_GITHUB="montelibero-org"
+ORG_OFFICIAL_EMAIL="montelibero.fspe@gmail.com"
+ORG_SUPPORT_EMAIL="montelibero.fspe@gmail.com"
+
+[[CURRENCIES]]
+code="MMWB"
+issuer="GBSNN2SPYZB2A5RPDTO3BLX4TP5KNYI7UMUABUS3TYWWEWAAM2D7CMMW"
+status="live"
+display_decimals=7
+is_unlimited=true
+name="MMWB"
+desc="MMWB are crypto-shares in the form of investment tokens that you can purchase if you want to support https://t.me/MyMTLWalletBot"
+image="https://eurmtl.me/static/img/mmwb.jpg"
+
+
+[[VALIDATORS]]
+PUBLIC_KEY = "GBGFMV5YARGIIYVDAFR6OE2CDGDC76FH2YAV7XZVYQV7OVZZFWMHSV7A"
+ALIAS = "MTL-01"
+DISPLAY_NAME = "Montelibero 01"
+HOST = "158.58.231.224:11625"

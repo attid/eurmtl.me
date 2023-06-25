@@ -1,0 +1,223 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<div class="tx_description">{{tx_description}}</div>
+
+<div class="row control-buttons">
+    <button class="button outline" onclick="copy_url()">Copy URL</button>
+    <a href="https://laboratory.stellar.org/#txsigner?network=public" id="laboratory-url"
+       target="_blank" class="button secondary outline">Open Laboratory</a>
+    <a href="https://t.me/MyMTLWalletBot?start=sign_{{uuid}}" id="mmwb-url"
+       target="_blank" class="button secondary outline">Open at MyMTLWalletBot</a>
+    <a href="?send" id="send" class="button secondary outline">Send to Stellar</a>
+</div>
+
+<h5 class="required-signs">Collected {{has_votes}} from {{thresholds}}</h5>
+{% if publish_state == 1 %}
+<h4 class="published"><a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}">Transaction is published</a></h4>
+{% endif %}
+{% if publish_state == 10 %}
+<h4 class="published"><a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}" style="color:Tomato;">Transaction
+    is published with error</a></h4>
+{% endif %}
+
+<form action="" method="post">
+    <fieldset id="update-tx">
+        <legend>Update transaction</legend>
+        <p>
+            <label for="tx_body">Transaction body</label>
+            <textarea id="tx_body" name="tx_body" placeholder="Transaction body with new signatures"></textarea>
+        </p>
+        <div class="form-buttons">
+            <button type="button" class="button primary" onclick="paste_tx()">Paste Transaction</button>
+            <input type="submit" class="button primary" value="Update"/>
+        </div>
+    </fieldset>
+</form>
+
+{% if publish_state == 1 %}
+<h4 class="published"><a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}">Transaction is published</a> You
+    don't need to sign it. But you can if you want. ^_^ </h4>
+{% endif %}
+{% if publish_state == 10 %}
+<h4 class="published"><a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}" style="color:Tomato;">Transaction
+    is published with error</a></h4>
+{% endif %}
+
+<div class="row control-buttons">
+    <button class="button outline" onclick="copy_tx()">Copy Transaction</button>
+    <button class="button outline" onclick="getDecode()">Decode</button>
+</div>
+<div id="responseDiv" style="display: none;"></div>
+<div class="row">
+    <div class="col">
+        <span class="tx-body">{{tx_body}}</span>
+    </div>
+</div>
+
+
+{% for record in signers_table %}
+<h5 class="required-signs">Collected {{record['has_votes']}} from {{record['threshold']}} for
+    <span class="head-address" title="{{record['sources']}}">{{record['sources'][:4]}}..{{record['sources'][-4:]}}</span></h5>
+<div class="row singers">
+    <fieldset class="signer" id="signatures">
+        <legend>Signatures</legend>
+        <div class="row signer">
+            <div class="col-6">
+                <span class="signer-header">Public key</span>
+            </div>
+            <div class="col-2">
+                <span class="signer-header">Telegram</span>
+            </div>
+            <div class="col-2">
+                <span class="signer-header">Signs days ago</span>
+            </div>
+            <div class="col-1">
+                <span class="signer-header">Weight</span>
+            </div>
+            <div class="col-1">
+                <span class="signer-header">Did sign?</span>
+            </div>
+        </div>
+
+
+        {% for signer in record['signers'] %}
+        <div class="row signer">
+            <div class="col-6">
+                <a class="signer-key"
+                   href="https://stellar.expert/explorer/public/account/{{signer[0]}}">{{signer[0][:4]}}..{{signer[0][-8:-4]}}..{{signer[0][-4:]}}</a>
+            </div>
+            <div class="col-2">
+                {% if signer[1] %}
+                {% if signer[1] == 'FaceLess' %}
+                FaceLess
+                {% else %}
+                <a class="signer-telegram" href="https://t.me/{{signer[1][1:]}}">{{signer[1]}}</a>
+                {% endif %}
+                {% endif %}
+            </div>
+            <div class="col-2">
+                <span class="signer-recent-signs many-signs">{{signer[2]}}</span>
+            </div>
+            <div class="col-1">
+                <span class="signer-weight">{{signer[3]}}</span>
+            </div>
+            <div class="col-1">
+                {% if signer[4] %}
+                <span class="signer-signed">Signed</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </fieldset>
+</div>
+{% endfor %}
+
+
+<h5>Those who not yet signed:</h5>
+<div class="row ignorants">
+    <div class="col-2">
+        <button class="button outline" onclick="copy_ignorants()">Copy them</button>
+    </div>
+    <div class="col-10 ignorants-nicks">
+        {% for signer in bad_signers %}
+        {% if signer %}
+        {% if signer != 'FaceLess' %}
+        <a class="singer-telegram" href="https://t.me/{{signer[1:]}}">{{signer}}</a>
+        {% endif %}
+        {% endif %}
+
+
+        {% endfor %}
+    </div>
+</div>
+
+
+<h2 class="history-tittle">Transaction signatures</h2>
+<div class="row">
+    <div class="col-1">
+        <span class="history-header">Number</span>
+    </div>
+    <div class="col-2">
+        <span class="history-header">Time</span>
+    </div>
+    <div class="col-3">
+        <span class="history-header">User</span>
+    </div>
+    <div class="col-4">
+        <span class="history-header">Signatures</span>
+    </div>
+</div>
+
+
+{% for signature in signatures %}
+<div class="row">
+    <div class="col-1">
+        {{signature[0]}}
+    </div>
+    <div class="col-2">
+        {{signature[1]}}
+    </div>
+    <div class="col-3">
+        {{signature[2]}}
+    </div>
+    <div class="col-4">
+        <span class="tx-body">{{signature[3]}}</span>
+    </div>
+</div>
+{% endfor %}
+
+
+<h2 class="history-tittle">Full transaction</h2>
+<span class="tx-body">{{tx_full}}</span>
+
+<div class="row control-buttons">
+    <a href="/edit_xdr/{{tx_hash}}" id="edit_xdr"
+        class="button secondary outline">Edit xdr</a>
+</div>
+
+
+<script>
+
+function reload_page() {
+    location.reload();
+}
+
+function paste_tx() {
+    navigator.clipboard.readText().then(
+        clipText => document.querySelector("#tx_body").innerText = clipText);
+}
+
+async function copy_tx() {
+    await navigator.clipboard.writeText(document.querySelector(".tx-body").innerText);
+}
+
+async function copy_url() {
+    await navigator.clipboard.writeText(window.location.href);
+}
+
+async function copy_ignorants() {
+    await navigator.clipboard.writeText(document.querySelector(".ignorants-nicks").innerText);
+}
+
+async function getDecode() {
+    var responseDiv = document.getElementById("responseDiv");
+
+    try {
+        let response = await fetch('https://eurmtl.me/decode/{{tx_hash}}');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        } else {
+            let text = await response.text();
+            responseDiv.innerHTML = text;
+            responseDiv.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('There was a problem fetching the response:', error);
+    }
+}
+
+</script>
+
+{% endblock %}

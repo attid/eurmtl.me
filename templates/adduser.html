@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<form action="" method="post">
+    <fieldset id="create-tx">
+        <legend>New user</legend>
+        <p>
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username"
+                      placeholder="Username with @" value="{{ username }}">
+        </p>
+        <p>
+            <label for="public_key">Username</label>
+            <input type="public_key" id="public_key" name="public_key"
+                      placeholder="public_key with G" value="{{ public_key }}">
+        </p>
+        <input type="submit" class="button primary" value="Create">
+    </fieldset>
+</form>
+
+{% endblock %}

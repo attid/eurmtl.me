@@ -1,0 +1,86 @@
+.tx-error {
+    color:darkred;
+    font-weight: bold;
+}
+
+.tx-good {
+    color:forestgreen;
+    font-weight: bold;
+}
+
+.tx-body {
+    font-family: monospace;
+    overflow-wrap: anywhere;
+    user-select: all;
+    -webkit-user-select: all;
+}
+
+.control-buttons {
+    margin-top: 30px;
+    margin-bottom: 30px;
+}
+
+.form-buttons {
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+.block-notice {
+    margin-top: 10px;
+    color: darkred;
+}
+
+.response-error {
+    margin-top: 10px;
+    margin-bottom: 10px;
+    color: darkred;
+}
+
+.signer {
+    width: 100%;
+}
+
+.signers {
+    margin-bottom: 15px;
+}
+
+.signer-key {
+    font-family: monospace;
+}
+
+.signer-signed {
+    font-weight: bold;
+    color:forestgreen;
+}
+
+.signer-header {
+    font-size: 14pt;
+    color:forestgreen;
+}
+
+.ignorants {
+    margin-bottom: 30px;
+}
+
+.history-tittle {
+    margin-top: 50px;
+}
+
+.history-header {
+    font-weight: bold;
+    font-size: 14pt;
+    color:forestgreen;
+}
+
+.few-signs {
+    color: darkred;
+    font-weight: bold;
+}
+
+.moderate-signs {
+    color: darkgoldenrod;
+}
+
+.many-signs {
+    color: forestgreen;
+}
