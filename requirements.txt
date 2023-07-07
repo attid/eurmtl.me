@@ -16,3 +16,4 @@ stellar_sdk
 pydantic
 sqlalchemy-firebird
 packaging
+sqlalchemy-stubs

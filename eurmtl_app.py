@@ -15,8 +15,13 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = config.secret_key
 # app.config['HOME_PATH'] = ''
 # app.config['TELEGRAM_BOT_TOKEN'] = '5'
-engine = create_engine(config.db_dns, pool_pre_ping=True)
-# Creating DB connections pool
+engine = create_engine(
+    config.db_dns,
+    pool_pre_ping=True,
+    pool_size=10,  # базовый размер пула
+    max_overflow=50,  # максимальное количество "временных" подключений
+    pool_timeout=10  # время ожидания в секундах
+)  # Creating DB connections pool
 db_pool = sessionmaker(bind=engine)
 
 fund_addresses = ('GDX23CPGMQ4LN55VGEDVFZPAJMAUEHSHAMJ2GMCU2ZSHN5QF4TMZYPIS',
