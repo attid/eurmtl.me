@@ -27,7 +27,7 @@ class Transactions(Base):
     body = Column('body', Text(12000), nullable=False)
     add_dt = Column('add_dt', DateTime(), default=datetime.now)
     updated_dt = Column('updated_dt', DateTime(), default=datetime.now, onupdate=datetime.now)
-    uuid = Column('uuid', String(32), default=uuid.uuid4().hex)
+    uuid = Column('uuid', String(32), default=lambda: uuid.uuid4().hex)
     json = Column('json', Text(), nullable=True)
     state = Column('state', Integer(), default=0)  # 0-new 1-need_sent 2-was_send
 

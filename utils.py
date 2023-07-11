@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 import requests
 from stellar_sdk import (
@@ -8,7 +9,9 @@ from stellar_sdk import (
     NoneMemo,
     TextMemo,
     TransactionEnvelope,
-    PathPaymentStrictSend
+    PathPaymentStrictSend,
+    ManageSellOffer
+
 )
 from stellar_sdk.exceptions import NotFoundError
 
@@ -79,6 +82,15 @@ def decode_xdr_to_base64(xdr):
                                      'startingBalance': operation.starting_balance,
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
+        elif isinstance(operation, ManageSellOffer):
+            op_json['attributes'] = {'amount': operation.amount,
+                                     'price': operation.price.n/operation.price.d,
+                                     'offerId': operation.offer_id,
+                                     'selling': operation.selling.to_dict(),
+                                     'buying': operation.buying.to_dict(),
+                                     'sourceAccount': operation.source.account_id if operation.source is not None else None
+                                     }
+
         # Добавить здесь декодирование других типов операций по аналогии
         elif isinstance(operation, SetOptions):
             op_json['attributes'] = {
@@ -92,7 +104,7 @@ def decode_xdr_to_base64(xdr):
                 'highThreshold': operation.high_threshold,
                 'homeDomain': operation.home_domain
             }
-        #{'attributes': {'sourceAccount': 'GAQ5ERJVI6IW5UVNPEVXUUVMXH3GCDHJ4BJAXMAAKPR5VBWWAUOMABIZ', 'sequence': '198986603622825985', 'fee': '5000', 'baseFee': '100', 'minFee': '100'},
+        # {'attributes': {'sourceAccount': 'GAQ5ERJVI6IW5UVNPEVXUUVMXH3GCDHJ4BJAXMAAKPR5VBWWAUOMABIZ', 'sequence': '198986603622825985', 'fee': '5000', 'baseFee': '100', 'minFee': '100'},
         # 'feeBumpAttributes': {'maxFee': '100'}, 'operations': [
         # {'id': 1688742251202, 'name': 'pathPaymentStrictSend',
         # 'attributes': {'destination': 'GAQ5ERJVI6IW5UVNPEVXUUVMXH3GCDHJ4BJAXMAAKPR5VBWWAUOMABIZ',
@@ -156,9 +168,9 @@ def check_response(data):
             d_list.append(key + '=' + d[key])
     data_string = bytes('\n'.join(d_list), 'utf-8')
 
-    #secret_key = hashlib.sha256(app.config['TELEGRAM_BOT_TOKEN'].encode('utf-8')).digest()
-    #hmac_string = hmac.new(secret_key, data_string, hashlib.sha256).hexdigest()
-    #i#f hmac_string == data['hash']:
+    # secret_key = hashlib.sha256(app.config['TELEGRAM_BOT_TOKEN'].encode('utf-8')).digest()
+    # hmac_string = hmac.new(secret_key, data_string, hashlib.sha256).hexdigest()
+    # i#f hmac_string == data['hash']:
     #    return True
     return False
 
@@ -186,6 +198,12 @@ def decode_xdr_to_text(xdr):
     else:
         transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     result.append(f"Sequence Number {transaction.transaction.sequence}")
+
+    if transaction.transaction.preconditions.time_bounds.max_time > 0:
+        human_readable_time = datetime.utcfromtimestamp(
+            transaction.transaction.preconditions.time_bounds.max_time).strftime('%d.%m.%Y %H:%M:%S')
+        result.append(f"MaxTime ! {human_readable_time} UTC")
+
     server_sequence = int(
         requests.get('https://horizon.stellar.org/accounts/' + transaction.transaction.source.account_id).json()[
             'sequence'])
@@ -339,15 +357,15 @@ def decode_xdr_to_text(xdr):
 
 
 if __name__ == '__main__':
-    print(decode_xdr_to_text(
-        'AAAAAgAAAAAEqbejBk1rxsHVls854RnAyfpJaZacvgwmQ0jxNDBvqgAAJxoCFwdIAAAAfgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABtsaXF1aWRpdHkgZm9yIHByaXZhdGl6YXRpb24AAAAAAQAAAAEAAAAACZPdhY20yy7CvILctpInpN24eRjcx5T7S9ibt4NQXsEAAAABAAAAAL+hB/2trfEs15f8UzdiF1XyEWMEBPvhmVtY6Yuapu6QAAAAAkVVUk1UTAAAAAAAAAAAAAAEqbejBk1rxsHVls854RnAyfpJaZacvgwmQ0jxNDBvqgAAAC6Q7dAAAAAAAAAAAAA='))
-    exit()
+    # print(decode_xdr_to_text(
+    #    'AAAAAgAAAAAh0kU1R5Fu0q15K3pSrLn2YQzp4FILsABT49qG1gUcwAAPabUCwvFDAAAAAQAAAAEAAAAAAAAAAAAAAABkpu69AAAAAAAAAAEAAAAAAAAADQAAAAJNVExCUgAAAAAAAAAAAAAAGU2L8PipQX/hA3qV5sT9aERyuS7UwTGbwK68vDhXYaQAAAAzatC2FAAAAAAh0kU1R5Fu0q15K3pSrLn2YQzp4FILsABT49qG1gUcwAAAAAFUSUMAAAAAAFOzz8Qb7OpLYqSQm3QcZ8EkKbblizWb/gAn1BPVNVvPAAAAAA0prkMAAAAAAAAAAAAAAAA='))
+    # exit()
     # simple way to find error in editing
-    l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHQVE1RVJKVkk2SVc1VVZOUEVWWFVVVk1YSDNHQ0RISjRCSkFYTUFBS1BSNVZCV1dBVU9NQUJJWiIsInNlcXVlbmNlIjoiMTk4OTg2NjAzNjIyODI1OTg1IiwiZmVlIjoiNTAwMCIsImJhc2VGZWUiOiIxMDAiLCJtaW5GZWUiOiIxMDAifSwiZmVlQnVtcEF0dHJpYnV0ZXMiOnsibWF4RmVlIjoiMTAwIn0sIm9wZXJhdGlvbnMiOlt7ImlkIjoxNjg4NzQyMjUxMjAyLCJuYW1lIjoicGF0aFBheW1lbnRTdHJpY3RTZW5kIiwiYXR0cmlidXRlcyI6eyJkZXN0aW5hdGlvbiI6IkdBUTVFUkpWSTZJVzVVVk5QRVZYVVVWTVhIM0dDREhKNEJKQVhNQUFLUFI1VkJXV0FVT01BQklaIiwic2VuZEFzc2V0Ijp7InR5cGUiOiJjcmVkaXRfYWxwaGFudW0xMiIsImNvZGUiOiJNVExCUiIsImlzc3VlciI6IkdBTVUzQzdRN0NVVUM3N0JBTjVKTFpXRTdWVUVJNFZaRjNLTUNNTTNZQ1hMWlBCWUs1UTJJWFRBIn0sInBhdGgiOltdLCJkZXN0QXNzZXQiOnsidHlwZSI6ImNyZWRpdF9hbHBoYW51bTQiLCJjb2RlIjoiVElDIiwiaXNzdWVyIjoiR0JKM0hUNkVEUFdPVVMzQ1VTSUpXNUE0TTdBU0lLTlc0V0ZUTEc3NkFBVDVJRTZWR1ZONDdUSUMifSwiZGVzdE1pbiI6IjIyLjA4MzUzOTUiLCJzZW5kQW1vdW50IjoiMjIwODMuNTM5NTA5MiJ9fV19&network=public'
+    l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHRE9KSzdVQVVNUVg1SVpFUllQTkJQUVlRM1NIUEtHTEY1TUJVS1dMREwyVVYyQVk2QklTM1RGTSIsInNlcXVlbmNlIjoiMjAwNTQ2NzU0Nzg4MDY1Mjg4IiwiZmVlIjoiMTAwMCIsImJhc2VGZWUiOiIxMDAiLCJtaW5GZWUiOiI1MDAwIn0sImZlZUJ1bXBBdHRyaWJ1dGVzIjp7Im1heEZlZSI6IjEwMTAxIn0sIm9wZXJhdGlvbnMiOlt7ImlkIjoxNjg5MDcwNzE0MjQ3LCJuYW1lIjoibWFuYWdlU2VsbE9mZmVyIiwiYXR0cmlidXRlcyI6eyJzZWxsaW5nIjp7InR5cGUiOiJuYXRpdmUiLCJjb2RlIjoiIiwiaXNzdWVyIjoiIn0sImJ1eWluZyI6eyJ0eXBlIjoiY3JlZGl0X2FscGhhbnVtMTIiLCJjb2RlIjoiZXJ0ZXJ0ZXJ0ZXJ0IiwiaXNzdWVyIjoiR0RPSks3VUFVTVFYNUlaRVJZUE5CUFFZUTNTSFBLR0xGNU1CVUtXTERMMlVWMkFZNkJJUzNURk0ifSwiYW1vdW50IjoiMjMuMyIsInByaWNlIjoiMjUuNTYiLCJvZmZlcklkIjoiMCJ9fV19&network=public'
     l = l.split('/')[-1].split('=')[1].split('&')[0]
     decode_xdr_from_base64(l)
     e = decode_xdr_to_base64(
-        'AAAAAgAAAAAh0kU1R5Fu0q15K3pSrLn2YQzp4FILsABT49qG1gUcwAAAE4gCwvFDAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAADQAAAAJNVExCUgAAAAAAAAAAAAAAGU2L8PipQX/hA3qV5sT9aERyuS7UwTGbwK68vDhXYaQAAAAzatC2FAAAAAAh0kU1R5Fu0q15K3pSrLn2YQzp4FILsABT49qG1gUcwAAAAAFUSUMAAAAAAFOzz8Qb7OpLYqSQm3QcZ8EkKbblizWb/gAn1BPVNVvPAAAAAA0prkMAAAAAAAAAAAAAAAA=')
+        'AAAAAgAAAADclX6AoyF+oySOHtC+GIbkd6jLL1gaKssa9UroGPBRLQAAA+gCyHw2AAAACAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAwAAAAAAAAACZXJ0ZXJ0ZXJ0ZXJ0AAAAANyVfoCjIX6jJI4e0L4YhuR3qMsvWBoqyxr1SugY8FEtAAAAAA3jTEAAAAJ/AAAAGQAAAAAAAAAAAAAAAAAAAAA=')
     decode_xdr_from_base64(e)
     print(f'https://laboratory.stellar.org/#txbuilder?params={e}&network=public')
     pass

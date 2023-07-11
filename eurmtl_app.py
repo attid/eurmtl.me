@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 from flask import render_template, request, jsonify, make_response, send_file, flash, abort, redirect
 from sqlalchemy import create_engine
@@ -55,6 +56,11 @@ def mytest():
         </script>
     </body>    
     '''
+
+
+@app.route('/uuid', methods=('GET', 'POST'))
+def get_uuid():
+    return uuid.uuid4().hex
 
 
 @app.route('/federation')
