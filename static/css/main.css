@@ -84,3 +84,53 @@
 .many-signs {
     color: forestgreen;
 }
+
+.operation-block {
+    border: 1px solid #ccc;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 5px;
+    position: relative;
+}
+
+.delete-block {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+}
+
+.form-group {
+    margin-bottom: 10px;
+}
+
+.input-group {
+display: flex;
+align-items: center;
+}
+
+.dropdown-content {
+    display: none;
+    position: absolute;
+    max-height: 200px;
+    overflow-y: scroll;
+    width: 800px;
+    border: 2px solid #ccc; /* Увеличиваем толщину рамки */
+    background-color: #fffbf0; /* Добавляем небольшой желтый оттенок */
+    margin: 5px 0; /* Добавляем вертикальный отступ */
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2); /* Добавляем небольшую тень */
+    z-index: 1000; /* уровень */
+}
+
+.account-item {
+    padding: 5px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0e5c9; /* Добавляем границу на дно каждого элемента */
+}
+
+.account-item:last-child {
+    border-bottom: none; /* Убираем границу на дно последнего элемента */
+}
+
+.account-item:hover {
+    background-color: #f7f7f7;
+}

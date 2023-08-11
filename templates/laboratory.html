@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+
+{% block head_scripts %}
+<script src="/static/laboratory.js"></script>
+{% endblock %}
+
+{% block content %}
+
+<div class="container">
+
+    <section id="main">
+        <form action="" method="post">
+
+            <!-- Public key input -->
+            <p>
+            <div class="account-selector">
+                <label for="publicKey">Public key:</label>
+                <div class="input-group">
+                    <input type="text" class="publicKey" name="publicKey" maxlength="56" id="publicKey"
+                           placeholder="Enter public key" required>
+                    <button type="button" class="fetchAccounts button secondary">⛰️</button>
+                </div>
+                <div class="publicKeyDropdown dropdown-content"></div>
+            </div>
+
+            <!-- Sequence Number and button -->
+            <div class="sequence-selector">
+                <label for="sequence_number">Sequence Number:</label>
+                <div class="input-group">
+                    <input type="text" id="sequence_number" name="sequence_number" class="sequence_number" required>
+                    <button type="button" class="fetchSequence button secondary">🔍</button>
+                </div>
+            </div>
+
+            <!-- Memo type and input -->
+            <p>
+                <label for="memo_type">Memo Type:</label>
+                <select id="memo_type" name="memo_type" class="memo_type">
+                    <option value="none">None</option>
+                    <option value="text">Text</option>
+                    <option value="hash">Hash</option>
+                </select>
+            </p>
+
+            <p>
+                <label for="memo">Memo:</label>
+                <input type="text" id="memo" name="memo" class="memo" placeholder="Enter memo">
+            </p>
+
+            <!-- Operation selection and add operation button -->
+            <div class="new-operation"></div>
+
+            <div class="operation-block add-new">
+
+                <label for="operation">Operation:</label>
+                <select id="operation" name="operation">
+                    <option value="payment">Payment</option>
+                    <option value="change_trust">Change Trust</option>
+                    <option value="buy">Buy</option>
+                    <option value="sell">Sell</option>
+                    <option value="create_account">Create account</option>
+                    <option value="manage_data">Manage Data</option>
+                </select>
+
+                <br>
+
+                <button type="button" id="add_operation" class="button primary">Add Operation</button>
+            </div>
+
+            <div class="operation-block get_xdr">
+                <div class="col">
+                    <span class="tx-body"></span>
+                </div>
+
+                <button type="button" class="get_xdr" id="get_xdr">Get XDR</button>
+            </div>
+
+        </form>
+    </section>
+
+</div>
+
+{% endblock %}

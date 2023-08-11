@@ -1,3 +1,4 @@
+import base64
 import json
 from datetime import datetime
 
@@ -10,7 +11,7 @@ from stellar_sdk import (
     TextMemo,
     TransactionEnvelope,
     PathPaymentStrictSend,
-    ManageSellOffer
+    ManageSellOffer, Transaction
 
 )
 from stellar_sdk.exceptions import NotFoundError
@@ -45,13 +46,21 @@ def decode_xdr_from_base64(xdr):
 
 
 def decode_xdr_to_base64(xdr):
-    transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE).transaction
+    transaction_envelope = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+    transaction: Transaction = transaction_envelope.transaction
     new_json = {'attributes': {}, 'feeBumpAttributes': {'maxFee': '10101'}, 'operations': []}
-    # 'memoType': 'MEMO_TEXT', 'memoContent': 'mymemohere'
-    # print(transaction.source)
+
     fee = str(int(transaction.fee / len(transaction.operations)))
     new_json['attributes'] = {'sourceAccount': transaction.source.account_id, 'sequence': str(transaction.sequence),
                               'fee': fee, 'baseFee': '100', 'minFee': '5000'}
+
+    if transaction.memo:
+        if isinstance(transaction.memo, TextMemo):
+            new_json['attributes']['memoType'] = 'MEMO_TEXT'
+            new_json['attributes']['memoContent'] = transaction.memo.memo_text.decode()
+        elif isinstance(transaction.memo, HashMemo):
+            new_json['attributes']['memoType'] = 'MEMO_HASH'
+            new_json['attributes']['memoContent'] = transaction.memo.memo_hash.hex()
 
     for op_idx, operation in enumerate(transaction.operations):
         # Задаём имя операции
@@ -84,7 +93,7 @@ def decode_xdr_to_base64(xdr):
                                      }
         elif isinstance(operation, ManageSellOffer):
             op_json['attributes'] = {'amount': operation.amount,
-                                     'price': operation.price.n/operation.price.d,
+                                     'price': operation.price.n / operation.price.d,
                                      'offerId': operation.offer_id,
                                      'selling': operation.selling.to_dict(),
                                      'buying': operation.buying.to_dict(),
@@ -188,8 +197,42 @@ def asset_to_link(operation_asset) -> str:
         return f'<a href="{start_url}/{operation_asset.code}-{operation_asset.issuer}" target="_blank">{operation_asset.code}</a>'
 
 
+def check_asset(asset, cash: dict):
+    try:
+        if f"{asset.code}-{asset.issuer}" in cash.keys():
+            r = cash[f"{asset.code}-{asset.issuer}"]
+        else:
+            r = requests.get(
+                f'https://horizon.stellar.org/assets?asset_code={asset.code}&asset_issuer={asset.issuer}').json()
+            cash[f"{asset.code}-{asset.issuer}"] = r
+        if r["_embedded"]["records"]:
+            return ''
+    except:
+        pass
+    return f"<div style=\"color: red;\">Asset {asset.code} not exist ! </div>"
+
+
+def get_account(account_id, cash):
+    if account_id in cash.keys():
+        r = cash[account_id]
+    else:
+        r = requests.get('https://horizon.stellar.org/accounts/' + account_id).json()
+        cash[account_id] = r
+    return r
+
+
+def get_offers(account_id, cash):
+    if f'{account_id}-offers' in cash.keys():
+        r = cash[f'{account_id}-offers']
+    else:
+        r = requests.get(f'https://horizon.stellar.org/accounts/{account_id}/offers').json()
+        cash[f'{account_id}-offers'] = r
+    return r
+
+
 def decode_xdr_to_text(xdr):
     result = []
+    cash = {}
     data_exist = False
 
     if FeeBumpTransactionEnvelope.is_fee_bump_transaction_envelope(xdr):
@@ -198,15 +241,17 @@ def decode_xdr_to_text(xdr):
     else:
         transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     result.append(f"Sequence Number {transaction.transaction.sequence}")
+    if transaction.transaction.fee < 5000:
+        result.append(f"<div style=\"color: orange;\">Bad Fee {transaction.transaction.fee}! </div>")
+    else:
+        result.append(f"Fee {transaction.transaction.fee}")
 
     if transaction.transaction.preconditions.time_bounds.max_time > 0:
         human_readable_time = datetime.utcfromtimestamp(
             transaction.transaction.preconditions.time_bounds.max_time).strftime('%d.%m.%Y %H:%M:%S')
         result.append(f"MaxTime ! {human_readable_time} UTC")
 
-    server_sequence = int(
-        requests.get('https://horizon.stellar.org/accounts/' + transaction.transaction.source.account_id).json()[
-            'sequence'])
+    server_sequence = int(get_account(transaction.transaction.source.account_id, cash)['sequence'])
     if server_sequence + 1 != transaction.transaction.sequence:
         result.append(f"<div style=\"color: red;\">Bad Sequence ! </div>")
     result.append(f"Операции с аккаунта {address_id_to_link(transaction.transaction.source.account_id)}")
@@ -237,10 +282,11 @@ def decode_xdr_to_text(xdr):
             result.append(
                 f"    Перевод {operation.amount} {asset_to_link(operation.asset)} на аккаунт {address_id_to_link(operation.destination.account_id)}")
             if operation.asset.code != 'XLM':
+                # check valid asset
+                result.append(check_asset(operation.asset, cash))
                 # check trust line
                 if operation.destination.account_id != operation.asset.issuer:
-                    destination_account = requests.get(
-                        'https://horizon.stellar.org/accounts/' + operation.destination.account_id).json()
+                    destination_account = get_account(operation.destination.account_id, cash)
                     asset_found = any(
                         balance.get('asset_code') == operation.asset.code for balance in
                         destination_account['balances'])
@@ -249,14 +295,14 @@ def decode_xdr_to_text(xdr):
                 source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
                 # check balance
                 if source_id != operation.asset.issuer:
-                    source_account = requests.get('https://horizon.stellar.org/accounts/' + source_id).json()
+                    source_account = get_account(source_id, cash)
                     source_sum = sum(float(balance.get('balance')) for balance in source_account['balances'] if
                                      balance.get('asset_code') == operation.asset.code)
                     if source_sum < float(operation.amount):
                         result.append(f"<div style=\"color: red;\">Not enough balance ! </div>")
 
                 # check sale
-                source_sale = requests.get('https://horizon.stellar.org/accounts/' + source_id + '/offers').json()
+                source_sale = get_offers(source_id, cash)
                 sale_found = any(
                     record['selling'].get('asset_code') == operation.asset.code for record in
                     source_sale['_embedded']['records'])
@@ -275,6 +321,9 @@ def decode_xdr_to_text(xdr):
             continue
         if type(operation).__name__ == "ChangeTrust":
             data_exist = True
+            # check valid asset
+            result.append(check_asset(operation.asset, cash))
+
             if operation.limit == '0':
                 result.append(
                     f"    Закрываем линию доверия к токену {asset_to_link(operation.asset)} от аккаунта {address_id_to_link(operation.asset.issuer)}")
@@ -290,6 +339,10 @@ def decode_xdr_to_text(xdr):
             break
         if type(operation).__name__ == "ManageSellOffer":
             data_exist = True
+            # check valid asset
+            result.append(check_asset(operation.selling, cash))
+            result.append(check_asset(operation.buying, cash))
+
             result.append(
                 f"    Офер на продажу {operation.amount} {asset_to_link(operation.selling)} по цене {operation.price.n / operation.price.d} {asset_to_link(operation.buying)}")
             continue
@@ -300,16 +353,27 @@ def decode_xdr_to_text(xdr):
             continue
         if type(operation).__name__ == "ManageBuyOffer":
             data_exist = True
+            # check valid asset
+            result.append(check_asset(operation.selling, cash))
+            result.append(check_asset(operation.buying, cash))
+
             result.append(
                 f"    Офер на покупку {operation.amount} {asset_to_link(operation.buying)} по цене {operation.price.n / operation.price.d} {asset_to_link(operation.selling)}")
             continue
         if type(operation).__name__ == "PathPaymentStrictSend":
             data_exist = True
+            # check valid asset
+            result.append(check_asset(operation.send_asset, cash))
+            result.append(check_asset(operation.dest_asset, cash))
+
             result.append(
                 f"    Покупка {address_id_to_link(operation.destination.account_id)}, шлем {asset_to_link(operation.send_asset)} {operation.send_amount} в обмен на {asset_to_link(operation.dest_asset)} min {operation.dest_min} ")
             continue
         if type(operation).__name__ == "PathPaymentStrictReceive":
             data_exist = True
+            # check valid asset
+            result.append(check_asset(operation.send_asset, cash))
+            result.append(check_asset(operation.dest_asset, cash))
             result.append(
                 f"    Продажа {address_id_to_link(operation.destination.account_id)}, Получаем {asset_to_link(operation.send_asset)} max {operation.send_max} в обмен на {asset_to_link(operation.dest_asset)} {operation.dest_amount} ")
             continue
@@ -356,16 +420,24 @@ def decode_xdr_to_text(xdr):
         return []
 
 
+def decode_data_value(data_value: str):
+    base64_message = data_value
+    base64_bytes = base64_message.encode('ascii')
+    message_bytes = base64.b64decode(base64_bytes)
+    message = message_bytes.decode('ascii')
+    return message
+
+
 if __name__ == '__main__':
-    # print(decode_xdr_to_text(
-    #    'AAAAAgAAAAAh0kU1R5Fu0q15K3pSrLn2YQzp4FILsABT49qG1gUcwAAPabUCwvFDAAAAAQAAAAEAAAAAAAAAAAAAAABkpu69AAAAAAAAAAEAAAAAAAAADQAAAAJNVExCUgAAAAAAAAAAAAAAGU2L8PipQX/hA3qV5sT9aERyuS7UwTGbwK68vDhXYaQAAAAzatC2FAAAAAAh0kU1R5Fu0q15K3pSrLn2YQzp4FILsABT49qG1gUcwAAAAAFUSUMAAAAAAFOzz8Qb7OpLYqSQm3QcZ8EkKbblizWb/gAn1BPVNVvPAAAAAA0prkMAAAAAAAAAAAAAAAA='))
-    # exit()
+    print(decode_xdr_to_text(
+        'AAAAAgAAAACck9FGOjyATb8CCK4+TQvugCM/UHQLTnQTUAxV9A6GwQAAASwCwvFDAAAABQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABxGMnJmZjMzVFhURE54NXJkUlFwUVcxNzQ0elE9AAAAAwAAAAEAAAAACZPdhY20yy7CvILctpInpN24eRjcx5T7S9ibt4NQXsEAAAABAAAAAJyT0UY6PIBNvwIIrj5NC+6AIz9QdAtOdBNQDFX0DobBAAAAAkVVUk1UTAAAAAAAAAAAAAAEqbejBk1rxsHVls854RnAyfpJaZacvgwmQ0jxNDBvqgAAAAJUC+QAAAAAAAAAAAwAAAACRVVSTVRMAAAAAAAAAAAAAAmT3YWNtMsuwryC3LaSJ6TduHkY3MeU+0vYm7eDUF7BAAAAAVRPUgAAAAAAU7PPxBvs6ktipJCbdBxnwSQptuWLNZv+ACfUE9U1W88AAAACVAvkAAAAAAEAAAABAAAAAAAAAAAAAAAAAAAAAQAAAABTs8/EG+zqS2KkkJt0HGfBJCm25Ys1m/4AJ9QT1TVbzwAAAAFUT1IAAAAAAFOzz8Qb7OpLYqSQm3QcZ8EkKbblizWb/gAn1BPVNVvPAAAAASoF8gAAAAAAAAAAAA=='))
+    exit()
     # simple way to find error in editing
-    l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHRE9KSzdVQVVNUVg1SVpFUllQTkJQUVlRM1NIUEtHTEY1TUJVS1dMREwyVVYyQVk2QklTM1RGTSIsInNlcXVlbmNlIjoiMjAwNTQ2NzU0Nzg4MDY1Mjg4IiwiZmVlIjoiMTAwMCIsImJhc2VGZWUiOiIxMDAiLCJtaW5GZWUiOiI1MDAwIn0sImZlZUJ1bXBBdHRyaWJ1dGVzIjp7Im1heEZlZSI6IjEwMTAxIn0sIm9wZXJhdGlvbnMiOlt7ImlkIjoxNjg5MDcwNzE0MjQ3LCJuYW1lIjoibWFuYWdlU2VsbE9mZmVyIiwiYXR0cmlidXRlcyI6eyJzZWxsaW5nIjp7InR5cGUiOiJuYXRpdmUiLCJjb2RlIjoiIiwiaXNzdWVyIjoiIn0sImJ1eWluZyI6eyJ0eXBlIjoiY3JlZGl0X2FscGhhbnVtMTIiLCJjb2RlIjoiZXJ0ZXJ0ZXJ0ZXJ0IiwiaXNzdWVyIjoiR0RPSks3VUFVTVFYNUlaRVJZUE5CUFFZUTNTSFBLR0xGNU1CVUtXTERMMlVWMkFZNkJJUzNURk0ifSwiYW1vdW50IjoiMjMuMyIsInByaWNlIjoiMjUuNTYiLCJvZmZlcklkIjoiMCJ9fV19&network=public'
+    l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHQlRPRjZSTEhSUEc1TlJJVTZNUTdKR01DVjdZSEw1VjMzWVlDNzZZWUc0SlVLQ0pUVVA1REVGSSIsInNlcXVlbmNlIjoiMTg2NzM2MjAxNTQ4NDMxMzc4IiwiZmVlIjoiMTAwMTAiLCJiYXNlRmVlIjoiMTAwIiwibWluRmVlIjoiNTAwMCIsIm1lbW9UeXBlIjoiTUVNT19URVhUIiwibWVtb0NvbnRlbnQiOiJsYWxhbGEifSwiZmVlQnVtcEF0dHJpYnV0ZXMiOnsibWF4RmVlIjoiMTAxMDEifSwib3BlcmF0aW9ucyI6W3siaWQiOjAsImF0dHJpYnV0ZXMiOnsiZGVzdGluYXRpb24iOiJHQUJGUUlLNjNSMk5FVEpNN1Q2NzNFQU1aTjRSSkxMR1AzT0ZVRUpVNVNaVlRHV1VLVUxaSk5MNiIsImFzc2V0Ijp7InR5cGUiOiJjcmVkaXRfYWxwaGFudW00IiwiY29kZSI6IlVTREMiLCJpc3N1ZXIiOiJHQTVaU0VKWUIzN0pSQzVBVkNJQTVNT1A0UkhUTTMzNVgyS0dYM0lIT0pBUFA1UkUzNEs0S1pWTiJ9LCJhbW91bnQiOiIzMDAwMCIsInNvdXJjZUFjY291bnQiOm51bGx9LCJuYW1lIjoicGF5bWVudCJ9XX0%3D&network=public'
     l = l.split('/')[-1].split('=')[1].split('&')[0]
     decode_xdr_from_base64(l)
     e = decode_xdr_to_base64(
-        'AAAAAgAAAADclX6AoyF+oySOHtC+GIbkd6jLL1gaKssa9UroGPBRLQAAA+gCyHw2AAAACAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAwAAAAAAAAACZXJ0ZXJ0ZXJ0ZXJ0AAAAANyVfoCjIX6jJI4e0L4YhuR3qMsvWBoqyxr1SugY8FEtAAAAAA3jTEAAAAJ/AAAAGQAAAAAAAAAAAAAAAAAAAAA=')
+        'AAAAAgAAAABm4vorPF5utiinmQ+kzBV/g6+13vGBf9jBuJooSZ0f0QAAJxoCl2uWAAAAEgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAZsYWxhbGEAAAAAAAEAAAAAAAAAAQAAAAACWCFe3HTSTSz8/f2QDMt5FK1mftxaETTss1ma1FUXlAAAAAFVU0RDAAAAADuZETgO/piLoKiQDrHP5E82b32+lGvtB3JA9/Yk3xXFAAAARdlkuAAAAAAAAAAAAA==')
     decode_xdr_from_base64(e)
     print(f'https://laboratory.stellar.org/#txbuilder?params={e}&network=public')
     pass

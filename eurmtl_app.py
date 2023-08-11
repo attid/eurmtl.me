@@ -9,6 +9,7 @@ from stellar_sdk import DecoratedSignature
 from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
 from config_reader import config
 from db.models import Addresses, Transactions, Signers, Signatures, Base
+from laboratory import laboratory_blueprint
 from utils import *
 from flask import Flask
 
@@ -24,6 +25,7 @@ engine = create_engine(
     pool_timeout=10  # время ожидания в секундах
 )  # Creating DB connections pool
 db_pool = sessionmaker(bind=engine)
+app.register_blueprint(laboratory_blueprint)  # Регистрация Blueprint
 
 fund_addresses = ('GDX23CPGMQ4LN55VGEDVFZPAJMAUEHSHAMJ2GMCU2ZSHN5QF4TMZYPIS',
                   'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V')
