@@ -17,3 +17,5 @@ pydantic
 sqlalchemy-firebird
 packaging
 sqlalchemy-stubs
+Flask-Assets
+cssmin

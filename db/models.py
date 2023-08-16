@@ -51,9 +51,16 @@ class Signatures(Base):
     Column('updated_dt', DateTime(), default=datetime.now, onupdate=datetime.now)
 
 
+class EurmtlDicts(Base):
+    __tablename__ = 'eurmtl_dicts'
+    id = Column(Integer, primary_key=True)
+    dict_key = Column(String(64), nullable=False)
+    dict_value = Column(String(64), nullable=False)
+    dict_type = Column(Integer, nullable=False)
+
+
 if __name__ == '__main__':
     pass
     engine = create_engine(config.db_dns, pool_pre_ping=True)
     db_pool = sessionmaker(bind=engine)
     Base.metadata.create_all(engine)
-

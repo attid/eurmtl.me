@@ -420,7 +420,7 @@ function gatherData() {
                 sourceAccount: block.querySelector('input[name="sourceAccount"]').value
             };
             operations.push(paymentData);
-        }manage_data
+        }
 
     });
 

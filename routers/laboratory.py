@@ -1,38 +1,42 @@
+import asyncio
+
 import requests
 from flask import Blueprint, render_template, jsonify, request
 from stellar_sdk import Server, TransactionBuilder, Network, Asset
 
+from config_reader import config
+from db.pool import db_pool
+from db.requests import db_get_dict, EURMTLDictsType, db_save_dict
 from utils import decode_data_value
 
-laboratory_blueprint = Blueprint('laboratory', __name__)
+blueprint = Blueprint('laboratory', __name__)
 
 
-@laboratory_blueprint.route('/laboratory')
+@blueprint.route('/laboratory')
 def cmd_laboratory():
     return render_template('laboratory.html')
 
 
-@laboratory_blueprint.route('/mtl_accounts')
+@blueprint.route('/mtl_accounts', methods=['GET', 'POST'])
 def cmd_mtl_accounts():
-    result = {
-        "Администрация": "GBSCMGJCE4DLQ6TYRNUMXUZZUXGZBM4BXVZUIHBBL5CSRRW2GWEHUADM",
-        "Эмиссии": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-        "БДМ основной": "GDEK5KGFA3WCG3F2MLSXFGLR4T4M6W6BMGWY6FBDSDQM6HXFMRSTEWBW",
-        "Бот дивидендов": "GDNHQWZRZDZZBARNOH6VFFXMN6LBUNZTZHOKBUT7GREOWBTZI4FGS7IQ",
-        "Директорский": "GC72CB75VWW7CLGXS76FGN3CC5K7EELDAQCPXYMZLNMOTC42U3XJBOSS",
-        "МАБИЗ": "GDWLM7WZP7PEVO3OBNEUJY7HX3DLJ3LQNNVTJLQIO6SYK2SHA6VMABIZ",
-        "Хранилище_битков": "GATUN5FV3QF35ZMU3C63UZ63GOFRYUHXV2SHKNTKPBZGYF2DU3B7IW6Z",
-        "эмиссия ЮСДМ": "GAZ37MDGUSED4AEHZ45RYZWLWTFUVMQ2LEG22Q44X6E2QQN5GLZXUSDM",
-        "Binance Deposits": "GABFQIK63R2NETJM7T673EAMZN4RJLLGP3OFUEJU5SZVTGWUKULZJNL6",
-        "LBTC fond": "GAUBJ4CTRF42Z7OM7QXTAQZG6BEMNR3JZY57Z4LB3PXSDJXE5A5GIGJB",
-        "MTL city": "GDUI7JVKWZV4KJVY4EJYBXMGXC2J3ZC67Z6O5QFP4ZMVQM2U5JXK2OK3",
-        "MTL DeFi": "GBTOF6RLHRPG5NRIU6MQ7JGMCV7YHL5V33YYC76YYG4JUKCJTUP5DEFI",
-        "MyMtlWalletBot": "GBSNN2SPYZB2A5RPDTO3BLX4TP5KNYI7UMUABUS3TYWWEWAAM2D7CMMW"
-    }
-    return jsonify(result)
+    if request.method == 'POST':
+        api_key = request.headers.get('Authorization')
+        if api_key != f"Bearer {config.eurmtl_key}":
+            return jsonify({"message": "Unauthorized"}), 401
+
+        data = request.json
+        if not data or not isinstance(data, dict):
+            return jsonify({"message": "Invalid data"}), 400
+
+        db_save_dict(db_pool(), EURMTLDictsType.Accounts, data)
+        return jsonify({"message": "Success"})
+
+    elif request.method == 'GET':
+        result = db_get_dict(db_pool(), EURMTLDictsType.Accounts)
+        return jsonify(result)
 
 
-@laboratory_blueprint.route('/sequence/<account_id>')
+@blueprint.route('/sequence/<account_id>')
 def cmd_sequence(account_id):
     try:
         r = requests.get('https://horizon.stellar.org/accounts/' + account_id).json()
@@ -42,38 +46,24 @@ def cmd_sequence(account_id):
     return jsonify({'sequence': str(sequence)})
 
 
-@laboratory_blueprint.route('/mtl_assets')
+@blueprint.route('/mtl_assets', methods=['GET', 'POST'])
 def cmd_mtl_assets():
-    result = {
-        "XLM": "XLM",
-        "MTL": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-        "NIRO": "GCOP3XDXTEHWPRXT3NSPPPR3RCHLLK6CUZI3S6RUWGEAKDD73IEU5H3E",
-        "EHIN": "GDI4PH6R2B4JDTMONRJA3BV4L3IBMXHWFCQPP5VTDSD3EE2ZFZGQJZZO",
-        "GPA": "GBGGX7QD3JCPFKOJTLBRAFU3SIME3WSNDXETWI63EDCORLBB6HIP2CRR",
-        "GPACAR": "GBGGX7QD3JCPFKOJTLBRAFU3SIME3WSNDXETWI63EDCORLBB6HIP2CRR",
-        "MrxpInvest": "GDAJVYFMWNIKYM42M6NG3BLNYXC3GE3WMEZJWTSYH64JLZGWVJPTGGB7",
-        "MrxpCorrect": "GDAJVYFMWNIKYM42M6NG3BLNYXC3GE3WMEZJWTSYH64JLZGWVJPTGGB7",
-        "AUMTL": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-        "AUDEBT": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-        "BTCMTL": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-        "BTCDEBT": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-        "EURMTL": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-        "EURDEBT": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-        "MTLand": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-        "MTLMiner": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-        "MTLRECT": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-        "BIOM": "GAOIY67QNDNFSOKTLSBGI4ZDLIEEPNKYBS7ZNJSSM7FRE6XX2MKSEZYW",
-        "MTLCITY": "GDUI7JVKWZV4KJVY4EJYBXMGXC2J3ZC67Z6O5QFP4ZMVQM2U5JXK2OK3",
-        "MTLDVL": "GAMU3C7Q7CUUC77BAN5JLZWE7VUEI4VZF3KMCMM3YCXLZPBYK5Q2IXTA",
-        "SATSMTL": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-        "MAT": "GBJ3HT6EDPWOUS3CUSIJW5A4M7ASIKNW4WFTLG76AAT5IE6VGVN47TIC",
-        "USDM": "GDHDC4GBNPMENZAOBB4NCQ25TGZPDRK6ZGWUGSI22TVFATOLRPSUUSDM",
-        "MTLFEST": "GCGWAPG6PKBMHEEAHRLTWHFCAGZTQZDOXDMWBUBCXHLQBSBNWFRYFEST",
-        "MTLand": "GC7XRK2D6XDNN2LCOJEAPXNAQA3ZBUR3ZR6S4VI4T46GSRM3F6BMLAND",
-        "MMiner": "GBL5CHD6UNJ5COC2D27RVIH5U67T6X3ZCMWTNE3K5MC6XTD7K56MINER",
-        "Agora": "GBGGX7QD3JCPFKOJTLBRAFU3SIME3WSNDXETWI63EDCORLBB6HIP2CRR",
-    }
-    return jsonify(result)
+    if request.method == 'POST':
+        api_key = request.headers.get('Authorization')
+        if api_key != f"Bearer {config.eurmtl_key}":
+            return jsonify({"message": "Unauthorized"}), 401
+
+        data = request.json
+        if not data or not isinstance(data, dict):
+            return jsonify({"message": "Invalid data"}), 400
+
+        db_save_dict(db_pool(), EURMTLDictsType.Assets, data)
+        return jsonify({"message": "Success"})
+
+    elif request.method == 'GET':
+        result = db_get_dict(db_pool(), EURMTLDictsType.Assets)
+        result["XLM"] = "XLM"
+        return jsonify(result)
 
 
 def decode_asset(asset):
@@ -84,7 +74,7 @@ def decode_asset(asset):
         return Asset(arr[0], arr[1])
 
 
-@laboratory_blueprint.route('/build_xdr', methods=['POST'])
+@blueprint.route('/build_xdr', methods=['POST'])
 def cmd_build_xdr():
     data = request.json
     # {'publicKey': 'GAUBJ4CTRF42Z7OM7QXTAQZG6BEMNR3JZY57Z4LB3PXSDJXE5A5GIGJB', 'sequence': '167193185523597322', 'memo_type': 'text', 'memo': '654654',
@@ -141,7 +131,7 @@ def cmd_build_xdr():
     return jsonify({'xdr': xdr})
 
 
-@laboratory_blueprint.route('/assets/<account_id>')
+@blueprint.route('/assets/<account_id>')
 def cmd_assets(account_id):
     result = {'XLM': 'XLM'}
     try:
@@ -157,7 +147,7 @@ def cmd_assets(account_id):
     return jsonify(result)
 
 
-@laboratory_blueprint.route('/data/<account_id>')
+@blueprint.route('/data/<account_id>')
 def cmd_data(account_id):
     result = {}
     try:
@@ -170,7 +160,6 @@ def cmd_data(account_id):
     result['mtl_donate'] = 'if you want donate'
     print(result)
     return jsonify(result)
-
 
 
 if __name__ == '__main__':

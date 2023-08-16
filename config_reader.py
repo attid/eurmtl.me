@@ -8,6 +8,7 @@ dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 class Settings(BaseSettings):
     db_dns: str
     secret_key: str
+    eurmtl_key: str
 
     class Config:
         env_file = dotenv_path
