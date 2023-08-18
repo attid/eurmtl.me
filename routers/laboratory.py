@@ -13,11 +13,13 @@ blueprint = Blueprint('laboratory', __name__)
 
 
 @blueprint.route('/laboratory')
+@blueprint.route('/lab')
+@blueprint.route('/lab/')
 def cmd_laboratory():
     return render_template('laboratory.html')
 
 
-@blueprint.route('/mtl_accounts', methods=['GET', 'POST'])
+@blueprint.route('/lab/mtl_accounts', methods=['GET', 'POST'])
 def cmd_mtl_accounts():
     if request.method == 'POST':
         api_key = request.headers.get('Authorization')
@@ -36,7 +38,7 @@ def cmd_mtl_accounts():
         return jsonify(result)
 
 
-@blueprint.route('/sequence/<account_id>')
+@blueprint.route('/lab/sequence/<account_id>')
 def cmd_sequence(account_id):
     try:
         r = requests.get('https://horizon.stellar.org/accounts/' + account_id).json()
@@ -46,7 +48,7 @@ def cmd_sequence(account_id):
     return jsonify({'sequence': str(sequence)})
 
 
-@blueprint.route('/mtl_assets', methods=['GET', 'POST'])
+@blueprint.route('/lab/mtl_assets', methods=['GET', 'POST'])
 def cmd_mtl_assets():
     if request.method == 'POST':
         api_key = request.headers.get('Authorization')
@@ -74,7 +76,7 @@ def decode_asset(asset):
         return Asset(arr[0], arr[1])
 
 
-@blueprint.route('/build_xdr', methods=['POST'])
+@blueprint.route('/lab/build_xdr', methods=['POST'])
 def cmd_build_xdr():
     data = request.json
     # {'publicKey': 'GAUBJ4CTRF42Z7OM7QXTAQZG6BEMNR3JZY57Z4LB3PXSDJXE5A5GIGJB', 'sequence': '167193185523597322', 'memo_type': 'text', 'memo': '654654',
@@ -123,6 +125,19 @@ def cmd_build_xdr():
                                               data_value=operation['data_value'] if len(
                                                   operation['data_value']) > 0 else None,
                                               source=sourceAccount)
+        if operation['type'] == 'options':
+            transaction.append_set_options_op(
+                master_weight=int(operation['master']) if len(operation['master']) > 0 else None,
+                med_threshold=int(operation['threshold']) if len(operation['threshold']) > 0 else None,
+                high_threshold=int(operation['threshold']) if len(operation['threshold']) > 0 else None,
+                low_threshold=int(operation['threshold']) if len(operation['threshold']) > 0 else None,
+                home_domain=operation['home'] if len(operation['home']) > 0 else None,
+                source=sourceAccount)
+        if operation['type'] == 'options_signer':
+            transaction.append_ed25519_public_key_signer(
+                account_id=operation['signerAccount'] if len(operation['signerAccount']) > 55 else None,
+                weight=int(operation['weight']) if len(operation['weight']) > 0 else None,
+                source=sourceAccount)
 
     transaction = transaction.build()
     transaction.transaction.sequence = int(data['sequence'])
@@ -131,36 +146,52 @@ def cmd_build_xdr():
     return jsonify({'xdr': xdr})
 
 
-@blueprint.route('/assets/<account_id>')
+@blueprint.route('/lab/assets/<account_id>')
 def cmd_assets(account_id):
     result = {'XLM': 'XLM'}
     try:
         account = Server(horizon_url="https://horizon.stellar.org").accounts().account_id(account_id).call()
         for balance in account['balances']:
-            result[balance.get('asset_code', 'XLM')] = balance.get('asset_issuer', 'XLM')
+            asset_code = balance.get('asset_code', 'XLM')
+            asset_issuer = balance.get('asset_issuer', 'XLM')
+            result[f"{asset_code}-{asset_issuer[:4]}..{asset_issuer[-4:]}"] = f"{asset_code}-{asset_issuer}"
         assets = Server(horizon_url="https://horizon.stellar.org").assets().for_issuer(account_id).call()
         for asset in assets['_embedded']['records']:
-            result[asset.get('asset_code', 'XLM')] = asset.get('asset_issuer', 'XLM')
+            asset_code = asset.get('asset_code', 'XLM')
+            asset_issuer = asset.get('asset_issuer', 'XLM')
+            result[f"{asset_code}-{asset_issuer[:4]}..{asset_issuer[-4:]}"] = f"{asset_code}-{asset_issuer}"
     except:
         pass
 
     return jsonify(result)
 
 
-@blueprint.route('/data/<account_id>')
+@blueprint.route('/lab/data/<account_id>')
 def cmd_data(account_id):
     result = {}
     try:
         account = Server(horizon_url="https://horizon.stellar.org").accounts().account_id(account_id).call()
         for data_name in account.get('data'):
-            result[data_name] = decode_data_value(account['data'][data_name])
+            result[f"{data_name}={decode_data_value(account['data'][data_name])}"] = data_name
     except:
         pass
-    result['mtl_delegate'] = 'if you want delegate your mtl votes'
-    result['mtl_donate'] = 'if you want donate'
-    print(result)
+    result['mtl_delegate if you want delegate your mtl votes'] = 'mtl_delegate'
+    result['mtl_donate if you want donate'] = 'mtl_donate'
+    return jsonify(result)
+
+
+@blueprint.route('/lab/offers/<account_id>')
+def cmd_offers(account_id):
+    result = {}
+    try:
+        account = Server(horizon_url="https://horizon.stellar.org").offers().for_account(account_id).call()
+        for record in account['_embedded']['records']:
+            result[f"{record['id']} selling {record['amount']} {record['selling']['asset_code']} " +
+                   f"for {record['selling']['asset_code']} price {record['price']}"] = record['id']
+    except:
+        pass
     return jsonify(result)
 
 
 if __name__ == '__main__':
-    cmd_data('GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V')
+    cmd_offers('GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V')

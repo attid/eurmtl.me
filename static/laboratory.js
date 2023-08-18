@@ -5,6 +5,7 @@ function generateAccountSelector(fieldName = "sourceAccount", labelName = "Sourc
             <div class="input-group">
                 <input type="text" id="${fieldName}" class="${fieldName}" name="${fieldName}" maxlength="56" placeholder="Enter public key" required>
                 <button type="button" class="fetchAccounts button secondary">⛰️</button>
+                <button type="button" class="openAccounts button secondary">👁</button>
             </div>
             <div class="${fieldName}Dropdown dropdown-content"></div>
         </div>
@@ -19,11 +20,27 @@ function generateAssetSelector(fieldName = "asset", labelName = "Asset") {
                 <input type="text" id="${fieldName}" class="${fieldName}" name="${fieldName}" placeholder="Enter asset like XLM or MTL-ISSUER" required>
                 <button type="button" class="fetchAssetMTL button secondary">⛰️</button>
                 <button type="button" class="fetchAssetSrc button secondary">🔍</button>
+                <button type="button" class="openAsset button secondary">👁</button>
             </div>
             <div class="${fieldName}Dropdown dropdown-content"></div>
         </div>
     `;
 }
+
+function generateOfferSelector(fieldName = "offer_id", labelName = "Offer ID") {
+    return `
+        <div class="form-group account-selector">
+            <label for="${fieldName}">${labelName}</label>
+            <div class="input-group">
+                <input type="text" id="${fieldName}" class="${fieldName}" name="${fieldName}" placeholder="Choose offer id or set 0" required>
+                <button type="button" class="fetchOffers button secondary">🔍</button>
+            </div>
+            <div class="${fieldName}Dropdown dropdown-content"></div>
+                If 0, will create a new offer. Existing offer id numbers can be found using the Offers for Account endpoint.
+        </div>
+    `;
+}
+
 
 document.addEventListener('DOMContentLoaded', function() {
     let blockCounter = 0;
@@ -35,7 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (operationType === "create_account") {
             blockHTML = `
-            <div class="operation-block create-account-block">
+            <div class="operation-block create_account_block">
               <h4>Account Block #${blockCounter}</h4>
 
               ${generateAccountSelector("destination", "Destination")}
@@ -52,7 +69,7 @@ document.addEventListener('DOMContentLoaded', function() {
           `;
         } else if (operationType === "payment") {
             blockHTML = `
-                <div class="operation-block payment-block">
+                <div class="operation-block payment_block">
                     <h4>Payment Block #${blockCounter}</h4>
 
                     ${generateAccountSelector("destination", "Destination")}
@@ -71,7 +88,7 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
         } else if (operationType === "change_trust") {
             blockHTML = `
-                <div class="operation-block change-trust-block">
+                <div class="operation-block change_trust_block">
                     <h4>Change Trust Block #${blockCounter}</h4>
 
                     ${generateAssetSelector("asset", "Asset")}
@@ -88,9 +105,55 @@ document.addEventListener('DOMContentLoaded', function() {
                     <button type="button" class="delete-block">Delete Block</button>
                 </div>
             `;
+        } else if (operationType === "options") {
+            blockHTML = `
+                <div class="operation-block options_block">
+                    <h4>Set Options #${blockCounter}</h4>
+
+                    <div class="form-group">
+                        <label for="master">Master Weight (optional)</label>
+                        <input type="text" id="master" name="master">
+                        This can result in a permanently locked account. Are you sure you know what you are doing?
+                    </div>
+
+                    <div class="form-group">
+                        <label for="threshold">Low/Medium/High Threshold (optional)</label>
+                        <input type="text" id="threshold" name="threshold">
+                        This can result in a permanently locked account. Are you sure you know what you are doing?
+                    </div>
+
+                    <div class="form-group">
+                        <label for="home">Home Domain (optional)</label>
+                        <input type="text" id="home" name="home">
+                    </div>
+
+                    ${generateAccountSelector("sourceAccount")}
+
+                    <button type="button" class="delete-block">Delete Block</button>
+                </div>
+            `;
+        } else if (operationType === "options_signer") {
+            blockHTML = `
+                <div class="operation-block options_signer_block">
+                    <h4>Set Options Signer #${blockCounter}</h4>
+
+                    ${generateAccountSelector("signerAccount", "Ed25519 Public Key (optional)")}
+
+                    <div class="form-group">
+                        <label for="weight">Signer Weight</label>
+                        <input type="text" id="weight" name="weight">
+                        Signer will be removed from account if this weight is 0. <br>
+                        Used to add/remove or adjust weight of an additional signer on the account.
+                    </div>
+
+                    ${generateAccountSelector("sourceAccount")}
+
+                    <button type="button" class="delete-block">Delete Block</button>
+                </div>
+            `;
         } else if (operationType === "buy") {
             blockHTML = `
-                <div class="operation-block buy-block">
+                <div class="operation-block buy_block">
                     <h4>Buy Block #${blockCounter}</h4>
 
                     ${generateAssetSelector("buying", "Buying")}
@@ -107,11 +170,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <input type="text" id="price" name="price">
                     </div>
 
-                    <div class="form-group">
-                        <label for="offer_id">Offer ID</label>
-                        <input type="text" id="offer_id" name="offer_id">
-                        If 0, will create a new offer. Existing offer id numbers can be found using the Offers for Account endpoint.
-                    </div>
+                    ${generateOfferSelector()}
 
                     ${generateAccountSelector("sourceAccount")}
 
@@ -120,7 +179,7 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
         } else if (operationType === "sell") {
             blockHTML = `
-                <div class="operation-block sell">
+                <div class="operation-block sell_block">
                     <h4>Buy Block #${blockCounter}</h4>
 
                     ${generateAssetSelector("selling", "Selling")}
@@ -137,11 +196,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <input type="text" id="price" name="price">
                     </div>
 
-                    <div class="form-group">
-                        <label for="offer_id">Offer ID</label>
-                        <input type="text" id="offer_id" name="offer_id">
-                        If 0, will create a new offer. Existing offer id numbers can be found using the Offers for Account endpoint.
-                    </div>
+                    ${generateOfferSelector()}
 
                     ${generateAccountSelector("sourceAccount")}
 
@@ -150,7 +205,7 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
         } else if (operationType === "manage_data") {
             blockHTML = `
-                <div class="operation-block manage-data-block">
+                <div class="operation-block manage_data_block">
                     <h4>Manage Data Block #${blockCounter}</h4>
 
                     <div class="form-group account-selector">
@@ -194,7 +249,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (dropdown.style.display === 'block') {
                     dropdown.style.display = 'none';
                 } else {
-                    fetch('/mtl_accounts')
+                    fetch('/lab/mtl_accounts')
                         .then(response => response.json())
                         .then(data => {
                             let dropdownContent = "";
@@ -232,7 +287,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     return;
                 }
 
-                fetch(`/sequence/${publicKey}`)
+                fetch(`/lab/sequence/${publicKey}`)
                     .then(response => {
                         if (!response.ok) {
                             throw new Error("Network response was not ok");
@@ -255,7 +310,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (dropdown.style.display === 'block') {
                     dropdown.style.display = 'none';
                 } else {
-                    fetch('/mtl_assets')
+                    fetch('/lab/mtl_assets')
                         .then(response => response.json())
                         .then(data => {
                             let dropdownContent = "";
@@ -269,7 +324,10 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // Для fetchAssetSrc
-            if (event.target.classList.contains('fetchAssetSrc') || event.target.classList.contains('fetchData')) {
+            if (event.target.classList.contains('fetchAssetSrc') ||
+                event.target.classList.contains('fetchData')  ||
+                event.target.classList.contains('fetchOffers')
+                ) {
                 let fieldName = event.target.closest('.account-selector').querySelector('input').className;
                 let dropdown = event.target.closest('.account-selector').querySelector(`.${fieldName}Dropdown`);
                 // Если выпадающий список уже отображается, скрываем его
@@ -281,37 +339,61 @@ document.addEventListener('DOMContentLoaded', function() {
                         alert("Please choose a publicKey");
                         return;
                     }
-                    if (event.target.classList.contains('fetchAssetSrc')){
-                        fetch(`/assets/${publicKey}`)
-                            .then(response => response.json())
-                            .then(data => {
-                                let dropdownContent = "";
-                                for (let name in data) {
-                                    dropdownContent += `<div class="account-item" data-account="${name}-${data[name]}">${name}-${data[name]}</div>`;
-                                }
-                                dropdown.innerHTML = dropdownContent;
-                                dropdown.style.display = 'block';
-                            });
+                    let fetchURL;
+                    if (event.target.classList.contains('fetchAssetSrc')) {
+                        fetchURL = `/lab/assets/${publicKey}`;
                     }
-                    if (event.target.classList.contains('fetchData')){
-                        fetch(`/data/${publicKey}`)
+                    if (event.target.classList.contains('fetchData')) {
+                        fetchURL = `/lab/data/${publicKey}`;
+                    }
+                    if (event.target.classList.contains('fetchOffers')) {
+                        fetchURL = `/lab/offers/${publicKey}`;
+                    }
+
+                    if (fetchURL) {
+                        fetch(fetchURL)
                             .then(response => response.json())
                             .then(data => {
                                 let dropdownContent = "";
                                 for (let name in data) {
-                                    dropdownContent += `<div class="account-item" data-account="${name}">${name}-${data[name]}</div>`;
+                                    dropdownContent += `<div class="account-item" data-account="${data[name]}">${name}</div>`;
                                 }
                                 dropdown.innerHTML = dropdownContent;
                                 dropdown.style.display = 'block';
                             });
+                    } else {
+                        console.error("Invalid fetchURL");
                     }
                 }
             }
 
+            // Для fetchAssetSrc
+            if (event.target.classList.contains('openAccounts') || event.target.classList.contains('openAsset')) {
+                let accountSelector = event.target.closest('.account-selector');
+                let input = accountSelector.querySelector('input');
+                let publicKey = input.value;
+
+                // Проверяем длину публичного ключа
+                if (publicKey.length < 56) {
+                    alert("Please choose or enter key");
+                    return;
+                }
+
+                // Открываем новое окно с заданным URL
+                if (event.target.classList.contains('openAccounts')){
+                    window.open(`https://stellar.expert/explorer/public/account/${publicKey}`, '_blank');
+                }
+                // Открываем новое окно с заданным URL
+                if (event.target.classList.contains('openAsset')){
+                    window.open(`https://stellar.expert/explorer/public/asset/${publicKey}`, '_blank');
+                }
+            }
+
+
             if (event.target.classList.contains('get_xdr')) {
                 const data = gatherData();
 
-                fetch("/build_xdr", {
+                fetch("/lab/build_xdr", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json"
@@ -360,36 +442,55 @@ function gatherData() {
     data['memo'] = document.querySelector(".memo").value;
 
     blocks.forEach((block, index) => {
-        if (block.classList.contains('payment-block')) {
-            let paymentData = {
+        if (block.classList.contains('payment_block')) {
+            let blockData = {
                 type: 'payment',
                 destination: block.querySelector('input[name="destination"]').value,
                 asset: block.querySelector('input[name="asset"]').value,
                 amount: block.querySelector('input[name="amount"]').value,
                 sourceAccount: block.querySelector('input[name="sourceAccount"]').value
             };
-            operations.push(paymentData);
+            operations.push(blockData);
         }
-        if (block.classList.contains('change-trust-block')) {
-            let paymentData = {
+        if (block.classList.contains('change_trust_block')) {
+            let blockData = {
                 type: 'change_trust',
                 asset: block.querySelector('input[name="asset"]').value,
                 amount: block.querySelector('input[name="amount"]').value,
                 sourceAccount: block.querySelector('input[name="sourceAccount"]').value
             };
-            operations.push(paymentData);
+            operations.push(blockData);
         }
-        if (block.classList.contains('create-account-block')) {
-            let paymentData = {
+        if (block.classList.contains('options_block')) {
+            let blockData = {
+                type: 'options',
+                master: block.querySelector('input[name="master"]').value,
+                threshold: block.querySelector('input[name="threshold"]').value,
+                home: block.querySelector('input[name="home"]').value,
+                sourceAccount: block.querySelector('input[name="sourceAccount"]').value
+            };
+            operations.push(blockData);
+        }
+        if (block.classList.contains('options_signer_block')) {
+            let blockData = {
+                type: 'options_signer',
+                signerAccount: block.querySelector('input[name="signerAccount"]').value,
+                weight: block.querySelector('input[name="weight"]').value,
+                sourceAccount: block.querySelector('input[name="sourceAccount"]').value
+            };
+            operations.push(blockData);
+        }
+        if (block.classList.contains('create_account_block')) {
+            let blockData = {
                 type: 'create_account',
                 destination: block.querySelector('input[name="destination"]').value,
                 startingBalance: block.querySelector('input[name="startingBalance"]').value,
                 sourceAccount: block.querySelector('input[name="sourceAccount"]').value
             };
-            operations.push(paymentData);
+            operations.push(blockData);
         }
-        if (block.classList.contains('buy-block')) {
-            let paymentData = {
+        if (block.classList.contains('buy_block')) {
+            let blockData = {
                 type: 'buy',
                 buying: block.querySelector('input[name="buying"]').value,
                 selling: block.querySelector('input[name="selling"]').value,
@@ -398,10 +499,10 @@ function gatherData() {
                 offer_id: block.querySelector('input[name="offer_id"]').value,
                 sourceAccount: block.querySelector('input[name="sourceAccount"]').value
             };
-            operations.push(paymentData);
+            operations.push(blockData);
         }
-        if (block.classList.contains('sell-block')) {
-            let paymentData = {
+        if (block.classList.contains('sell_block')) {
+            let blockData = {
                 type: 'sell',
                 buying: block.querySelector('input[name="buying"]').value,
                 selling: block.querySelector('input[name="selling"]').value,
@@ -410,16 +511,16 @@ function gatherData() {
                 offer_id: block.querySelector('input[name="offer_id"]').value,
                 sourceAccount: block.querySelector('input[name="sourceAccount"]').value
             };
-            operations.push(paymentData);
+            operations.push(blockData);
         }
-        if (block.classList.contains('manage-data-block')) {
-            let paymentData = {
+        if (block.classList.contains('manage_data_block')) {
+            let blockData = {
                 type: 'manage_data',
                 data_name: block.querySelector('input[name="data_name"]').value,
                 data_value: block.querySelector('input[name="data_value"]').value,
                 sourceAccount: block.querySelector('input[name="sourceAccount"]').value
             };
-            operations.push(paymentData);
+            operations.push(blockData);
         }
 
     });
@@ -428,4 +529,3 @@ function gatherData() {
 
     return data;
 }
-
