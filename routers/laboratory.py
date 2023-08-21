@@ -34,7 +34,12 @@ def cmd_mtl_accounts():
         return jsonify({"message": "Success"})
 
     elif request.method == 'GET':
-        result = db_get_dict(db_pool(), EURMTLDictsType.Accounts)
+        result = {}
+        db_data = db_get_dict(db_pool(), EURMTLDictsType.Accounts)
+        for asset_code in db_data:
+            asset_issuer = db_data[asset_code]
+            result[f"{asset_code} {asset_issuer[:4]}..{asset_issuer[-4:]}"] = asset_issuer
+
         return jsonify(result)
 
 
@@ -63,7 +68,12 @@ def cmd_mtl_assets():
         return jsonify({"message": "Success"})
 
     elif request.method == 'GET':
-        result = db_get_dict(db_pool(), EURMTLDictsType.Assets)
+        result = {}
+        db_data = db_get_dict(db_pool(), EURMTLDictsType.Assets)
+        for asset_code in db_data:
+            asset_issuer = db_data[asset_code]
+            result[f"{asset_code}-{asset_issuer[:4]}..{asset_issuer[-4:]}"] = f"{asset_code}-{asset_issuer}"
+
         result["XLM"] = "XLM"
         return jsonify(result)
 

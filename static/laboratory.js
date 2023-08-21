@@ -238,30 +238,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.body.addEventListener('click', function(event) {
-
         if (event.target) {
-            // Если клик был по кнопке .fetchAccounts
-            if (event.target.classList.contains('fetchAccounts')) {
-                let fieldName = event.target.closest('.account-selector').querySelector('input').name;
-                let dropdown = event.target.closest('.account-selector').querySelector(`.${fieldName}Dropdown`);
-
-                // Если выпадающий список уже отображается, скрываем его
-                if (dropdown.style.display === 'block') {
-                    dropdown.style.display = 'none';
-                } else {
-                    fetch('/lab/mtl_accounts')
-                        .then(response => response.json())
-                        .then(data => {
-                            let dropdownContent = "";
-                            for (let name in data) {
-                                dropdownContent += `<div class="account-item" data-account="${data[name]}">${name}</div>`;
-                            }
-                            dropdown.innerHTML = dropdownContent;
-                            dropdown.style.display = 'block';
-                        });
-                }
-            }
-
             // Если клик был по элементу .account-item
             if (event.target.classList.contains('account-item')) {
                 let accountSelector = event.target.closest('.account-selector');
@@ -280,7 +257,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // Если клик был по кнопке .fetchSequence
-            if (event.target.classList.contains('fetchSequence')) {
+            if (event.target.classList.contains('loadsSequence')) {
                 let publicKey = document.querySelector(".publicKey").value;
                 if (publicKey.length !== 56) {
                     alert("Please choose a publicKey");
@@ -302,32 +279,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
             }
 
-            // Для fetchAssetMTL
-            if (event.target.classList.contains('fetchAssetMTL')) {
-                let fieldName = event.target.closest('.account-selector').querySelector('input').className;
-                let dropdown = event.target.closest('.account-selector').querySelector(`.${fieldName}Dropdown`);
-                // Если выпадающий список уже отображается, скрываем его
-                if (dropdown.style.display === 'block') {
-                    dropdown.style.display = 'none';
-                } else {
-                    fetch('/lab/mtl_assets')
-                        .then(response => response.json())
-                        .then(data => {
-                            let dropdownContent = "";
-                            for (let name in data) {
-                                dropdownContent += `<div class="account-item" data-account="${name}-${data[name]}">${name}-${data[name]}</div>`;
-                            }
-                            dropdown.innerHTML = dropdownContent;
-                            dropdown.style.display = 'block';
-                        });
-                }
-            }
-
             // Для fetchAssetSrc
-            if (event.target.classList.contains('fetchAssetSrc') ||
-                event.target.classList.contains('fetchData')  ||
-                event.target.classList.contains('fetchOffers')
-                ) {
+            if (Array.from(event.target.classList).some(className => /^fetch/.test(className))) {
                 let fieldName = event.target.closest('.account-selector').querySelector('input').className;
                 let dropdown = event.target.closest('.account-selector').querySelector(`.${fieldName}Dropdown`);
                 // Если выпадающий список уже отображается, скрываем его
@@ -335,19 +288,34 @@ document.addEventListener('DOMContentLoaded', function() {
                     dropdown.style.display = 'none';
                 } else {
                     let publicKey = document.querySelector(".publicKey").value;
-                    if (publicKey.length !== 56) {
-                        alert("Please choose a publicKey");
-                        return;
+                    let need_key = ['fetchAssetSrc', 'fetchData', 'fetchOffers']
+                    if (Array.from(event.target.classList).some(className => need_key.includes(className))) {
+                        if (publicKey.length !== 56) {
+                            alert("Please choose a publicKey");
+                            return;
+                        }
+                        let operationBlock = event.target.closest('.operation-block');
+                        let sourceAccountInput = operationBlock.querySelector('.sourceAccount');
+
+                        if (sourceAccountInput && sourceAccountInput.value.length === 56) {
+                            publicKey = sourceAccountInput.value;
+                        }
                     }
+
+                    let urls = {
+                        'fetchAssetSrc': `/lab/assets/${publicKey}`,
+                        'fetchData': `/lab/data/${publicKey}`,
+                        'fetchOffers': `/lab/offers/${publicKey}`,
+                        'fetchAssetMTL': '/lab/mtl_assets',
+                        'fetchAccounts': '/lab/mtl_accounts'
+                    };
+
                     let fetchURL;
-                    if (event.target.classList.contains('fetchAssetSrc')) {
-                        fetchURL = `/lab/assets/${publicKey}`;
-                    }
-                    if (event.target.classList.contains('fetchData')) {
-                        fetchURL = `/lab/data/${publicKey}`;
-                    }
-                    if (event.target.classList.contains('fetchOffers')) {
-                        fetchURL = `/lab/offers/${publicKey}`;
+                    for (let className in urls) {
+                        if (event.target.classList.contains(className)) {
+                            fetchURL = urls[className];
+                            break;
+                        }
                     }
 
                     if (fetchURL) {

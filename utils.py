@@ -14,6 +14,8 @@ from stellar_sdk import (
 
 )
 from stellar_sdk.exceptions import NotFoundError
+from db.requests import EURMTLDictsType, db_get_dict
+from db.pool import db_pool
 
 
 def get_key_sort(key, idx=1):
@@ -191,8 +193,12 @@ def address_id_to_link(key) -> str:
 def asset_to_link(operation_asset) -> str:
     start_url = "https://stellar.expert/explorer/public/asset"
     if operation_asset.code == 'XLM':
-        return f'<a href="{start_url}/{operation_asset.code}" target="_blank">{operation_asset.code}</a>'
-    else:
+        return f'<a href="{start_url}/{operation_asset.code}" target="_blank">{operation_asset.code}⭐</a>'
+    else:        
+        # add * if we have asset in DB
+        db_data = db_get_dict(db_pool(), EURMTLDictsType.Assets)
+        if db_data.get(operation_asset.code, '--') == operation_asset.issuer:
+            return f'<a href="{start_url}/{operation_asset.code}-{operation_asset.issuer}" target="_blank">{operation_asset.code}⭐</a>'
         return f'<a href="{start_url}/{operation_asset.code}-{operation_asset.issuer}" target="_blank">{operation_asset.code}</a>'
 
 
@@ -429,7 +435,7 @@ def decode_data_value(data_value: str):
 
 if __name__ == '__main__':
     print(decode_xdr_to_text(
-        'AAAAAgAAAACck9FGOjyATb8CCK4+TQvugCM/UHQLTnQTUAxV9A6GwQAAASwCwvFDAAAABQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABxGMnJmZjMzVFhURE54NXJkUlFwUVcxNzQ0elE9AAAAAwAAAAEAAAAACZPdhY20yy7CvILctpInpN24eRjcx5T7S9ibt4NQXsEAAAABAAAAAJyT0UY6PIBNvwIIrj5NC+6AIz9QdAtOdBNQDFX0DobBAAAAAkVVUk1UTAAAAAAAAAAAAAAEqbejBk1rxsHVls854RnAyfpJaZacvgwmQ0jxNDBvqgAAAAJUC+QAAAAAAAAAAAwAAAACRVVSTVRMAAAAAAAAAAAAAAmT3YWNtMsuwryC3LaSJ6TduHkY3MeU+0vYm7eDUF7BAAAAAVRPUgAAAAAAU7PPxBvs6ktipJCbdBxnwSQptuWLNZv+ACfUE9U1W88AAAACVAvkAAAAAAEAAAABAAAAAAAAAAAAAAAAAAAAAQAAAABTs8/EG+zqS2KkkJt0HGfBJCm25Ys1m/4AJ9QT1TVbzwAAAAFUT1IAAAAAAFOzz8Qb7OpLYqSQm3QcZ8EkKbblizWb/gAn1BPVNVvPAAAAASoF8gAAAAAAAAAAAA=='))
+        'AAAAAgAAAAAh0kU1R5Fu0q15K3pSrLn2YQzp4FILsABT49qG1gUcwAAAdTACwvFDAAAABQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAARRMTEwAAAAAwAAAAEAAAAAIdJFNUeRbtKteSt6Uqy59mEM6eBSC7AAU+PahtYFHMAAAAAGAAAAAkRhbWlyQ29pbgAAAAAAAAAomzo5LuLnQ1deMfyhsr56isqSkoDnEr+DV2yGtVyHAH//////////AAAAAQAAAAAJk92FjbTLLsK8gty2kiek3bh5GNzHlPtL2Ju3g1BewQAAAAEAAAAAIdJFNUeRbtKteSt6Uqy59mEM6eBSC7AAU+PahtYFHMAAAAACRVVSTVRMAAAAAAAAAAAAAASpt6MGTWvGwdWWzznhGcDJ+klplpy+DCZDSPE0MG+qAAAAF0h26AAAAAABAAAAACHSRTVHkW7SrXkrelKsufZhDOngUguwAFPj2obWBRzAAAAAAwAAAAJFVVJNVEwAAAAAAAAAAAAABKm3owZNa8bB1ZbPOeEZwMn6SWmWnL4MJkNI8TQwb6oAAAACRGFtaXJDb2luAAAAAAAAACibOjku4udDV14x/KGyvnqKypKSgOcSv4NXbIa1XIcAAAAAF0h26AAAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAA='))
     exit()
     # simple way to find error in editing
     l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHQlRPRjZSTEhSUEc1TlJJVTZNUTdKR01DVjdZSEw1VjMzWVlDNzZZWUc0SlVLQ0pUVVA1REVGSSIsInNlcXVlbmNlIjoiMTg2NzM2MjAxNTQ4NDMxMzc4IiwiZmVlIjoiMTAwMTAiLCJiYXNlRmVlIjoiMTAwIiwibWluRmVlIjoiNTAwMCIsIm1lbW9UeXBlIjoiTUVNT19URVhUIiwibWVtb0NvbnRlbnQiOiJsYWxhbGEifSwiZmVlQnVtcEF0dHJpYnV0ZXMiOnsibWF4RmVlIjoiMTAxMDEifSwib3BlcmF0aW9ucyI6W3siaWQiOjAsImF0dHJpYnV0ZXMiOnsiZGVzdGluYXRpb24iOiJHQUJGUUlLNjNSMk5FVEpNN1Q2NzNFQU1aTjRSSkxMR1AzT0ZVRUpVNVNaVlRHV1VLVUxaSk5MNiIsImFzc2V0Ijp7InR5cGUiOiJjcmVkaXRfYWxwaGFudW00IiwiY29kZSI6IlVTREMiLCJpc3N1ZXIiOiJHQTVaU0VKWUIzN0pSQzVBVkNJQTVNT1A0UkhUTTMzNVgyS0dYM0lIT0pBUFA1UkUzNEs0S1pWTiJ9LCJhbW91bnQiOiIzMDAwMCIsInNvdXJjZUFjY291bnQiOm51bGx9LCJuYW1lIjoicGF5bWVudCJ9XX0%3D&network=public'
