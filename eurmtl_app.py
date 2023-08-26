@@ -1,13 +1,11 @@
-from flask import render_template, request
+from flask import render_template
 from flask_assets import Environment, Bundle
-from config_reader import config
 from db.models import Base
 from utils import *
 from flask import Flask
 
 app = Flask(__name__)
 # app.config['HOME_PATH'] = ''
-# app.config['TELEGRAM_BOT_TOKEN'] = '5'
 assets = Environment(app)
 assets.url = app.static_url_path
 scss = Bundle('css/main.css', filters='cssmin', output='css/main.min.css')
@@ -19,7 +17,7 @@ import routers.index
 import routers.federal
 import routers.sign_tools
 
-app.config['SECRET_KEY'] = config.secret_key
+app.config['SECRET_KEY'] = config.secret_key.get_secret_value()
 
 app.register_blueprint(routers.index.blueprint)
 app.register_blueprint(routers.laboratory.blueprint)
@@ -50,25 +48,7 @@ def update_db():
     return "OK"
 
 
-@app.route('/login/telegram')
-def login_telegram():
-    data = {
-        'id': request.args.get('id', None),
-        'first_name': request.args.get('first_name', None),
-        'last_name': request.args.get('last_name', None),
-        'username': request.args.get('username', None),
-        'photo_url': request.args.get('photo_url', None),
-        'auth_date': request.args.get('auth_date', None),
-        'hash': request.args.get('hash', None)
-    }
-
-    if check_response(data):
-        # Authorize user
-        return data
-    else:
-        return 'Authorization failed'
-
-#its test
+# its test
 @app.route('/mmwb')
 def mmwb_tools():
     return render_template('mmwb_tools.html')

@@ -9,7 +9,7 @@ from db.pool import db_pool
 from db.requests import db_get_dict, EURMTLDictsType, db_save_dict
 from utils import decode_data_value
 
-blueprint = Blueprint('laboratory', __name__)
+blueprint = Blueprint('lab', __name__)
 
 
 @blueprint.route('/laboratory')
@@ -23,7 +23,7 @@ def cmd_laboratory():
 def cmd_mtl_accounts():
     if request.method == 'POST':
         api_key = request.headers.get('Authorization')
-        if api_key != f"Bearer {config.eurmtl_key}":
+        if api_key != f"Bearer {config.eurmtl_key.get_secret_value()}":
             return jsonify({"message": "Unauthorized"}), 401
 
         data = request.json
@@ -57,7 +57,7 @@ def cmd_sequence(account_id):
 def cmd_mtl_assets():
     if request.method == 'POST':
         api_key = request.headers.get('Authorization')
-        if api_key != f"Bearer {config.eurmtl_key}":
+        if api_key != f"Bearer {config.eurmtl_key.get_secret_value()}":
             return jsonify({"message": "Unauthorized"}), 401
 
         data = request.json

@@ -1,7 +1,7 @@
 import json
 import requests
 from datetime import datetime
-from flask import Blueprint, render_template, request, abort, make_response, flash, redirect
+from flask import Blueprint, render_template, request, abort, make_response, flash, redirect, session, url_for
 from stellar_sdk import Network, TransactionEnvelope
 from stellar_sdk import Keypair
 from stellar_sdk.exceptions import BadSignatureError
@@ -9,7 +9,7 @@ from stellar_sdk import DecoratedSignature
 from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
 from db.models import Transactions, Signers, Signatures
 from db.pool import db_pool
-from utils import decode_xdr_to_text, decode_xdr_to_base64, check_publish_state
+from utils import decode_xdr_to_text, decode_xdr_to_base64, check_publish_state, check_response
 
 blueprint = Blueprint('sign_rtools', __name__)
 
@@ -101,6 +101,7 @@ def start_add_transaction():
                             hint = Keypair.from_public_key(signer['key']).signature_hint().hex()
                             db_session.add(Signers(username='FaceLess', public_key=signer['key'],
                                                    signature_hint=hint))
+                            db_session.commit()
                 sources[source] = {'threshold': threshold, 'signers': signers}
             # print(json.dumps(sources))
 
@@ -111,19 +112,20 @@ def start_add_transaction():
         tx_hash = tr.hash_hex()
         tr.signatures.clear()
 
-        if db_session.query(Transactions).filter(Transactions.hash == tx_hash).first():
-            return redirect(f'/sign_tools/{tx_hash}')
+        with db_pool() as db_session:
+            if db_session.query(Transactions).filter(Transactions.hash == tx_hash).first():
+                return redirect(f'/sign_tools/{tx_hash}')
 
-        db_session.add(
-            Transactions(hash=tx_hash, body=tr.to_xdr(), description=tx_description, json=json.dumps(sources)))
-        if len(tr_full.signatures) > 0:
-            for signature in tr_full.signatures:
-                signer = db_session.query(Signers).filter(
-                    Signers.signature_hint == signature.signature_hint.hex()).first()
-                db_session.add(Signatures(signature_xdr=signature.to_xdr_object().to_xdr(),
-                                          signer_id=signer.id if signer else None,
-                                          transaction_hash=tx_hash))
-        db_session.commit()
+            db_session.add(
+                Transactions(hash=tx_hash, body=tr.to_xdr(), description=tx_description, json=json.dumps(sources)))
+            if len(tr_full.signatures) > 0:
+                for signature in tr_full.signatures:
+                    signer = db_session.query(Signers).filter(
+                        Signers.signature_hint == signature.signature_hint.hex()).first()
+                    db_session.add(Signatures(signature_xdr=signature.to_xdr_object().to_xdr(),
+                                              signer_id=signer.id if signer else None,
+                                              transaction_hash=tx_hash))
+            db_session.commit()
 
         return redirect(f'/sign_tools/{tx_hash}')
 
@@ -164,7 +166,6 @@ def show_transaction(tr_hash):
             else:
                 if len(tr_full.signatures) > 0:
                     with db_pool() as db_session:
-
                         for signature in tr_full.signatures:
                             signer = db_session.query(Signers).filter(
                                 Signers.signature_hint == signature.signature_hint.hex()).first()
@@ -202,13 +203,14 @@ def show_transaction(tr_hash):
         has_votes = 0
         # find bad signer and calc votes
         for signer in json_transaction[address]['signers']:
-            signature = db_session.query(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
-                Signatures.transaction_hash == transaction.hash, Signers.public_key == signer[0]).first()
-            db_signer = db_session.query(Signers).filter(Signers.public_key == signer[0]).first()
-            signature_dt = db_session.query(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
-                Signers.public_key == signer[0]).order_by(Signatures.add_dt.desc()).first()
-            username = db_signer.username if db_signer else None
-            signature_days = (datetime.now() - signature_dt.add_dt).days if signature_dt else "Never"
+            with db_pool() as db_session:
+                signature = db_session.query(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
+                    Signatures.transaction_hash == transaction.hash, Signers.public_key == signer[0]).first()
+                db_signer = db_session.query(Signers).filter(Signers.public_key == signer[0]).first()
+                signature_dt = db_session.query(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
+                    Signers.public_key == signer[0]).order_by(Signatures.add_dt.desc()).first()
+                username = db_signer.username if db_signer else None
+                signature_days = (datetime.now() - signature_dt.add_dt).days if signature_dt else "Never"
             if signature:
                 if has_votes < int(json_transaction[address]['threshold']) or int(
                         json_transaction[address]['threshold']) == 0:
@@ -241,14 +243,15 @@ def show_transaction(tr_hash):
         })
 
     # show signatures
-    db_signatures = db_session.query(Signatures) \
-        .outerjoin(Signers, Signatures.signer_id == Signers.id) \
-        .filter(Signatures.transaction_hash == transaction.hash).order_by(Signatures.id).all()
-    for signature in db_signatures:
-        signer = db_session.query(Signers).filter(
-            Signers.id == signature.signer_id).first()
-        username = signer.username if signer else None
-        signatures.append([signature.id, signature.add_dt, username, signature.signature_xdr])
+    with db_pool() as db_session:
+        db_signatures = db_session.query(Signatures) \
+            .outerjoin(Signers, Signatures.signer_id == Signers.id) \
+            .filter(Signatures.transaction_hash == transaction.hash).order_by(Signatures.id).all()
+        for signature in db_signatures:
+            signer = db_session.query(Signers).filter(
+                Signers.id == signature.signer_id).first()
+            username = signer.username if signer else None
+            signatures.append([signature.id, signature.add_dt, username, signature.signature_xdr])
     #    from stellar_sdk import DecoratedSignature
     #    from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
     #    transaction_env.signatures.append(
@@ -326,3 +329,29 @@ def decode_xdr(tr_hash):
 
     # resp = make_response(render_template('edit_xdr.html', tx_body=link))
     return ('<br>'.join(encoded_xdr) + '<br><br><br>').replace('\n', '<br>').replace('  ', '&nbsp;&nbsp;')
+
+
+@blueprint.route('/login')
+def login_telegram():
+    data = {
+        'id': request.args.get('id', None),
+        'first_name': request.args.get('first_name', None),
+        'last_name': request.args.get('last_name', None),
+        'username': request.args.get('username', None),
+        'photo_url': request.args.get('photo_url', None),
+        'auth_date': request.args.get('auth_date', None),
+        'hash': request.args.get('hash', None)
+    }
+
+    if check_response(data) and data['username']:
+        # Authorize user
+        session['userdata'] = data
+        return redirect('/lab')
+    else:
+        return 'Authorization failed'
+
+
+@blueprint.route('/logout')
+def logout():
+    session.pop('userdata', None)
+    return redirect('/lab')

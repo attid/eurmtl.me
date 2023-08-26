@@ -14,6 +14,8 @@ from stellar_sdk import (
 
 )
 from stellar_sdk.exceptions import NotFoundError
+
+from config_reader import config
 from db.requests import EURMTLDictsType, db_get_dict
 from db.pool import db_pool
 
@@ -178,10 +180,10 @@ def check_response(data):
             d_list.append(key + '=' + d[key])
     data_string = bytes('\n'.join(d_list), 'utf-8')
 
-    # secret_key = hashlib.sha256(app.config['TELEGRAM_BOT_TOKEN'].encode('utf-8')).digest()
-    # hmac_string = hmac.new(secret_key, data_string, hashlib.sha256).hexdigest()
-    # i#f hmac_string == data['hash']:
-    #    return True
+    bot_secret_key = hashlib.sha256(config.bot_token.get_secret_value().encode('utf-8')).digest()
+    hmac_string = hmac.new(bot_secret_key, data_string, hashlib.sha256).hexdigest()
+    if hmac_string == data['hash']:
+        return True
     return False
 
 

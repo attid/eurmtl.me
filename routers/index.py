@@ -1,5 +1,5 @@
 import uuid
-from flask import Blueprint, send_file
+from flask import Blueprint, send_file, session, redirect, url_for
 
 blueprint = Blueprint('index', __name__)
 
@@ -23,7 +23,7 @@ def cmd_mytest():
         <script async src="https://telegram.org/js/telegram-widget.js?21" 
             data-telegram-login="MyMTLWalletBot" 
             data-size="small" 
-            data-auth-url="https://eurmtl.me/login/telegram" 
+            data-auth-url="https://eurmtl.me/login" 
             data-request-access="write">
         </script>
     </body>    
