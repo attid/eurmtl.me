@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+
+{% block nav %}
+{% endblock %}
+
+{% block content %}
+
+<form action="" method="post">
+    <fieldset id="create-tx">
+        <legend>New QR</legend>
+        <p>
+            <label for="sale_sum">SUM</label>
+            <input type="text" id="sale_sum" name="sale_sum"
+                   placeholder="please enter sum in eurmtl" value="{{ sale_sum }}">
+        </p>
+        <p>
+            <label for="memo_text">memo_text</label>
+            <input type="text" id="memo_text" name="memo_text"
+                   placeholder="you can add memo here" value="{{ memo_text }}">
+        </p>
+        <input type="submit" class="button primary" value="Create">
+    </fieldset>
+</form>
+
+{% if qr_text %}
+<img src="{{ qr_img }}"> <br>
+<a href="{{qr_text}}">Link to open QR</a>
+{% endif %}
+
+{% endblock %}

@@ -1,7 +1,7 @@
 import json
 import requests
 from datetime import datetime
-from flask import Blueprint, render_template, request, abort, make_response, flash, redirect, session, url_for
+from quart import Blueprint, request, make_response, render_template, flash, session, redirect, abort
 from stellar_sdk import Network, TransactionEnvelope
 from stellar_sdk import Keypair
 from stellar_sdk.exceptions import BadSignatureError
@@ -15,70 +15,74 @@ blueprint = Blueprint('sign_rtools', __name__)
 
 
 @blueprint.route('/adduser', methods=('GET', 'POST'))
-def start_adduser():
+@blueprint.route('/add_user', methods=('GET', 'POST'))
+async def start_adduser():
     if request.method == 'POST':
-        username = request.form['username']
-        public_key = request.form.get('public_key')
+        form_data = await request.form
+        username = form_data['username']
+        public_key = form_data.get('public_key')
         if len(username) < 3:
-            flash('Need more username')
-            resp = make_response(render_template('adduser.html', username=username, public_key=public_key))
+            await flash('Need more username')
+            resp = await render_template('adduser.html', username=username, public_key=public_key)
             return resp
 
         if username[0] != '@':
-            flash('Username must start with @')
-            resp = make_response(render_template('adduser.html', username=username, public_key=public_key))
+            await flash('Username must start with @')
+            resp = await render_template('adduser.html', username=username, public_key=public_key)
             return resp
 
         if len(public_key) < 56 or public_key[0] != 'G':
-            flash('BAD public key')
-            resp = make_response(render_template('adduser.html', username=username, public_key=public_key))
+            await flash('BAD public key')
+            resp = await render_template('adduser.html', username=username, public_key=public_key)
             return resp
 
         try:
             key = Keypair.from_public_key(public_key)
         except:
-            flash('BAD public key')
-            resp = make_response(render_template('adduser.html', username=username, public_key=public_key))
+            await flash('BAD public key')
+            resp = await render_template('adduser.html', username=username, public_key=public_key)
             return resp
 
         with db_pool() as db_session:
+            address = db_session.query(Signers).filter(Signers.username == username).first()
+            if address:
+                await flash('Username already in use')
+                resp = await render_template('adduser.html', username=username, public_key=public_key)
+                return resp
+
             address = db_session.query(Signers).filter(Signers.public_key == public_key).first()
             if address:
                 if address.username == 'FaceLess':
-                    flash('FaceLess was renamed')
+                    await flash('FaceLess was renamed')
                     address.username = username
                     db_session.commit()
                 else:
-                    flash('Public key already in use')
-                resp = make_response(render_template('adduser.html', username=username, public_key=public_key))
+                    await flash('Public key already in use')
+                resp = await render_template('adduser.html', username=username, public_key=public_key)
                 return resp
 
-            address = db_session.query(Signers).filter(Signers.username == username).first()
-            if address:
-                flash('Username already in use')
-                resp = make_response(render_template('adduser.html', username=username, public_key=public_key))
-                return resp
 
             db_session.add(Signers(username=username, public_key=public_key, signature_hint=key.signature_hint().hex()))
             db_session.commit()
 
-            flash(f'{username} with key {public_key} was added')
-            resp = make_response(render_template('adduser.html', username=username, public_key=public_key))
+            await flash(f'{username} with key {public_key} was added')
+            resp = await render_template('adduser.html', username=username, public_key=public_key)
             return resp
 
-    resp = make_response(render_template('adduser.html', username='', public_key=''))
+    resp = await render_template('adduser.html', username='', public_key='')
     return resp
 
 
 @blueprint.route('/sign_tools', methods=('GET', 'POST'))
 @blueprint.route('/sign_tools/', methods=('GET', 'POST'))
-def start_add_transaction():
+async def start_add_transaction():
     if request.method == 'POST':
-        tx_description = request.form['tx_description']
-        tx_body = request.form.get('tx_body')
+        form_data = await request.form
+        tx_description = form_data['tx_description']
+        tx_body = form_data.get('tx_body')
         if len(tx_description) < 5:
-            flash('Need more description')
-            resp = make_response(render_template('sign_add.html', tx_description=tx_description, tx_body=tx_body))
+            await flash('Need more description')
+            resp = await render_template('sign_add.html', tx_description=tx_description, tx_body=tx_body)
             return resp
 
         try:
@@ -106,8 +110,8 @@ def start_add_transaction():
             # print(json.dumps(sources))
 
         except:
-            flash('BAD xdr. Can`t load')
-            resp = make_response(render_template('sign_add.html', tx_description=tx_description, tx_body=tx_body))
+            await flash('BAD xdr. Can`t load')
+            resp = await render_template('sign_add.html', tx_description=tx_description, tx_body=tx_body)
             return resp
         tx_hash = tr.hash_hex()
         tr.signatures.clear()
@@ -129,12 +133,12 @@ def start_add_transaction():
 
         return redirect(f'/sign_tools/{tx_hash}')
 
-    resp = make_response(render_template('sign_add.html', tx_description='', tx_body=''))
+    resp = await render_template('sign_add.html', tx_description='', tx_body='')
     return resp
 
 
 @blueprint.route('/sign_tools/<tr_hash>', methods=('GET', 'POST'))
-def show_transaction(tr_hash):
+async def show_transaction(tr_hash):
     if len(tr_hash) != 64 and len(tr_hash) != 32:
         abort(404)
 
@@ -153,16 +157,17 @@ def show_transaction(tr_hash):
     try:
         json_transaction = json.loads(transaction.json)
     except:
-        flash('BAD xdr. Can`t load')
-        resp = make_response(render_template('sign_add.html', tx_description='', tx_body=''))
+        await flash('BAD xdr. Can`t load')
+        resp = await render_template('sign_add.html', tx_description='', tx_body='')
         return resp
 
     if request.method == 'POST':
-        tx_body = request.form.get('tx_body')
+        form_data = await request.form
+        tx_body = form_data.get('tx_body') or form_data.get('xdr')
         try:
             tr_full = TransactionEnvelope.from_xdr(tx_body, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
             if tr_full.hash_hex() != transaction.hash:
-                flash('Not same xdr =(')
+                await flash('Not same xdr =(')
             else:
                 if len(tr_full.signatures) > 0:
                     with db_pool() as db_session:
@@ -172,7 +177,8 @@ def show_transaction(tr_hash):
                             if db_session.query(Signatures).filter(Signatures.transaction_hash == transaction.hash,
                                                                    Signatures.signature_xdr == signature.to_xdr_object(
                                                                    ).to_xdr()).first():
-                                flash(f'Can`t add {signer.username if signer else None}. Already was add.', 'good')
+                                await flash(f'Can`t add {signer.username if signer else None}. Already was add.',
+                                            'good')
                             else:
                                 # check is good ?
                                 all_sign = []
@@ -180,7 +186,7 @@ def show_transaction(tr_hash):
                                     all_sign.extend(json_transaction[record]['signers'])
                                 json_signer = list(filter(lambda x: x[2] == signature.signature_hint.hex(), all_sign))
                                 if len(json_signer) == 0:
-                                    flash(f'Bad signature. {signature.signature_hint.hex()} not found')
+                                    await flash(f'Bad signature. {signature.signature_hint.hex()} not found')
                                 else:
                                     user_keypair = Keypair.from_public_key(json_signer[0][0])
                                     try:
@@ -188,12 +194,13 @@ def show_transaction(tr_hash):
                                         db_session.add(Signatures(signature_xdr=signature.to_xdr_object().to_xdr(),
                                                                   signer_id=signer.id if signer else None,
                                                                   transaction_hash=transaction.hash))
-                                        flash(f'Added signature from {signer.username if signer else None}', 'good')
+                                        await flash(f'Added signature from {signer.username if signer else None}',
+                                                    'good')
                                     except BadSignatureError:
-                                        flash(f'Bad signature. {signature.signature_hint.hex()} not verify')
+                                        await flash(f'Bad signature. {signature.signature_hint.hex()} not verify')
                         db_session.commit()
         except:
-            flash(f'BAD xdr. Can`t load ')
+            await flash(f'BAD xdr. Can`t load ')
 
     signers_table = []
     bad_signers = []
@@ -214,14 +221,14 @@ def show_transaction(tr_hash):
             if signature:
                 if has_votes < int(json_transaction[address]['threshold']) or int(
                         json_transaction[address]['threshold']) == 0:
-                    # flash(json_transaction[address]['threshold'], 'good')
+                    # await flash(json_transaction[address]['threshold'], 'good')
                     signature_xdr = DecoratedSignature.from_xdr_object(
                         DecoratedSignatureXdr.from_xdr(signature.signature_xdr))
                     if signature_xdr in transaction_env.signatures:
                         pass
                     else:
                         transaction_env.signatures.append(signature_xdr)
-                        # flash(f'*{address} need {json_transaction[address]["threshold"]} {has_votes} Added signature from {username} {signer[1]}', 'good')
+                        # await flash(f'*{address} need {json_transaction[address]["threshold"]} {has_votes} Added signature from {username} {signer[1]}', 'good')
                 has_votes += signer[1]
                 # with suppress(ValueError):
                 #    if signature_xdr in transaction_env.signatures.index(signature_xdr):
@@ -256,7 +263,7 @@ def show_transaction(tr_hash):
     #    from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
     #    transaction_env.signatures.append(
     #        DecoratedSignature.from_xdr_object(DecoratedSignatureXdr.from_xdr(signature.signature_xdr)))
-    # flash(transaction.json)
+    # await flash(transaction.json)
 
     # try send
     send = request.args.get('send', default=None)
@@ -265,33 +272,45 @@ def show_transaction(tr_hash):
             transaction_resp = requests.post('https://horizon.stellar.org/transactions/',
                                              data={"tx": transaction_env.to_xdr()})
             if transaction_resp.status_code == 200:
-                flash(f'Successfully sent, accepted : {transaction_resp.json()["successful"]}', 'good')
+                await flash(f'Successfully sent, accepted : {transaction_resp.json()["successful"]}', 'good')
             else:
-                flash(f'Failed to send. {transaction_resp.json()["extras"]["result_codes"]}')
+                await flash(f'Failed to send. {transaction_resp.json()["extras"]["result_codes"]}')
         except Exception as e:
-            flash("Failed to send. The error is unclear")
-            flash(f'{e}')
+            await flash("Failed to send. The error is unclear")
+            await flash(f'{e}')
 
-    resp = make_response(render_template('sign_sign.html', tx_description=transaction.description,
-                                         tx_body=transaction.body, tx_hash=transaction.hash,
-                                         bad_signers=set(bad_signers), signatures=signatures,
-                                         signers_table=signers_table, uuid=transaction.uuid,
-                                         tx_full=transaction_env.to_xdr(),
-                                         publish_state=check_publish_state(transaction.hash)))
+    # xxx = 'AAAAAgAAAAAEqbejBk1rxsHVls854RnAyfpJaZacvgwmQ0jxNDBvqgABhwQCGVTNAAAESgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAYzMjE2NTQAAAAAAAEAAAAAAAAABgAAAAFNTU0AAAAAAASpt6MGTWvGwdWWzznhGcDJ+klplpy+DCZDSPE0MG+qf/////////8AAAAAAAAAAA=='
+    # qr_text = (f'web+stellar:tx?xdr={quote_plus(xxx)}'
+    #            f'&callback={quote_plus(f"https://eurmtl.me/sign_tools/{transaction.hash}")}'
+    #            f'&msg={quote_plus(transaction.description[:200])}'
+    #            #f'&pubkey=GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'
+    #            f'&origin_domain=eurmtl.me')
+    # signature = uri_sign(qr_text, config_reader.config.signing_key.get_secret_value())
+    # qr_text = f'{qr_text}&signature={signature}'
+    # qr_img = f'/static/qr/{uuid.uuid4().hex}.svg'
+    # qr = pyqrcode.create(qr_text)
+    # qr.svg(start_path + qr_img, scale=6)
+
+    resp = await render_template('sign_sign.html', tx_description=transaction.description,
+                                 tx_body=transaction.body, tx_hash=transaction.hash,
+                                 bad_signers=set(bad_signers), signatures=signatures,
+                                 signers_table=signers_table, uuid=transaction.uuid,
+                                 tx_full=transaction_env.to_xdr(),
+                                 publish_state=check_publish_state(transaction.hash))
     return resp
 
 
 @blueprint.route('/sign_all', methods=('GET', 'POST'))
 @blueprint.route('/sign_all/', methods=('GET', 'POST'))
-def start_show_all_transactions():
+async def start_show_all_transactions():
     with db_pool() as db_session:
         transactions = db_session.query(Transactions).order_by(Transactions.add_dt.desc()).all()
-        resp = make_response(render_template('sign_all.html', transactions=transactions))
+        resp = await render_template('sign_all.html', transactions=transactions)
         return resp
 
 
 @blueprint.route('/edit_xdr/<tr_hash>', methods=('GET', 'POST'))
-def edit_xdr(tr_hash):
+async def edit_xdr(tr_hash):
     if len(tr_hash) != 64 and len(tr_hash) != 32:
         abort(404)
 
@@ -307,12 +326,12 @@ def edit_xdr(tr_hash):
     encoded_xdr = decode_xdr_to_base64(transaction.body)
     link = f'https://laboratory.stellar.org/#txbuilder?params={encoded_xdr}&network=public'
 
-    resp = make_response(render_template('edit_xdr.html', tx_body=link))
+    resp = await render_template('edit_xdr.html', tx_body=link)
     return resp
 
 
 @blueprint.route('/decode/<tr_hash>', methods=('GET', 'POST'))
-def decode_xdr(tr_hash):
+async def decode_xdr(tr_hash):
     if len(tr_hash) != 64 and len(tr_hash) != 32:
         abort(404)
 
@@ -327,12 +346,12 @@ def decode_xdr(tr_hash):
 
     encoded_xdr = decode_xdr_to_text(transaction.body)
 
-    # resp = make_response(render_template('edit_xdr.html', tx_body=link))
+    # resp = await make_response(render_template('edit_xdr.html', tx_body=link))
     return ('<br>'.join(encoded_xdr) + '<br><br><br>').replace('\n', '<br>').replace('  ', '&nbsp;&nbsp;')
 
 
 @blueprint.route('/login')
-def login_telegram():
+async def login_telegram():
     data = {
         'id': request.args.get('id', None),
         'first_name': request.args.get('first_name', None),
@@ -352,6 +371,6 @@ def login_telegram():
 
 
 @blueprint.route('/logout')
-def logout():
-    session.pop('userdata', None)
+async def logout():
+    await session.pop('userdata', None)
     return redirect('/lab')

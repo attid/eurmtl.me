@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+
+
+{% block head_scripts %}
+<script src="/static/decision.js"></script>
+{% endblock %}
+
+{% block content %}
+
+{% if links_url %}
+<div class="links">
+    {% if links_url[0] %}<a href="{{ links_url[0][0] }}">Первое чтение</a><br>{% else %}<br>{% endif %}
+    {% if links_url[1] %}<a href="{{ links_url[1][0] }}">Второе чтение</a><br>{% else %}<br>{% endif %}
+    {% if links_url[2] %}<a href="{{ links_url[2][0] }}">Третье чтение</a><br>{% else %}<br>{% endif %}
+</div>
+{% endif %}
+
+
+<form action="" method="post">
+    <fieldset id="create-tx">
+        <legend>Вопрос</legend>
+        <div class="question_number">
+            <label for="question_number">Номер вопроса:</label>
+            <div class="input-group">
+                <input type="text" id="question_number" name="question_number" class="question_number" required placeholder="Номер вопроса, нажмите кнопку чтоб получить" value="{{ question_number }}"
+                {% if links_url %}
+                     disabled >
+                {% else %}
+                    ><button type="button" class="loadsDecisionNum button secondary">🔍</button>
+                {% endif %}
+            </div>
+        </div>
+        <p>
+            <label for="short_subject">Тема коротко</label>
+            <input type="text" id="short_subject" name="short_subject" required placeholder="Тема коротко" value="{{ short_subject }}">
+        </p>
+        <p>
+            <label for="inquiry">Вопрос</label>
+            <textarea id="inquiry" name="inquiry" placeholder="Введите ваш вопрос" required>{{ inquiry }}</textarea>
+        </p>
+        <p>
+            <label>Чтение</label>
+            <label><input type="radio" name="reading" value="1" {{ 'checked' if reading == 1 else '' }}> Первое чтение</label>
+            <label><input type="radio" name="reading" value="2" {{ 'checked' if reading == 2 else '' }}> Второе чтение</label>
+            <label><input type="radio" name="reading" value="3" {{ 'checked' if reading == 3 else '' }}> Третье чтение</label>
+        </p>
+        <input type="submit" class="button primary" value="Опубликовать">
+    </fieldset>
+</form>
+
+{% endblock %}

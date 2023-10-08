@@ -1,0 +1,124 @@
+{% extends 'base.html' %}
+
+{% block nav %}
+{% endblock %}
+
+{% block content %}
+
+
+<div class="row control-buttons">
+    <a href="https://laboratory.stellar.org/#txsigner?network=public" id="laboratory-url"
+       target="_blank" class="button secondary outline">Open Laboratory</a>
+    <button class="button outline" onclick="copy_tx()">Copy Transaction</button>
+    <button class="button outline" onclick="getDecode()">Decode</button>
+    {% if uri_xdr %}
+    <a href="{{ uri_xdr }}" id="uri-url"
+       target="_blank" class="button secondary outline">Open in Lobster*</a>
+    {% endif %}
+</div>
+
+<div id="responseDiv" style="display: none;"></div>
+<div class="row">
+    <div class="col">
+        <span class="tx-body">{{xdr}}</span>
+    </div>
+</div>
+
+<p>
+    <label for="private_key">Private Key</label>
+    <input type="text" id="private_key" name="private_key"
+           placeholder="private_key with S" value="">
+</p>
+<input type="button" class="button primary" value="Sign" onclick="sign_tx()">
+
+<div id="signedDiv" style="display: none;"></div>
+
+
+{% if qr_text %}
+<img src="{{ qr_img }}"> <br>
+<a href="{{qr_text}}">Link to open QR</a>
+{% endif %}
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/10.4.1/stellar-sdk.min.js"></script>
+<script>
+    async function copy_tx() {
+        await navigator.clipboard.writeText(document.querySelector(".tx-body").innerText);
+    }
+
+    async function getDecode() {
+        var responseDiv = document.getElementById("responseDiv");
+
+        try {
+            let response = await fetch('https://eurmtl.me/decode/{{tx_hash}}');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            } else {
+                let text = await response.text();
+                responseDiv.innerHTML = text;
+                responseDiv.style.display = 'block';
+            }
+        } catch (error) {
+            console.error('There was a problem fetching the response:', error);
+        }
+    }
+
+    async function sign_tx() {
+        let xdr = document.querySelector(".tx-body").innerText;
+        let privateKey = document.getElementById("private_key").value;
+
+        if (!privateKey) {
+            console.error('Private key is empty');
+            return;
+        }
+
+        const server = new StellarSdk.Server('https://horizon.stellar.org');
+
+        try {
+            let sourceKeys = StellarSdk.Keypair.fromSecret(privateKey);
+            let transaction = new StellarSdk.Transaction(xdr, StellarSdk.Networks.PUBLIC);
+
+            transaction.sign(sourceKeys);
+
+            let signedXDR = transaction.toEnvelope().toXDR().toString('base64');
+
+            let signedDiv = document.getElementById("signedDiv");
+            signedDiv.innerHTML = `
+                <div class="row">
+                    <div class="col">
+                        <span class="tx-body">${signedXDR}</span>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col">
+                        <input type="button" class="button primary" value="Submit" onclick="submit_tx()">
+                    </div>
+                </div>
+            `;
+            signedDiv.style.display = 'block';
+        } catch (error) {
+            console.error('Error signing transaction:', error);
+        }
+    }
+
+    async function submit_tx() {
+        let signedXDR = document.querySelector("#signedDiv .tx-body").innerText;
+
+        const server = new StellarSdk.Server('https://horizon.stellar.org');
+
+        try {
+            let transaction = new StellarSdk.Transaction(signedXDR, StellarSdk.Networks.PUBLIC);
+            let transactionResult = await server.submitTransaction(transaction);
+
+            alert('Транзакция успешно отправлена!');
+            console.log('Transaction submitted:', transactionResult);
+        } catch (error) {
+            let errorCode = (error.response && error.response.data && error.response.data.extras && error.response.data.extras.result_codes && error.response.data.extras.result_codes.operations) || 'Неизвестная ошибка';
+            alert('Произошла ошибка при отправке транзакции. Код ошибки: ' + errorCode);
+            console.error('Error submitting transaction:', error);
+        }
+    }
+
+
+</script>
+
+{% endblock %}

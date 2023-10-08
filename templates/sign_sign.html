@@ -168,6 +168,10 @@
 </div>
 {% endfor %}
 
+{% if qr_text %}
+<img src="{{ qr_img }}"> <br>
+<a href="{{qr_text}}">Link to open QR</a>
+{% endif %}
 
 <h2 class="history-tittle">Full transaction</h2>
 <span class="tx-body">{{tx_full}}</span>

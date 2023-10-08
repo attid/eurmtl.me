@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+
+{% block nav %}
+{% endblock %}
+
+{% block content %}
+
+{% if qr_text %}
+
+страничка для открытия трастлайна к {{asset_code}} от эмитента {{asset_issuer}} <br>
+
+<img src="{{ qr_img }}"> <br>
+<a href="{{qr_text}}">Link to open in lobster</a>
+{% endif %}
+
+{% endblock %}

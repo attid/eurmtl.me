@@ -1,11 +1,11 @@
 import uuid
-from flask import Blueprint, send_file, session, redirect, url_for
+from quart import Blueprint, send_file
 
 blueprint = Blueprint('index', __name__)
 
 
 @blueprint.route('/')
-def cmd_index():
+async def cmd_index():
     text = 'This is a technical domain montelibero.org. ' \
            'You can get more information on the website <a href="https://montelibero.org">montelibero.org</a> ' \
            'or in telegram <a href="https://t.me/Montelibero_org">Montelibero_org</a>' \
@@ -17,7 +17,17 @@ def cmd_index():
 
 
 @blueprint.route('/mytest', methods=('GET', 'POST'))
-def cmd_mytest():
+async def cmd_mytest():
+    # data = {
+    #     'id': 25,
+    #     'first_name': 'i',
+    #     'last_name': 'l',
+    #     'username': 'itolstov',
+    #     'photo_url': 'ya.ru',
+    #     'auth_date': '010101',
+    #     'hash': '321321'
+    # }
+    # session['userdata'] = data
     return '''
     <body>
         <script async src="https://telegram.org/js/telegram-widget.js?21" 
@@ -30,19 +40,21 @@ def cmd_mytest():
     '''
 
 
+
+
 @blueprint.route('/uuid', methods=('GET', 'POST'))
-def cmd_uuid():
+async def cmd_uuid():
     return uuid.uuid4().hex
 
 
 @blueprint.route('/err', methods=('GET', 'POST'))
-def cmd_send_err():
+async def cmd_send_err():
     debug = True
     if debug:
         file_name = '/home/c/cb61047/eurmtl.me/error_log'
         import os
         if os.path.isfile(file_name):
-            return send_file(file_name, mimetype='text/plain')
+            return await send_file(file_name, mimetype='text/plain')
             # with open(file_name, "r") as f:
             #    text = f.read()
         else:

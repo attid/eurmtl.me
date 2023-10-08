@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, jsonify, request, make_response
+from quart import Blueprint, request, jsonify, make_response, render_template
 from db.models import Addresses
 from db.pool import db_pool
 
@@ -7,7 +7,7 @@ blueprint = Blueprint('federal', __name__)
 
 @blueprint.route('/federation')
 @blueprint.route('/federation/')
-def federation():
+async def federation():
     # https://eurmtl.me/federation/?q=english*eurmtl.me&type=name
     # https://eurmtl.me/federation/?q=GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB&type=id
     if request.args.get('q') and request.args.get('type'):
@@ -38,8 +38,8 @@ def federation():
 
 
 @blueprint.route('/.well-known/stellar.toml')
-def stellar_toml():
-    resp = make_response(render_template('stellar.toml'))
-    resp.headers.add('Access-Control-Allow-Origin', '*')
-    resp.headers.add('Content-Type', 'text/plain')
+async def stellar_toml():
+    resp = await make_response(await render_template('stellar.toml'))
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    resp.headers['Content-Type'] = 'text/plain'
     return resp

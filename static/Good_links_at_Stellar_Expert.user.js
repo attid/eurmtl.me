@@ -3,7 +3,7 @@
 // @namespace   http://tampermonkey.net/
 // @match       https://stellar.expert/explorer/public/account/*
 // @grant       none
-// @version     0.5
+// @version     0.6
 // @description Change links at Stellar Expert
 // @author      skynet
 // @updateURL   https://eurmtl.me/static/Good_links_at_Stellar_Expert.user.js
@@ -25,7 +25,16 @@ let observer;
             let assetLink = link.querySelector('.asset-link');
             let asset = assetLink.getAttribute('aria-label');
             if (asset) {
-                let newHref = `https://stellar.expert/explorer/public/asset/${asset}`;
+                let newHref;
+
+                // Если asset содержит "-", значит это первый формат
+                if (asset.includes('-')) {
+                    newHref = `https://stellar.expert/explorer/public/asset/${asset}`;
+                } else {
+                    // Иначе это второй формат
+                    newHref = `https://stellar.expert/explorer/public/liquidity-pool/${asset}`;
+                }
+
                 link.addEventListener('click', function(e) {
                     e.preventDefault();
                     window.location.href = newHref;

@@ -1,5 +1,6 @@
 import os
-from pydantic import BaseSettings, SecretStr
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings
 
 start_path = os.path.dirname(__file__)
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -10,6 +11,8 @@ class Settings(BaseSettings):
     secret_key: SecretStr
     eurmtl_key: SecretStr
     bot_token: SecretStr
+    signing_key: SecretStr
+    skynet_token: SecretStr
 
     class Config:
         env_file = dotenv_path

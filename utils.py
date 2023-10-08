@@ -10,11 +10,13 @@ from stellar_sdk import (
     TextMemo,
     TransactionEnvelope,
     PathPaymentStrictSend,
-    ManageSellOffer, Transaction
+    ManageSellOffer, Transaction, Keypair, Server, Asset, TransactionBuilder
 
 )
 from stellar_sdk.exceptions import NotFoundError
+from stellar_sdk.sep import stellar_uri
 
+import config_reader
 from config_reader import config
 from db.requests import EURMTLDictsType, db_get_dict
 from db.pool import db_pool
@@ -196,7 +198,7 @@ def asset_to_link(operation_asset) -> str:
     start_url = "https://stellar.expert/explorer/public/asset"
     if operation_asset.code == 'XLM':
         return f'<a href="{start_url}/{operation_asset.code}" target="_blank">{operation_asset.code}⭐</a>'
-    else:        
+    else:
         # add * if we have asset in DB
         db_data = db_get_dict(db_pool(), EURMTLDictsType.Assets)
         if db_data.get(operation_asset.code, '--') == operation_asset.issuer:
@@ -253,7 +255,8 @@ def decode_xdr_to_text(xdr):
     else:
         result.append(f"Fee {transaction.transaction.fee}")
 
-    if transaction.transaction.preconditions.time_bounds.max_time > 0:
+    if (transaction.transaction.preconditions and transaction.transaction.preconditions.time_bounds and
+            transaction.transaction.preconditions.time_bounds.max_time > 0):
         human_readable_time = datetime.utcfromtimestamp(
             transaction.transaction.preconditions.time_bounds.max_time).strftime('%d.%m.%Y %H:%M:%S')
         result.append(f"MaxTime ! {human_readable_time} UTC")
@@ -325,6 +328,10 @@ def decode_xdr_to_text(xdr):
             if operation.med_threshold:
                 data_exist = True
                 result.append(f"Установка нового требования. Нужно будет {operation.med_threshold} голосов")
+            if operation.home_domain:
+                data_exist = True
+                result.append(f"Установка нового домена {operation.home_domain}")
+
             continue
         if type(operation).__name__ == "ChangeTrust":
             data_exist = True
@@ -389,6 +396,15 @@ def decode_xdr_to_text(xdr):
             result.append(
                 f"    ManageData {operation.data_name} = {operation.data_value} ")
             continue
+        if type(operation).__name__ == "SetTrustLineFlags":
+            data_exist = True
+            result.append(
+                f"    Trustor {address_id_to_link(operation.trustor)} for asset {asset_to_link(operation.asset)}")
+            if operation.clear_flags is not None:
+                result.append(f"    Clear flags: {operation.clear_flags}")
+            if operation.set_flags is not None:
+                result.append(f"    Set flags: {operation.set_flags}")
+            continue
         if type(operation).__name__ == "CreateAccount":
             data_exist = True
             result.append(
@@ -435,9 +451,69 @@ def decode_data_value(data_value: str):
     return message
 
 
+def construct_payload(data):
+    # prefix 4 to denote application-based signing using 36 bytes
+    prefix_selector_bytes = bytes([0] * 35) + bytes([4])
+
+    # standardized namespace prefix for this signing use case
+    prefix = "stellar.sep.7 - URI Scheme"
+
+    # variable number of bytes for the prefix + data
+    uri_with_prefix_bytes = (prefix + data).encode()
+
+    result = prefix_selector_bytes + uri_with_prefix_bytes
+    return result
+
+
+def uri_sign(data, stellar_private_key):
+    # construct the payload
+    payload_bytes = construct_payload(data)
+
+    # sign the data
+    kp = Keypair.from_secret(stellar_private_key)
+    signature_bytes = kp.sign(payload_bytes)
+
+    # encode the signature as base64
+    base64_signature = base64.b64encode(signature_bytes).decode()
+    print("base64 signature:", base64_signature)
+
+    # url-encode it
+    from urllib.parse import quote
+    url_encoded_base64_signature = quote(base64_signature)
+    return url_encoded_base64_signature
+
+
+def add_trust_line_uri(public_key, asset_code, asset_issuer) -> str:
+    source_account = Server("https://horizon.stellar.org").load_account(account_id=public_key)
+
+    transaction = (
+        TransactionBuilder(
+            source_account=source_account,
+            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            base_fee=101010
+        )
+        .append_change_trust_op(Asset(asset_code, asset_issuer))
+        .set_timeout(3600)
+        .build()
+    )
+    r1 = stellar_uri.Replacement("sourceAccount", "X", "account on which to create the trustline")
+    r2 = stellar_uri.Replacement("seqNum", "Y", "sequence for sourceAccount")
+    replacements = [r1, r2]
+    t = stellar_uri.TransactionStellarUri(transaction_envelope=transaction, replace=replacements,
+                                          origin_domain='eurmtl.me')
+    t.sign(config_reader.config.signing_key.get_secret_value())
+
+    return t.to_uri()
+
+
+def xdr_to_uri(xdr):
+    transaction = TransactionEnvelope.from_xdr(xdr, Network.PUBLIC_NETWORK_PASSPHRASE)
+    return stellar_uri.TransactionStellarUri(transaction_envelope=transaction).to_uri()
+
+
 if __name__ == '__main__':
-    print(decode_xdr_to_text(
-        'AAAAAgAAAAAh0kU1R5Fu0q15K3pSrLn2YQzp4FILsABT49qG1gUcwAAAdTACwvFDAAAABQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAARRMTEwAAAAAwAAAAEAAAAAIdJFNUeRbtKteSt6Uqy59mEM6eBSC7AAU+PahtYFHMAAAAAGAAAAAkRhbWlyQ29pbgAAAAAAAAAomzo5LuLnQ1deMfyhsr56isqSkoDnEr+DV2yGtVyHAH//////////AAAAAQAAAAAJk92FjbTLLsK8gty2kiek3bh5GNzHlPtL2Ju3g1BewQAAAAEAAAAAIdJFNUeRbtKteSt6Uqy59mEM6eBSC7AAU+PahtYFHMAAAAACRVVSTVRMAAAAAAAAAAAAAASpt6MGTWvGwdWWzznhGcDJ+klplpy+DCZDSPE0MG+qAAAAF0h26AAAAAABAAAAACHSRTVHkW7SrXkrelKsufZhDOngUguwAFPj2obWBRzAAAAAAwAAAAJFVVJNVEwAAAAAAAAAAAAABKm3owZNa8bB1ZbPOeEZwMn6SWmWnL4MJkNI8TQwb6oAAAACRGFtaXJDb2luAAAAAAAAACibOjku4udDV14x/KGyvnqKypKSgOcSv4NXbIa1XIcAAAAAF0h26AAAAAABAAAAAQAAAAAAAAAAAAAAAAAAAAA='))
+    print(xdr_to_uri(
+        'AAAAAgAAAACbUeUHNfn9lIj6LioAl6J4EwlEYcu/Vw/pGS+++oBWBgAAJxAC4KLIAAAAAwAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABNTZXQgdGhlIGhvbWUgZG9tYWluAAAAAAEAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAB210bGEubWUAAAAAAAAAAAAAAAAA'))
     exit()
     # simple way to find error in editing
     l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHQlRPRjZSTEhSUEc1TlJJVTZNUTdKR01DVjdZSEw1VjMzWVlDNzZZWUc0SlVLQ0pUVVA1REVGSSIsInNlcXVlbmNlIjoiMTg2NzM2MjAxNTQ4NDMxMzc4IiwiZmVlIjoiMTAwMTAiLCJiYXNlRmVlIjoiMTAwIiwibWluRmVlIjoiNTAwMCIsIm1lbW9UeXBlIjoiTUVNT19URVhUIiwibWVtb0NvbnRlbnQiOiJsYWxhbGEifSwiZmVlQnVtcEF0dHJpYnV0ZXMiOnsibWF4RmVlIjoiMTAxMDEifSwib3BlcmF0aW9ucyI6W3siaWQiOjAsImF0dHJpYnV0ZXMiOnsiZGVzdGluYXRpb24iOiJHQUJGUUlLNjNSMk5FVEpNN1Q2NzNFQU1aTjRSSkxMR1AzT0ZVRUpVNVNaVlRHV1VLVUxaSk5MNiIsImFzc2V0Ijp7InR5cGUiOiJjcmVkaXRfYWxwaGFudW00IiwiY29kZSI6IlVTREMiLCJpc3N1ZXIiOiJHQTVaU0VKWUIzN0pSQzVBVkNJQTVNT1A0UkhUTTMzNVgyS0dYM0lIT0pBUFA1UkUzNEs0S1pWTiJ9LCJhbW91bnQiOiIzMDAwMCIsInNvdXJjZUFjY291bnQiOm51bGx9LCJuYW1lIjoicGF5bWVudCJ9XX0%3D&network=public'

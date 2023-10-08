@@ -279,6 +279,22 @@ document.addEventListener('DOMContentLoaded', function() {
                     });
             }
 
+            if (event.target.classList.contains('loadsDecisionNum')) {
+                fetch(`/decision/number`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error("Network response was not ok");
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        document.querySelector("#question_number").value = data.number;
+                    })
+                    .catch(error => {
+                        console.log("There was a problem with the fetch operation:", error.message);
+                    });
+            }
+
             // Для fetchAssetSrc
             if (Array.from(event.target.classList).some(className => /^fetch/.test(className))) {
                 let fieldName = event.target.closest('.account-selector').querySelector('input').className;

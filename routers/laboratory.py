@@ -1,13 +1,11 @@
-import asyncio
-
 import requests
-from flask import Blueprint, render_template, jsonify, request
+from quart import Blueprint, request, render_template, jsonify
 from stellar_sdk import Server, TransactionBuilder, Network, Asset
 
 from config_reader import config
 from db.pool import db_pool
 from db.requests import db_get_dict, EURMTLDictsType, db_save_dict
-from utils import decode_data_value
+from utils import decode_data_value, float2str
 
 blueprint = Blueprint('lab', __name__)
 
@@ -15,12 +13,12 @@ blueprint = Blueprint('lab', __name__)
 @blueprint.route('/laboratory')
 @blueprint.route('/lab')
 @blueprint.route('/lab/')
-def cmd_laboratory():
-    return render_template('laboratory.html')
+async def cmd_laboratory():
+    return await render_template('laboratory.html')
 
 
 @blueprint.route('/lab/mtl_accounts', methods=['GET', 'POST'])
-def cmd_mtl_accounts():
+async def cmd_mtl_accounts():
     if request.method == 'POST':
         api_key = request.headers.get('Authorization')
         if api_key != f"Bearer {config.eurmtl_key.get_secret_value()}":
@@ -44,7 +42,7 @@ def cmd_mtl_accounts():
 
 
 @blueprint.route('/lab/sequence/<account_id>')
-def cmd_sequence(account_id):
+async def cmd_sequence(account_id):
     try:
         r = requests.get('https://horizon.stellar.org/accounts/' + account_id).json()
         sequence = int(r['sequence']) + 1
@@ -54,7 +52,7 @@ def cmd_sequence(account_id):
 
 
 @blueprint.route('/lab/mtl_assets', methods=['GET', 'POST'])
-def cmd_mtl_assets():
+async def cmd_mtl_assets():
     if request.method == 'POST':
         api_key = request.headers.get('Authorization')
         if api_key != f"Bearer {config.eurmtl_key.get_secret_value()}":
@@ -87,10 +85,12 @@ def decode_asset(asset):
 
 
 @blueprint.route('/lab/build_xdr', methods=['POST'])
-def cmd_build_xdr():
-    data = request.json
-    # {'publicKey': 'GAUBJ4CTRF42Z7OM7QXTAQZG6BEMNR3JZY57Z4LB3PXSDJXE5A5GIGJB', 'sequence': '167193185523597322', 'memo_type': 'text', 'memo': '654654',
-    # 'operations': [{'type': 'payment', 'destination': 'GBTOF6RLHRPG5NRIU6MQ7JGMCV7YHL5V33YYC76YYG4JUKCJTUP5DEFI', 'asset': 'Agora-GBGGX7QD3JCPFKOJTLBRAFU3SIME3WSNDXETWI63EDCORLBB6HIP2CRR', 'amount': '66', 'sourceAccount': ''}]}
+async def cmd_build_xdr():
+    data = await request.json
+    # {'publicKey': 'GAUBJ4CTRF42Z7OM7QXTAQZG6BEMNR3JZY57Z4LB3PXSDJXE5A5GIGJB', 'sequence': '167193185523597322',
+    # 'memo_type': 'text', 'memo': '654654',
+    # 'operations': [{'type': 'payment', 'destination': 'GBTOF6RLHRPG5NRIU6MQ7JGMCV7YHL5V33YYC76YYG4JUKCJTUP5DEFI',
+    # 'asset': 'Agora-GBGGX7QD3JCPFKOJTLBRAFU3SIME3WSNDXETWI63EDCORLBB6HIP2CRR', 'amount': '66', 'sourceAccount': ''}]}
 
     root_account = Server(horizon_url="https://horizon.stellar.org").load_account(data['publicKey'])
     transaction = TransactionBuilder(source_account=root_account, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
@@ -106,7 +106,7 @@ def cmd_build_xdr():
         if operation['type'] == 'payment':
             transaction.append_payment_op(destination=operation['destination'],
                                           asset=decode_asset(operation['asset']),
-                                          amount=operation['amount'],
+                                          amount=float2str(operation['amount']),
                                           source=sourceAccount)
         if operation['type'] == 'change_trust':
             transaction.append_change_trust_op(asset=decode_asset(operation['asset']),
@@ -119,14 +119,14 @@ def cmd_build_xdr():
         if operation['type'] == 'sell':
             transaction.append_manage_sell_offer_op(selling=decode_asset(operation['selling']),
                                                     buying=decode_asset(operation['buying']),
-                                                    amount=operation['amount'],
+                                                    amount=float2str(operation['amount']),
                                                     price=operation['price'],
                                                     offer_id=int(operation['offer_id']),
                                                     source=sourceAccount)
         if operation['type'] == 'buy':
             transaction.append_manage_buy_offer_op(selling=decode_asset(operation['selling']),
                                                    buying=decode_asset(operation['buying']),
-                                                   amount=operation['amount'],
+                                                   amount=float2str(operation['amount']),
                                                    price=operation['price'],
                                                    offer_id=int(operation['offer_id']),
                                                    source=sourceAccount)
@@ -157,7 +157,7 @@ def cmd_build_xdr():
 
 
 @blueprint.route('/lab/assets/<account_id>')
-def cmd_assets(account_id):
+async def cmd_assets(account_id):
     result = {'XLM': 'XLM'}
     try:
         account = Server(horizon_url="https://horizon.stellar.org").accounts().account_id(account_id).call()
@@ -177,7 +177,7 @@ def cmd_assets(account_id):
 
 
 @blueprint.route('/lab/data/<account_id>')
-def cmd_data(account_id):
+async def cmd_data(account_id):
     result = {}
     try:
         account = Server(horizon_url="https://horizon.stellar.org").accounts().account_id(account_id).call()
@@ -191,13 +191,13 @@ def cmd_data(account_id):
 
 
 @blueprint.route('/lab/offers/<account_id>')
-def cmd_offers(account_id):
+async def cmd_offers(account_id):
     result = {}
     try:
         account = Server(horizon_url="https://horizon.stellar.org").offers().for_account(account_id).call()
         for record in account['_embedded']['records']:
             result[f"{record['id']} selling {record['amount']} {record['selling']['asset_code']} " +
-                   f"for {record['selling']['asset_code']} price {record['price']}"] = record['id']
+                   f"for {record['buying']['asset_code']} price {record['price']}"] = record['id']
     except:
         pass
     return jsonify(result)
