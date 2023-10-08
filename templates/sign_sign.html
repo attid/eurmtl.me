@@ -10,6 +10,7 @@
        target="_blank" class="button secondary outline">Open Laboratory</a>
     <a href="https://t.me/MyMTLWalletBot?start=sign_{{uuid}}" id="mmwb-url"
        target="_blank" class="button secondary outline">Open at MyMTLWalletBot</a>
+    <button class="button outline" onclick="show_sign_div()">Sign Here</button>
     <a href="?send" id="send" class="button secondary outline">Send to Stellar</a>
 </div>
 
@@ -22,18 +23,26 @@
     is published with error</a></h4>
 {% endif %}
 
-<form action="" method="post">
+<form action="" method="post" id="txForm">
     <fieldset id="update-tx">
         <legend>Update transaction</legend>
         <p>
             <label for="tx_body">Transaction body</label>
             <textarea id="tx_body" name="tx_body" placeholder="Transaction body with new signatures"></textarea>
         </p>
+        <p id="signP" style="display: none;">
+            <label for="private_key">Private Key</label>
+            <input type="text" id="private_key" name="private_key"
+                   placeholder="private_key with S" value=""
+                   oninput="sign_tx()" onpaste="sign_tx()">
+        </p>
         <div class="form-buttons">
+            <input type="button" class="button primary" value="Sign" onclick="sign_tx()" id="signB" style="display: none;">
             <button type="button" class="button primary" onclick="paste_tx()">Paste Transaction</button>
             <input type="submit" class="button primary" value="Update"/>
         </div>
     </fieldset>
+
 </form>
 
 {% if publish_state == 1 %}
@@ -51,7 +60,7 @@
 </div>
 <div id="responseDiv" style="display: none;"></div>
 <div class="row">
-    <div class="col">
+    <div class="col" id="defXdrDiv">
         <span class="tx-body">{{tx_body}}</span>
     </div>
 </div>
@@ -59,7 +68,8 @@
 
 {% for record in signers_table %}
 <h5 class="required-signs">Collected {{record['has_votes']}} from {{record['threshold']}} for
-    <span class="head-address" title="{{record['sources']}}">{{record['sources'][:4]}}..{{record['sources'][-4:]}}</span></h5>
+    <span class="head-address"
+          title="{{record['sources']}}">{{record['sources'][:4]}}..{{record['sources'][-4:]}}</span></h5>
 <div class="row singers">
     <fieldset class="signer" id="signatures">
         <legend>Signatures</legend>
@@ -89,12 +99,12 @@
                    href="https://stellar.expert/explorer/public/account/{{signer[0]}}">{{signer[0][:4]}}..{{signer[0][-8:-4]}}..{{signer[0][-4:]}}</a>
             </div>
             <div class="col-2">
-                {% if signer[1] %}
-                {% if signer[1] == 'FaceLess' %}
+                {% if admin_weight == 0 %}
                 FaceLess
-                {% else %}
+                {% elif signer[1] and signer[1][0] == '@' %}
                 <a class="signer-telegram" href="https://t.me/{{signer[1][1:]}}">{{signer[1]}}</a>
-                {% endif %}
+                {% elif signer[1] %}
+                {{signer[1]}}
                 {% endif %}
             </div>
             <div class="col-2">
@@ -115,6 +125,7 @@
 {% endfor %}
 
 
+{% if admin_weight > 0 %}
 <h5>Those who not yet signed:</h5>
 <div class="row ignorants">
     <div class="col-2">
@@ -123,15 +134,14 @@
     <div class="col-10 ignorants-nicks">
         {% for signer in bad_signers %}
         {% if signer %}
-        {% if signer != 'FaceLess' %}
+        {% if signer[0] == '@' %}
         <a class="singer-telegram" href="https://t.me/{{signer[1:]}}">{{signer}}</a>
         {% endif %}
         {% endif %}
-
-
         {% endfor %}
     </div>
 </div>
+{% endif %}
 
 
 <h2 class="history-tittle">Transaction signatures</h2>
@@ -160,7 +170,11 @@
         {{signature[1]}}
     </div>
     <div class="col-3">
+        {% if admin_weight == 0 %}
+        FaceLess
+        {% else %}
         {{signature[2]}}
+        {% endif %}
     </div>
     <div class="col-4">
         <span class="tx-body">{{signature[3]}}</span>
@@ -178,49 +192,98 @@
 
 <div class="row control-buttons">
     <a href="/edit_xdr/{{tx_hash}}" id="edit_xdr"
-        class="button secondary outline">Edit xdr</a>
+       class="button secondary outline">Edit xdr</a>
 </div>
 
-
+<script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/10.4.1/stellar-sdk.min.js"></script>
 <script>
 
-function reload_page() {
-    location.reload();
-}
-
-function paste_tx() {
-    navigator.clipboard.readText().then(
-        clipText => document.querySelector("#tx_body").innerText = clipText);
-}
-
-async function copy_tx() {
-    await navigator.clipboard.writeText(document.querySelector(".tx-body").innerText);
-}
-
-async function copy_url() {
-    await navigator.clipboard.writeText(window.location.href);
-}
-
-async function copy_ignorants() {
-    await navigator.clipboard.writeText(document.querySelector(".ignorants-nicks").innerText);
-}
-
-async function getDecode() {
-    var responseDiv = document.getElementById("responseDiv");
-
-    try {
-        let response = await fetch('https://eurmtl.me/decode/{{tx_hash}}');
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        } else {
-            let text = await response.text();
-            responseDiv.innerHTML = text;
-            responseDiv.style.display = 'block';
-        }
-    } catch (error) {
-        console.error('There was a problem fetching the response:', error);
+    function reload_page() {
+        location.reload();
     }
-}
+
+    function paste_tx() {
+        navigator.clipboard.readText().then(
+            clipText => document.querySelector("#tx_body").innerText = clipText);
+    }
+
+    async function copy_tx() {
+        await navigator.clipboard.writeText(document.querySelector("#defXdrDiv .tx-body").innerText);
+    }
+
+    async function copy_url() {
+        await navigator.clipboard.writeText(window.location.href);
+    }
+
+    async function copy_ignorants() {
+        await navigator.clipboard.writeText(document.querySelector(".ignorants-nicks").innerText);
+    }
+
+    async function getDecode() {
+        var responseDiv = document.getElementById("responseDiv");
+
+        try {
+            let response = await fetch('https://eurmtl.me/decode/{{tx_hash}}');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            } else {
+                let text = await response.text();
+                responseDiv.innerHTML = text;
+                responseDiv.style.display = 'block';
+            }
+        } catch (error) {
+            console.error('There was a problem fetching the response:', error);
+        }
+    }
+
+    function show_sign_div() {
+      var signDiv = document.getElementById('signDiv');
+      signDiv.style.display = 'block';
+    }
+
+    async function sign_tx() {
+        let xdr = document.querySelector("#defXdrDiv .tx-body").innerText;
+        let privateKey = document.getElementById("private_key").value;
+
+        console.log(xdr)
+        console.log(privateKey)
+
+        if (!privateKey || privateKey.length < 56) {
+            console.error('Private key is empty or less than 56 characters');
+            return;
+        }
+
+        const server = new StellarSdk.Server('https://horizon.stellar.org');
+
+        console.log(server)
+
+        try {
+            let sourceKeys = StellarSdk.Keypair.fromSecret(privateKey);
+            console.log(sourceKeys)
+            let transaction = new StellarSdk.Transaction(xdr, StellarSdk.Networks.PUBLIC);
+            console.log(transaction)
+
+            transaction.sign(sourceKeys);
+
+            let signedXDR = transaction.toEnvelope().toXDR().toString('base64');
+
+            let signedDiv = document.getElementById("signedDiv");
+            signedDiv.style.display = 'block';
+
+            document.querySelector("#signedDiv .tx-body").innerText = signedXDR;
+        } catch (error) {
+            console.error('Error signing transaction:', error);
+        }
+    }
+
+    async function submit_tx() {
+        let signedXDR = document.querySelector("#signedDiv .tx-body").innerText;
+
+        let txBodyTextarea = document.querySelector("#txForm #tx_body");
+        txBodyTextarea.value = signedXDR;
+
+        document.getElementById("txForm").submit();
+    }
 
 </script>
 
