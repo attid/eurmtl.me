@@ -9,12 +9,14 @@ from db.models import Signers, Decisions
 from db.pool import db_pool
 from google.oauth2.service_account import Credentials
 
+from utils import check_user_weight, edit_telegram_message, send_telegram_message
+
 blueprint = Blueprint('decision', __name__)
 
-main_fund_address = 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'
-
 chat_ids = (0, 1863399780, 1652080456, 1649743884)  # -100
-#chat_ids = (0, 1863399780, 1785950216, 1965362401)  # -100 test
+
+
+# chat_ids = (0, 1863399780, 1785950216, 1965362401)  # -100 test
 
 
 def get_creds():
@@ -33,28 +35,6 @@ def get_creds():
 
 
 agcm = gspread_asyncio.AsyncioGspreadClientManager(get_creds)
-
-
-async def check_user_weight():
-    weight = 0
-    if 'userdata' in session and 'username' in session['userdata']:
-        username = '@' + session['userdata']['username']
-        with db_pool() as db_session:
-            address = db_session.query(Signers).filter(Signers.username == username).first()
-            if address is None:
-                await flash('No such user')
-            else:
-                public_key = address.public_key
-
-                rq = requests.get('https://horizon.stellar.org/accounts/' + main_fund_address)
-                weight = 0
-                for signer in rq.json()['signers']:
-                    if signer['key'] == public_key:
-                        weight = signer['weight']
-    if weight == 0:
-        await flash('User is not a signer')
-
-    return weight
 
 
 def get_bottom_text(links_url, uuid_url):
@@ -84,7 +64,6 @@ async def cmd_add_decision():
         reading = int(form_data['reading'])
 
         if (await check_user_weight()) > 0:
-
 
             d_uuid = uuid.uuid4().hex
 
@@ -243,43 +222,5 @@ async def gs_update_decision(decision_id, col_id, value):
     await ws.update_cell(row=cell.row, col=col_id, value=value)
 
 
-def send_telegram_message(chat_id, text):
-    token = config.skynet_token.get_secret_value()
-    url = f'https://api.telegram.org/bot{token}/sendMessage'
-    data = {
-        'chat_id': chat_id,
-        'text': text,
-        'parse_mode': 'HTML'  # Опционально: для форматирования текста
-    }
-    response = requests.post(url, data=data)
-    if response.ok:
-        print(f'Message sent successfully: {response.json()}')
-        return response.json()['result']['message_id']
-    else:
-        print(f'Failed to send message: {response.content}')
-    resp = {'ok': True, 'result': {'message_id': 109, 'author_signature': 'SkyNet',
-                                   'sender_chat': {'id': -1001863399780, 'title': 'BM: First rearding | Первое чтение',
-                                                   'type': 'channel'},
-                                   'chat': {'id': -1001863399780, 'title': 'BM: First rearding | Первое чтение',
-                                            'type': 'channel'}, 'date': 1696287194, 'text': 'f'}}
-
-
-def edit_telegram_message(chat_id, message_id, text):
-    token = config.skynet_token.get_secret_value()
-    url = f'https://api.telegram.org/bot{token}/editMessageText'
-    data = {
-        'chat_id': chat_id,
-        'message_id': message_id,
-        'text': text,
-        'parse_mode': 'HTML'  # Опционально: для форматирования текста
-    }
-    response = requests.post(url, data=data)
-    if response.ok:
-        print(f'Message edited successfully: {response.json()}')
-        return True
-    else:
-        print(f'Failed to edit message: {response.content}')
-
-
 if __name__ == "__main__":
-    print(asyncio.run(gs_update_decision(155,5,5)))
+    print(asyncio.run(gs_update_decision(155, 5, 5)))

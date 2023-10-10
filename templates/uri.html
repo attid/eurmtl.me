@@ -19,7 +19,7 @@
 
 <div id="responseDiv" style="display: none;"></div>
 <div class="row">
-    <div class="col">
+    <div class="col" id="defXdrDiv">
         <span class="tx-body">{{xdr}}</span>
     </div>
 </div>
@@ -27,11 +27,23 @@
 <p>
     <label for="private_key">Private Key</label>
     <input type="text" id="private_key" name="private_key"
-           placeholder="private_key with S" value="">
+           placeholder="private_key with S" value=""
+           oninput="sign_tx()" onpaste="sign_tx()" autocomplete="off">
 </p>
 <input type="button" class="button primary" value="Sign" onclick="sign_tx()">
 
-<div id="signedDiv" style="display: none;"></div>
+<div id="signedDiv" style="display: none;">
+    <div class="row">
+        <div class="col">
+            <span class="tx-body"></span>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col">
+            <input type="button" class="button primary" value="Submit" onclick="submit_tx()">
+        </div>
+    </div>
+</div>
 
 
 {% if qr_text %}
@@ -42,14 +54,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/10.4.1/stellar-sdk.min.js"></script>
 <script>
     async function copy_tx() {
-        await navigator.clipboard.writeText(document.querySelector(".tx-body").innerText);
+        await navigator.clipboard.writeText(document.querySelector("#defXdrDiv .tx-body").innerText);
     }
 
     async function getDecode() {
         var responseDiv = document.getElementById("responseDiv");
 
         try {
-            let response = await fetch('https://eurmtl.me/decode/{{tx_hash}}');
+            let response = await fetch('/decode/{{tx_hash}}');
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             } else {
@@ -63,11 +75,11 @@
     }
 
     async function sign_tx() {
-        let xdr = document.querySelector(".tx-body").innerText;
+        let xdr = document.querySelector("#defXdrDiv .tx-body").innerText;
         let privateKey = document.getElementById("private_key").value;
 
-        if (!privateKey) {
-            console.error('Private key is empty');
+        if (!privateKey || privateKey.length < 56) {
+            console.error('Private key is empty or less than 56 characters');
             return;
         }
 
@@ -82,19 +94,9 @@
             let signedXDR = transaction.toEnvelope().toXDR().toString('base64');
 
             let signedDiv = document.getElementById("signedDiv");
-            signedDiv.innerHTML = `
-                <div class="row">
-                    <div class="col">
-                        <span class="tx-body">${signedXDR}</span>
-                    </div>
-                </div>
-                <div class="row">
-                    <div class="col">
-                        <input type="button" class="button primary" value="Submit" onclick="submit_tx()">
-                    </div>
-                </div>
-            `;
             signedDiv.style.display = 'block';
+
+            document.querySelector("#signedDiv .tx-body").innerText = signedXDR;
         } catch (error) {
             console.error('Error signing transaction:', error);
         }
@@ -117,7 +119,6 @@
             console.error('Error submitting transaction:', error);
         }
     }
-
 
 </script>
 

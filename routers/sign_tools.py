@@ -7,9 +7,10 @@ from stellar_sdk import Keypair
 from stellar_sdk.exceptions import BadSignatureError
 from stellar_sdk import DecoratedSignature
 from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
-from db.models import Transactions, Signers, Signatures
+from db.models import Transactions, Signers, Signatures, Alerts
 from db.pool import db_pool
-from utils import decode_xdr_to_text, decode_xdr_to_base64, check_publish_state, check_response
+from utils import decode_xdr_to_text, decode_xdr_to_base64, check_publish_state, check_response, check_user_weight, \
+    send_telegram_message
 
 blueprint = Blueprint('sign_rtools', __name__)
 
@@ -43,31 +44,29 @@ async def start_adduser():
             resp = await render_template('adduser.html', username=username, public_key=public_key)
             return resp
 
-        with db_pool() as db_session:
-            address = db_session.query(Signers).filter(Signers.username == username).first()
-            if address:
-                await flash('Username already in use')
-                resp = await render_template('adduser.html', username=username, public_key=public_key)
-                return resp
+        if (await check_user_weight()) > 0:
+            with db_pool() as db_session:
+                address = db_session.query(Signers).filter(Signers.username == username).first()
+                if address:
+                    await flash('Username already in use')
+                    resp = await render_template('adduser.html', username=username, public_key=public_key)
+                    return resp
 
-            address = db_session.query(Signers).filter(Signers.public_key == public_key).first()
-            if address:
-                if address.username == 'FaceLess':
-                    await flash('FaceLess was renamed')
+                address = db_session.query(Signers).filter(Signers.public_key == public_key).first()
+                if address:
+                    await flash(f'{address.username} was renamed to {username}')
                     address.username = username
                     db_session.commit()
-                else:
-                    await flash('Public key already in use')
+                    resp = await render_template('adduser.html', username=username, public_key=public_key)
+                    return resp
+
+                db_session.add(
+                    Signers(username=username, public_key=public_key, signature_hint=key.signature_hint().hex()))
+                db_session.commit()
+
+                await flash(f'{username} with key {public_key} was added')
                 resp = await render_template('adduser.html', username=username, public_key=public_key)
                 return resp
-
-
-            db_session.add(Signers(username=username, public_key=public_key, signature_hint=key.signature_hint().hex()))
-            db_session.commit()
-
-            await flash(f'{username} with key {public_key} was added')
-            resp = await render_template('adduser.html', username=username, public_key=public_key)
-            return resp
 
     resp = await render_template('adduser.html', username='', public_key='')
     return resp
@@ -154,6 +153,16 @@ async def show_transaction(tr_hash):
     transaction_env = TransactionEnvelope.from_xdr(transaction.body,
                                                    network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
 
+    admin_weight = await check_user_weight(need_flash=False)
+    if admin_weight > 0:
+        tg_id = session['userdata']['id']
+
+        with db_pool() as db_session:
+            alert = db_session.query(Alerts).filter(Alerts.transaction_hash == tr_hash,
+                                                    Alerts.tg_id == tg_id).first()
+    else:
+        alert = None
+
     try:
         json_transaction = json.loads(transaction.json)
     except:
@@ -194,8 +203,9 @@ async def show_transaction(tr_hash):
                                         db_session.add(Signatures(signature_xdr=signature.to_xdr_object().to_xdr(),
                                                                   signer_id=signer.id if signer else None,
                                                                   transaction_hash=transaction.hash))
-                                        await flash(f'Added signature from {signer.username if signer else None}',
-                                                    'good')
+                                        text = f'Added signature from {signer.username if signer else None}'
+                                        await flash(text, 'good')
+                                        alert_singers(tr_hash=transaction.hash, small_text=text)
                                     except BadSignatureError:
                                         await flash(f'Bad signature. {signature.signature_hint.hex()} not verify')
                         db_session.commit()
@@ -279,23 +289,11 @@ async def show_transaction(tr_hash):
             await flash("Failed to send. The error is unclear")
             await flash(f'{e}')
 
-    # xxx = 'AAAAAgAAAAAEqbejBk1rxsHVls854RnAyfpJaZacvgwmQ0jxNDBvqgABhwQCGVTNAAAESgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAYzMjE2NTQAAAAAAAEAAAAAAAAABgAAAAFNTU0AAAAAAASpt6MGTWvGwdWWzznhGcDJ+klplpy+DCZDSPE0MG+qf/////////8AAAAAAAAAAA=='
-    # qr_text = (f'web+stellar:tx?xdr={quote_plus(xxx)}'
-    #            f'&callback={quote_plus(f"https://eurmtl.me/sign_tools/{transaction.hash}")}'
-    #            f'&msg={quote_plus(transaction.description[:200])}'
-    #            #f'&pubkey=GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'
-    #            f'&origin_domain=eurmtl.me')
-    # signature = uri_sign(qr_text, config_reader.config.signing_key.get_secret_value())
-    # qr_text = f'{qr_text}&signature={signature}'
-    # qr_img = f'/static/qr/{uuid.uuid4().hex}.svg'
-    # qr = pyqrcode.create(qr_text)
-    # qr.svg(start_path + qr_img, scale=6)
-
     resp = await render_template('sign_sign.html', tx_description=transaction.description,
                                  tx_body=transaction.body, tx_hash=transaction.hash,
                                  bad_signers=set(bad_signers), signatures=signatures,
-                                 signers_table=signers_table, uuid=transaction.uuid,
-                                 tx_full=transaction_env.to_xdr(),
+                                 signers_table=signers_table, uuid=transaction.uuid, alert=alert,
+                                 tx_full=transaction_env.to_xdr(), admin_weight=admin_weight,
                                  publish_state=check_publish_state(transaction.hash))
     return resp
 
@@ -350,27 +348,34 @@ async def decode_xdr(tr_hash):
     return ('<br>'.join(encoded_xdr) + '<br><br><br>').replace('\n', '<br>').replace('  ', '&nbsp;&nbsp;')
 
 
-@blueprint.route('/login')
-async def login_telegram():
-    data = {
-        'id': request.args.get('id', None),
-        'first_name': request.args.get('first_name', None),
-        'last_name': request.args.get('last_name', None),
-        'username': request.args.get('username', None),
-        'photo_url': request.args.get('photo_url', None),
-        'auth_date': request.args.get('auth_date', None),
-        'hash': request.args.get('hash', None)
-    }
+@blueprint.route('/add_alert/<tr_hash>', methods=('GET', 'POST'))
+async def add_alert(tr_hash):
+    if len(tr_hash) != 64 and len(tr_hash) != 32:
+        abort(404)
 
-    if check_response(data) and data['username']:
-        # Authorize user
-        session['userdata'] = data
-        return redirect('/lab')
-    else:
-        return 'Authorization failed'
+    if (await check_user_weight()) == 0:
+        abort(404)
+
+    tg_id = session['userdata']['id']
+
+    with db_pool() as db_session:
+        alert = db_session.query(Alerts).filter(Alerts.transaction_hash == tr_hash,
+                                                Alerts.tg_id == tg_id).first()
+        if alert is None:
+            alert = Alerts(tg_id=tg_id, transaction_hash=tr_hash)
+            db_session.add(alert)
+            db_session.commit()
+            return '[+] Alert me'
+        else:
+            db_session.delete(alert)
+            db_session.commit()
+            return '[ ] Alert me'
 
 
-@blueprint.route('/logout')
-async def logout():
-    await session.pop('userdata', None)
-    return redirect('/lab')
+def alert_singers(tr_hash, small_text):
+    text = (f'Подписание “Membership distribution (https://eurmtl.me/sign_tools/{tr_hash})”: '
+            f'{small_text}.')
+    with db_pool() as db_session:
+        alert_query = db_session.query(Alerts).filter(Alerts.transaction_hash == tr_hash).all()
+        for alert in alert_query:
+            send_telegram_message(alert.tg_id, text)

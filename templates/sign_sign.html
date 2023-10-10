@@ -34,12 +34,13 @@
             <label for="private_key">Private Key</label>
             <input type="text" id="private_key" name="private_key"
                    placeholder="private_key with S" value=""
-                   oninput="sign_tx()" onpaste="sign_tx()">
+                   oninput="sign_tx()" onpaste="sign_tx()" autocomplete="off">
+            <input type="button" class="button primary" value="Sign" onclick="sign_tx()">
         </p>
         <div class="form-buttons">
-            <input type="button" class="button primary" value="Sign" onclick="sign_tx()" id="signB" style="display: none;">
             <button type="button" class="button primary" onclick="paste_tx()">Paste Transaction</button>
             <input type="submit" class="button primary" value="Update"/>
+
         </div>
     </fieldset>
 
@@ -57,6 +58,9 @@
 <div class="row control-buttons">
     <button class="button outline" onclick="copy_tx()">Copy Transaction</button>
     <button class="button outline" onclick="getDecode()">Decode</button>
+    {% if admin_weight > 0 %}
+    <button class="button outline" onclick="add_alert()" id="alert-btn">{% if alert %}[+] Alert me{% else %}[ ] Alert me{% endif %}</button>
+    {% endif %}
 </div>
 <div id="responseDiv" style="display: none;"></div>
 <div class="row">
@@ -223,7 +227,7 @@
         var responseDiv = document.getElementById("responseDiv");
 
         try {
-            let response = await fetch('https://eurmtl.me/decode/{{tx_hash}}');
+            let response = await fetch('/decode/{{tx_hash}}');
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             } else {
@@ -237,16 +241,13 @@
     }
 
     function show_sign_div() {
-      var signDiv = document.getElementById('signDiv');
+      var signDiv = document.getElementById('signP');
       signDiv.style.display = 'block';
     }
 
     async function sign_tx() {
         let xdr = document.querySelector("#defXdrDiv .tx-body").innerText;
         let privateKey = document.getElementById("private_key").value;
-
-        console.log(xdr)
-        console.log(privateKey)
 
         if (!privateKey || privateKey.length < 56) {
             console.error('Private key is empty or less than 56 characters');
@@ -255,35 +256,38 @@
 
         const server = new StellarSdk.Server('https://horizon.stellar.org');
 
-        console.log(server)
 
         try {
             let sourceKeys = StellarSdk.Keypair.fromSecret(privateKey);
-            console.log(sourceKeys)
             let transaction = new StellarSdk.Transaction(xdr, StellarSdk.Networks.PUBLIC);
-            console.log(transaction)
 
             transaction.sign(sourceKeys);
 
             let signedXDR = transaction.toEnvelope().toXDR().toString('base64');
 
-            let signedDiv = document.getElementById("signedDiv");
-            signedDiv.style.display = 'block';
+            let txBodyTextarea = document.querySelector("#txForm #tx_body");
+            txBodyTextarea.value = signedXDR;
 
-            document.querySelector("#signedDiv .tx-body").innerText = signedXDR;
         } catch (error) {
             console.error('Error signing transaction:', error);
         }
     }
 
-    async function submit_tx() {
-        let signedXDR = document.querySelector("#signedDiv .tx-body").innerText;
-
-        let txBodyTextarea = document.querySelector("#txForm #tx_body");
-        txBodyTextarea.value = signedXDR;
-
-        document.getElementById("txForm").submit();
+    async function add_alert() {
+        var alertBtn = document.getElementById("alert-btn");
+        try {
+            let response = await fetch('/add_alert/{{tx_hash}}');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            } else {
+                let text = await response.text();
+                alertBtn.innerText = text;
+            }
+        } catch (error) {
+            console.error('There was a problem fetching the response:', error);
+        }
     }
+
 
 </script>
 

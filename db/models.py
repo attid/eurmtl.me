@@ -1,5 +1,6 @@
 import uuid as uuid
-from sqlalchemy import Table, String, Integer, Column, Text, DateTime, Boolean, create_engine, BLOB, ForeignKey, JSON
+from sqlalchemy import Table, String, Integer, Column, Text, DateTime, Boolean, create_engine, BLOB, ForeignKey, JSON, \
+    BigInteger
 from datetime import datetime
 
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -35,6 +36,7 @@ class Transactions(Base):
 class Signers(Base):
     __tablename__ = 't_signers'
     id = Column('id', Integer(), primary_key=True)
+    tg_id = Column('tg_id', BigInteger(), nullable=True)
     username = Column('username', String(32), nullable=False)
     public_key = Column('public_key', String(56), nullable=False)
     signature_hint = Column('signature_hint', String(8), nullable=False)
@@ -68,6 +70,13 @@ class Decisions(Base):
     num = Column('num', Integer, nullable=False)
     reading = Column('reading', Integer, nullable=False)
     url = Column('url', String(64), nullable=False)
+
+
+class Alerts(Base):
+    __tablename__ = 't_alerts'
+    id = Column(Integer, primary_key=True)
+    tg_id = Column(BigInteger, nullable=True)
+    transaction_hash = Column(String(64), nullable=True)
 
 
 if __name__ == '__main__':

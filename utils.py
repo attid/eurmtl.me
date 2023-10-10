@@ -2,6 +2,7 @@ import base64
 import json
 from datetime import datetime
 import requests
+from quart import session, flash
 from stellar_sdk import (
     FeeBumpTransactionEnvelope,
     HashMemo,
@@ -18,8 +19,11 @@ from stellar_sdk.sep import stellar_uri
 
 import config_reader
 from config_reader import config
+from db.models import Signers
 from db.requests import EURMTLDictsType, db_get_dict
 from db.pool import db_pool
+
+main_fund_address = 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'
 
 
 def get_key_sort(key, idx=1):
@@ -509,6 +513,68 @@ def add_trust_line_uri(public_key, asset_code, asset_issuer) -> str:
 def xdr_to_uri(xdr):
     transaction = TransactionEnvelope.from_xdr(xdr, Network.PUBLIC_NETWORK_PASSPHRASE)
     return stellar_uri.TransactionStellarUri(transaction_envelope=transaction).to_uri()
+
+
+async def check_user_weight(need_flash=True):
+    weight = 0
+    if 'userdata' in session and 'username' in session['userdata']:
+        username = '@' + session['userdata']['username']
+        with db_pool() as db_session:
+            address = db_session.query(Signers).filter(Signers.username == username).first()
+            if address is None:
+                if need_flash:
+                    await flash('No such user')
+            else:
+                public_key = address.public_key
+
+                rq = requests.get('https://horizon.stellar.org/accounts/' + main_fund_address)
+                weight = 0
+                for signer in rq.json()['signers']:
+                    if signer['key'] == public_key:
+                        weight = signer['weight']
+    if weight == 0:
+        if need_flash:
+            await flash('User is not a signer')
+
+    return weight
+
+
+def send_telegram_message(chat_id, text):
+    token = config.skynet_token.get_secret_value()
+    url = f'https://api.telegram.org/bot{token}/sendMessage'
+    data = {
+        'chat_id': chat_id,
+        'text': text,
+        'parse_mode': 'HTML'  # Опционально: для форматирования текста
+    }
+    response = requests.post(url, data=data)
+    if response.ok:
+        print(f'Message sent successfully: {response.json()}')
+        return response.json()['result']['message_id']
+    else:
+        print(f'Failed to send message: {response.content}')
+    resp = {'ok': True, 'result': {'message_id': 109, 'author_signature': 'SkyNet',
+                                   'sender_chat': {'id': -1001863399780, 'title': 'BM: First rearding | Первое чтение',
+                                                   'type': 'channel'},
+                                   'chat': {'id': -1001863399780, 'title': 'BM: First rearding | Первое чтение',
+                                            'type': 'channel'}, 'date': 1696287194, 'text': 'f'}}
+
+
+def edit_telegram_message(chat_id, message_id, text):
+    token = config.skynet_token.get_secret_value()
+    url = f'https://api.telegram.org/bot{token}/editMessageText'
+    data = {
+        'chat_id': chat_id,
+        'message_id': message_id,
+        'text': text,
+        'parse_mode': 'HTML'  # Опционально: для форматирования текста
+    }
+    response = requests.post(url, data=data)
+    if response.ok:
+        print(f'Message edited successfully: {response.json()}')
+        return True
+    else:
+        print(f'Failed to edit message: {response.content}')
 
 
 if __name__ == '__main__':

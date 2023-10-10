@@ -1,5 +1,9 @@
 import uuid
-from quart import Blueprint, send_file
+from quart import Blueprint, send_file, request, session, redirect
+
+from db.models import Signers
+from db.pool import db_pool
+from utils import check_response
 
 blueprint = Blueprint('index', __name__)
 
@@ -40,8 +44,6 @@ async def cmd_mytest():
     '''
 
 
-
-
 @blueprint.route('/uuid', methods=('GET', 'POST'))
 async def cmd_uuid():
     return uuid.uuid4().hex
@@ -61,3 +63,33 @@ async def cmd_send_err():
             return "No error"
     else:
         return "need authority"
+
+
+@blueprint.route('/login')
+async def login_telegram():
+    data = {
+        'id': request.args.get('id', None),
+        'first_name': request.args.get('first_name', None),
+        'last_name': request.args.get('last_name', None),
+        'username': request.args.get('username', None),
+        'photo_url': request.args.get('photo_url', None),
+        'auth_date': request.args.get('auth_date', None),
+        'hash': request.args.get('hash', None)
+    }
+    if check_response(data) and data['username']:
+        # Authorize user
+        session['userdata'] = data
+        with db_pool() as db_session:
+            user = db_session.query(Signers).filter(Signers.username == data['username']).first()
+            if user and user.tg_id != data['id']:
+                user.tg_id = data['id']
+                db_session.commit()
+        return redirect('/lab')
+    else:
+        return 'Authorization failed'
+
+
+@blueprint.route('/logout')
+async def logout():
+    await session.pop('userdata', None)
+    return redirect('/lab')
