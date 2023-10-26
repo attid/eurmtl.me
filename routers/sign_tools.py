@@ -205,7 +205,8 @@ async def show_transaction(tr_hash):
                                                                   transaction_hash=transaction.hash))
                                         text = f'Added signature from {signer.username if signer else None}'
                                         await flash(text, 'good')
-                                        alert_singers(tr_hash=transaction.hash, small_text=text)
+                                        alert_singers(tr_hash=transaction.hash, small_text=text,
+                                                      tx_description=transaction.description)
                                     except BadSignatureError:
                                         await flash(f'Bad signature. {signature.signature_hint.hex()} not verify')
                         db_session.commit()
@@ -372,8 +373,8 @@ async def add_alert(tr_hash):
             return '[ ] Alert me'
 
 
-def alert_singers(tr_hash, small_text):
-    text = (f'Подписание “Membership distribution (https://eurmtl.me/sign_tools/{tr_hash})”: '
+def alert_singers(tr_hash, small_text, tx_description):
+    text = (f'Transaction <a href="https://eurmtl.me/sign_tools/{tr_hash}">{tx_description}</a> : '
             f'{small_text}.')
     with db_pool() as db_session:
         alert_query = db_session.query(Alerts).filter(Alerts.transaction_hash == tr_hash).all()

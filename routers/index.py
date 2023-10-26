@@ -1,9 +1,12 @@
+import os
+import signal
+import subprocess
 import uuid
 from quart import Blueprint, send_file, request, session, redirect
 
 from db.models import Signers
 from db.pool import db_pool
-from utils import check_response
+from utils import check_response, check_user_weight
 
 blueprint = Blueprint('index', __name__)
 
@@ -50,10 +53,10 @@ async def cmd_uuid():
 
 
 @blueprint.route('/err', methods=('GET', 'POST'))
+@blueprint.route('/log', methods=('GET', 'POST'))
 async def cmd_send_err():
-    debug = True
-    if debug:
-        file_name = '/home/c/cb61047/eurmtl.me/error_log'
+    if (await check_user_weight()) > 0:
+        file_name = '/home/eurmtl/hypercorn.log'
         import os
         if os.path.isfile(file_name):
             return await send_file(file_name, mimetype='text/plain')
@@ -64,6 +67,20 @@ async def cmd_send_err():
     else:
         return "need authority"
 
+
+@blueprint.route('/restart', methods=('GET', 'POST'))
+async def restart():
+    if (await check_user_weight()) > 0:
+        username = '@' + session['userdata']['username']
+        if username.lower() == '@itolstov':
+            cmd = f"/usr/bin/ps -o ppid= -p {os.getpid()}"
+            result = subprocess.run(cmd.split(), stdout=subprocess.PIPE)
+            parent_pid = int(result.stdout.decode('utf-8').strip())
+
+            # Отправить сигнал SIGTERM родительскому процессу
+            os.kill(parent_pid, signal.SIGTERM)
+
+            return "Restarting..."
 
 @blueprint.route('/login')
 async def login_telegram():

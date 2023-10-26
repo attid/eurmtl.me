@@ -86,6 +86,25 @@ document.addEventListener('DOMContentLoaded', function() {
                     <button type="button" class="delete-block">Delete Block</button>
                 </div>
             `;
+        } else if (operationType === "trust_payment") {
+            blockHTML = `
+                <div class="operation-block trust_payment_block">
+                    <h4>Trust Payment Block #${blockCounter}</h4>
+
+                    ${generateAccountSelector("destination", "Destination")}
+
+                    ${generateAssetSelector("asset", "Asset")}
+
+                    <div class="form-group">
+                        <label for="amount">Amount</label>
+                        <input type="text" id="amount" name="amount">
+                    </div>
+
+                    ${generateAccountSelector("sourceAccount")}
+
+                    <button type="button" class="delete-block">Delete Block</button>
+                </div>
+            `;
         } else if (operationType === "change_trust") {
             blockHTML = `
                 <div class="operation-block change_trust_block">
@@ -161,18 +180,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
                     <div class="form-group">
                         <label for="amount">Amount you are buying</label>
-                        <input type="text" id="amount" name="amount">
+                        <input type="text" id="amount" name="amount" class="amount-input">
                         An amount of zero will delete the offer.
                     </div>
 
                     <div class="form-group">
                         <label for="price">Price of 1 unit of buying in terms of selling </label>
-                        <input type="text" id="price" name="price">
+                        <input type="text" id="price" name="price" class="price-input">
                     </div>
 
                     ${generateOfferSelector()}
 
                     ${generateAccountSelector("sourceAccount")}
+
+                    <div class="form-group final-cost">
+                    </div>
 
                     <button type="button" class="delete-block">Delete Block</button>
                 </div>
@@ -180,25 +202,55 @@ document.addEventListener('DOMContentLoaded', function() {
         } else if (operationType === "sell") {
             blockHTML = `
                 <div class="operation-block sell_block">
-                    <h4>Buy Block #${blockCounter}</h4>
+                    <h4>Sell Block #${blockCounter}</h4>
 
                     ${generateAssetSelector("selling", "Selling")}
                     ${generateAssetSelector("buying", "Buying")}
 
                     <div class="form-group">
                         <label for="amount">Amount you are selling</label>
-                        <input type="text" id="amount" name="amount">
+                        <input type="text" id="amount" name="amount" class="amount-input">
                         An amount of zero will delete the offer.
                     </div>
 
                     <div class="form-group">
                         <label for="price">Price of 1 unit of selling in terms of buying </label>
-                        <input type="text" id="price" name="price">
+                        <input type="text" id="price" name="price" class="price-input">
                     </div>
 
                     ${generateOfferSelector()}
 
                     ${generateAccountSelector("sourceAccount")}
+
+                    <div class="form-group final-cost">
+                    </div>
+
+                    <button type="button" class="delete-block">Delete Block</button>
+                </div>
+            `;
+        } else if (operationType === "sell_passive") {
+            blockHTML = `
+                <div class="operation-block sell_passive_block">
+                    <h4>Sell Passive Block #${blockCounter}</h4>
+
+                    ${generateAssetSelector("selling", "Selling")}
+                    ${generateAssetSelector("buying", "Buying")}
+
+                    <div class="form-group">
+                        <label for="amount">Amount you are selling</label>
+                        <input type="text" id="amount" name="amount" class="amount-input">
+                        An amount of zero will delete the offer.
+                    </div>
+
+                    <div class="form-group">
+                        <label for="price">Price of 1 unit of selling in terms of buying </label>
+                        <input type="text" id="price" name="price" class="price-input">
+                    </div>
+
+                    ${generateAccountSelector("sourceAccount")}
+
+                    <div class="form-group final-cost">
+                    </div>
 
                     <button type="button" class="delete-block">Delete Block</button>
                 </div>
@@ -414,6 +466,41 @@ document.addEventListener('DOMContentLoaded', function() {
 
     });
 
+    document.body.addEventListener('input', function(event) {
+        if (event.target.classList.contains('amount-input') || event.target.classList.contains('price-input')) {
+            let operationBlock = event.target.closest('.operation-block');
+            if (operationBlock) {
+                const amountInput = operationBlock.querySelector('.amount-input');
+                const priceInput = operationBlock.querySelector('.price-input');
+                const finalCostDiv = operationBlock.querySelector('.final-cost');
+                const sellingInput = operationBlock.querySelector('.selling');
+                const buyingInput = operationBlock.querySelector('.buying');
+
+                let amount = parseFloat(amountInput.value.replace(',', '.'));
+                let price = parseFloat(priceInput.value.replace(',', '.'));
+                let sellingValue = sellingInput.value;
+                let buyingValue = buyingInput.value;
+                if (sellingValue.includes('-')) {
+                    sellingValue = sellingValue.split('-')[0];
+                }
+                if (buyingValue.includes('-')) {
+                    buyingValue = buyingValue.split('-')[0];
+                }
+
+                if (!isNaN(amount) && !isNaN(price)) {
+                    let finalCost = amount * price;
+                    if (operationBlock.classList.contains('buy_block')) {
+                        finalCostDiv.textContent = `You will sell ${finalCost.toFixed(2)} ${sellingValue}`;
+                    } else {
+                        finalCostDiv.textContent = `You will buy ${finalCost.toFixed(2)} ${buyingValue}`;
+                    }
+                } else {
+                    finalCostDiv.textContent = '';
+                }
+            }
+        }
+    });
+
 });
 
 function gatherData() {
@@ -429,6 +516,16 @@ function gatherData() {
         if (block.classList.contains('payment_block')) {
             let blockData = {
                 type: 'payment',
+                destination: block.querySelector('input[name="destination"]').value,
+                asset: block.querySelector('input[name="asset"]').value,
+                amount: block.querySelector('input[name="amount"]').value,
+                sourceAccount: block.querySelector('input[name="sourceAccount"]').value
+            };
+            operations.push(blockData);
+        }
+        if (block.classList.contains('trust_payment_block')) {
+            let blockData = {
+                type: 'trust_payment',
                 destination: block.querySelector('input[name="destination"]').value,
                 asset: block.querySelector('input[name="asset"]').value,
                 amount: block.querySelector('input[name="amount"]').value,
@@ -480,7 +577,7 @@ function gatherData() {
                 selling: block.querySelector('input[name="selling"]').value,
                 amount: block.querySelector('input[name="amount"]').value,
                 price: block.querySelector('input[name="price"]').value,
-                offer_id: block.querySelector('input[name="offer_id"]').value,
+                offer_id: block.querySelector('input[name="offer_id"]').value || '0',
                 sourceAccount: block.querySelector('input[name="sourceAccount"]').value
             };
             operations.push(blockData);
@@ -492,7 +589,18 @@ function gatherData() {
                 selling: block.querySelector('input[name="selling"]').value,
                 amount: block.querySelector('input[name="amount"]').value,
                 price: block.querySelector('input[name="price"]').value,
-                offer_id: block.querySelector('input[name="offer_id"]').value,
+                offer_id: block.querySelector('input[name="offer_id"]').value || '0',
+                sourceAccount: block.querySelector('input[name="sourceAccount"]').value
+            };
+            operations.push(blockData);
+        }
+        if (block.classList.contains('sell_passive_block')) {
+            let blockData = {
+                type: 'sell_passive',
+                buying: block.querySelector('input[name="buying"]').value,
+                selling: block.querySelector('input[name="selling"]').value,
+                amount: block.querySelector('input[name="amount"]').value,
+                price: block.querySelector('input[name="price"]').value,
                 sourceAccount: block.querySelector('input[name="sourceAccount"]').value
             };
             operations.push(blockData);

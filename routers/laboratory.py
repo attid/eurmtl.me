@@ -1,6 +1,6 @@
 import requests
 from quart import Blueprint, request, render_template, jsonify
-from stellar_sdk import Server, TransactionBuilder, Network, Asset
+from stellar_sdk import Server, TransactionBuilder, Network, Asset, TrustLineFlags
 
 from config_reader import config
 from db.pool import db_pool
@@ -24,7 +24,7 @@ async def cmd_mtl_accounts():
         if api_key != f"Bearer {config.eurmtl_key.get_secret_value()}":
             return jsonify({"message": "Unauthorized"}), 401
 
-        data = request.json
+        data = await request.json
         if not data or not isinstance(data, dict):
             return jsonify({"message": "Invalid data"}), 400
 
@@ -58,7 +58,7 @@ async def cmd_mtl_assets():
         if api_key != f"Bearer {config.eurmtl_key.get_secret_value()}":
             return jsonify({"message": "Unauthorized"}), 401
 
-        data = request.json
+        data = await request.json
         if not data or not isinstance(data, dict):
             return jsonify({"message": "Invalid data"}), 400
 
@@ -102,39 +102,58 @@ async def cmd_build_xdr():
         transaction.add_hash_memo(data['memo'])
 
     for operation in data['operations']:
-        sourceAccount = operation['sourceAccount'] if len(operation['sourceAccount']) == 56 else None
+        source_account = operation['sourceAccount'] if len(operation['sourceAccount']) == 56 else None
         if operation['type'] == 'payment':
             transaction.append_payment_op(destination=operation['destination'],
                                           asset=decode_asset(operation['asset']),
                                           amount=float2str(operation['amount']),
-                                          source=sourceAccount)
+                                          source=source_account)
+        if operation['type'] == 'trust_payment':
+            transaction.append_set_trust_line_flags_op(trustor=operation['destination'],
+                                                       asset=decode_asset(operation['asset']),
+                                                       set_flags=TrustLineFlags.AUTHORIZED_FLAG,
+                                                       source=source_account)
+            transaction.append_payment_op(destination=operation['destination'],
+                                          asset=decode_asset(operation['asset']),
+                                          amount=float2str(operation['amount']),
+                                          source=source_account)
+            transaction.append_set_trust_line_flags_op(trustor=operation['destination'],
+                                                       asset=decode_asset(operation['asset']),
+                                                       clear_flags=TrustLineFlags.AUTHORIZED_FLAG,
+                                                       source=source_account)
         if operation['type'] == 'change_trust':
             transaction.append_change_trust_op(asset=decode_asset(operation['asset']),
                                                limit=operation['amount'] if len(operation['amount']) > 0 else None,
-                                               source=sourceAccount)
+                                               source=source_account)
         if operation['type'] == 'create_account':
             transaction.append_create_account_op(destination=operation['destination'],
                                                  starting_balance=operation['startingBalance'],
-                                                 source=sourceAccount)
+                                                 source=source_account)
         if operation['type'] == 'sell':
             transaction.append_manage_sell_offer_op(selling=decode_asset(operation['selling']),
                                                     buying=decode_asset(operation['buying']),
                                                     amount=float2str(operation['amount']),
-                                                    price=operation['price'],
+                                                    price=float2str(operation['price']),
                                                     offer_id=int(operation['offer_id']),
-                                                    source=sourceAccount)
+                                                    source=source_account)
+        if operation['type'] == 'sell_passive':
+            transaction.append_create_passive_sell_offer_op(selling=decode_asset(operation['selling']),
+                                                            buying=decode_asset(operation['buying']),
+                                                            amount=float2str(operation['amount']),
+                                                            price=float2str(operation['price']),
+                                                            source=source_account)
         if operation['type'] == 'buy':
             transaction.append_manage_buy_offer_op(selling=decode_asset(operation['selling']),
                                                    buying=decode_asset(operation['buying']),
                                                    amount=float2str(operation['amount']),
-                                                   price=operation['price'],
+                                                   price=float2str(operation['price']),
                                                    offer_id=int(operation['offer_id']),
-                                                   source=sourceAccount)
+                                                   source=source_account)
         if operation['type'] == 'manage_data':
             transaction.append_manage_data_op(data_name=operation['data_name'],
                                               data_value=operation['data_value'] if len(
                                                   operation['data_value']) > 0 else None,
-                                              source=sourceAccount)
+                                              source=source_account)
         if operation['type'] == 'options':
             transaction.append_set_options_op(
                 master_weight=int(operation['master']) if len(operation['master']) > 0 else None,
@@ -142,12 +161,12 @@ async def cmd_build_xdr():
                 high_threshold=int(operation['threshold']) if len(operation['threshold']) > 0 else None,
                 low_threshold=int(operation['threshold']) if len(operation['threshold']) > 0 else None,
                 home_domain=operation['home'] if len(operation['home']) > 0 else None,
-                source=sourceAccount)
+                source=source_account)
         if operation['type'] == 'options_signer':
             transaction.append_ed25519_public_key_signer(
                 account_id=operation['signerAccount'] if len(operation['signerAccount']) > 55 else None,
                 weight=int(operation['weight']) if len(operation['weight']) > 0 else None,
-                source=sourceAccount)
+                source=source_account)
 
     transaction = transaction.build()
     transaction.transaction.sequence = int(data['sequence'])

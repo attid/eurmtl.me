@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block head_scripts %}
-<script src="/static/laboratory.js"></script>
+<script src="/static/laboratory.js?3"></script>
 {% endblock %}
 
 {% block content %}
@@ -56,9 +56,11 @@
                 <label for="operation">Operation:</label>
                 <select id="operation" name="operation">
                     <option value="payment">Payment</option>
+                    <option value="trust_payment">Payment with Trust</option>
                     <option value="change_trust">Change Trust</option>
                     <option value="buy">Buy</option>
                     <option value="sell">Sell</option>
+                    <option value="sell_passive">Sell passive</option>
                     <option value="create_account">Create account</option>
                     <option value="manage_data">Manage Data</option>
                     <option value="options">Set Option</option>

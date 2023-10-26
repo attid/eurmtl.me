@@ -30,15 +30,16 @@ def get_key_sort(key, idx=1):
     return key[idx]
 
 
-def check_publish_state(tx_hash: str) -> int:
+def check_publish_state(tx_hash: str) -> (int, str):
     rq = requests.get(f'https://horizon.stellar.org/transactions/{tx_hash}')
     if rq.status_code == 200:
+        date = rq.json()['created_at'].replace('T', ' ').replace('Z', '')
         if rq.json()['successful']:
-            return 1
+            return 1, date
         else:
-            return 10
+            return 10, date
     else:
-        return 0
+        return 0, 'Unknown'
 
     # !pip install urllib3 --upgrade
     # !pip install requests --upgrade
@@ -431,10 +432,19 @@ def decode_xdr_to_text(xdr):
             data_exist = True
             result.append(f"    EndSponsoringFutureReserves")
             continue
+        if type(operation).__name__ == "Clawback":
+            data_exist = True
+            #bad xdr 14 <Clawback [
+            # asset=<Asset [code=MTLAP, issuer=GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA, type=credit_alphanum12]>,
+            # from_=<MuxedAccount [account_id=GBGGX7QD3JCPFKOJTLBRAFU3SIME3WSNDXETWI63EDCORLBB6HIP2CRR, account_muxed_id=None]>,
+            # amount=1, source=None]>
+            result.append(
+                f"    Возврат {operation.amount} {asset_to_link(operation.asset)} с аккаунта {address_id_to_link(operation.from_.account_id)}")
+            continue
         if type(operation).__name__ in ["PathPaymentStrictSend", "ManageBuyOffer", "ManageSellOffer", "AccountMerge",
                                         "PathPaymentStrictReceive", "ClaimClaimableBalance", "CreateAccount",
                                         "CreateClaimableBalance", "ChangeTrust", "SetOptions", "Payment", "ManageData",
-                                        "BeginSponsoringFutureReserves", "EndSponsoringFutureReserves",
+                                        "BeginSponsoringFutureReserves", "EndSponsoringFutureReserves", "Clawback",
                                         "CreatePassiveSellOffer"]:
             continue
 
@@ -578,8 +588,8 @@ def edit_telegram_message(chat_id, message_id, text):
 
 
 if __name__ == '__main__':
-    print(xdr_to_uri(
-        'AAAAAgAAAACbUeUHNfn9lIj6LioAl6J4EwlEYcu/Vw/pGS+++oBWBgAAJxAC4KLIAAAAAwAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABNTZXQgdGhlIGhvbWUgZG9tYWluAAAAAAEAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAB210bGEubWUAAAAAAAAAAAAAAAAA'))
+    print(decode_xdr_to_text(
+          "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"))
     exit()
     # simple way to find error in editing
     l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHQlRPRjZSTEhSUEc1TlJJVTZNUTdKR01DVjdZSEw1VjMzWVlDNzZZWUc0SlVLQ0pUVVA1REVGSSIsInNlcXVlbmNlIjoiMTg2NzM2MjAxNTQ4NDMxMzc4IiwiZmVlIjoiMTAwMTAiLCJiYXNlRmVlIjoiMTAwIiwibWluRmVlIjoiNTAwMCIsIm1lbW9UeXBlIjoiTUVNT19URVhUIiwibWVtb0NvbnRlbnQiOiJsYWxhbGEifSwiZmVlQnVtcEF0dHJpYnV0ZXMiOnsibWF4RmVlIjoiMTAxMDEifSwib3BlcmF0aW9ucyI6W3siaWQiOjAsImF0dHJpYnV0ZXMiOnsiZGVzdGluYXRpb24iOiJHQUJGUUlLNjNSMk5FVEpNN1Q2NzNFQU1aTjRSSkxMR1AzT0ZVRUpVNVNaVlRHV1VLVUxaSk5MNiIsImFzc2V0Ijp7InR5cGUiOiJjcmVkaXRfYWxwaGFudW00IiwiY29kZSI6IlVTREMiLCJpc3N1ZXIiOiJHQTVaU0VKWUIzN0pSQzVBVkNJQTVNT1A0UkhUTTMzNVgyS0dYM0lIT0pBUFA1UkUzNEs0S1pWTiJ9LCJhbW91bnQiOiIzMDAwMCIsInNvdXJjZUFjY291bnQiOm51bGx9LCJuYW1lIjoicGF5bWVudCJ9XX0%3D&network=public'
