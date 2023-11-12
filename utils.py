@@ -19,7 +19,7 @@ from stellar_sdk.sep import stellar_uri
 
 import config_reader
 from config_reader import config
-from db.models import Signers
+from db.models import Signers, Transactions
 from db.requests import EURMTLDictsType, db_get_dict
 from db.pool import db_pool
 
@@ -34,6 +34,11 @@ def check_publish_state(tx_hash: str) -> (int, str):
     rq = requests.get(f'https://horizon.stellar.org/transactions/{tx_hash}')
     if rq.status_code == 200:
         date = rq.json()['created_at'].replace('T', ' ').replace('Z', '')
+        with db_pool() as db_session:
+            transaction = db_session.query(Transactions).filter(Transactions.hash == tx_hash).first()
+            if transaction and transaction.state != 2:
+                transaction.state = 2
+                db_session.commit()
         if rq.json()['successful']:
             return 1, date
         else:
@@ -52,7 +57,7 @@ def decode_xdr_from_base64(xdr):
     decoded_str = decoded_bytes.decode('utf-8')
     # print(decoded_str)
     decoded_json = json.loads(decoded_str)
-    print(decoded_json)
+    # print(decoded_json)
 
 
 def decode_xdr_to_base64(xdr):
@@ -149,7 +154,7 @@ def decode_xdr_to_base64(xdr):
             print('00000000___00000000', type(operation).__name__)
 
         new_json['operations'].append(op_json)
-    print(new_json)
+    # print(new_json)
     # Convert the dictionary into JSON
     json_data = json.dumps(new_json)
     # Convert the JSON data into bytes
@@ -434,7 +439,7 @@ def decode_xdr_to_text(xdr):
             continue
         if type(operation).__name__ == "Clawback":
             data_exist = True
-            #bad xdr 14 <Clawback [
+            # bad xdr 14 <Clawback [
             # asset=<Asset [code=MTLAP, issuer=GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA, type=credit_alphanum12]>,
             # from_=<MuxedAccount [account_id=GBGGX7QD3JCPFKOJTLBRAFU3SIME3WSNDXETWI63EDCORLBB6HIP2CRR, account_muxed_id=None]>,
             # amount=1, source=None]>
@@ -489,7 +494,7 @@ def uri_sign(data, stellar_private_key):
 
     # encode the signature as base64
     base64_signature = base64.b64encode(signature_bytes).decode()
-    print("base64 signature:", base64_signature)
+    # print("base64 signature:", base64_signature)
 
     # url-encode it
     from urllib.parse import quote
@@ -559,7 +564,7 @@ def send_telegram_message(chat_id, text):
     }
     response = requests.post(url, data=data)
     if response.ok:
-        print(f'Message sent successfully: {response.json()}')
+        # print(f'Message sent successfully: {response.json()}')
         return response.json()['result']['message_id']
     else:
         print(f'Failed to send message: {response.content}')
@@ -581,15 +586,23 @@ def edit_telegram_message(chat_id, message_id, text):
     }
     response = requests.post(url, data=data)
     if response.ok:
-        print(f'Message edited successfully: {response.json()}')
+        # print(f'Message edited successfully: {response.json()}')
         return True
     else:
         print(f'Failed to edit message: {response.content}')
 
 
+def is_valid_base64(s):
+    try:
+        base64.b64decode(s)
+        return True
+    except Exception:
+        return False
+
+
 if __name__ == '__main__':
     print(decode_xdr_to_text(
-          "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"))
+        "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"))
     exit()
     # simple way to find error in editing
     l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHQlRPRjZSTEhSUEc1TlJJVTZNUTdKR01DVjdZSEw1VjMzWVlDNzZZWUc0SlVLQ0pUVVA1REVGSSIsInNlcXVlbmNlIjoiMTg2NzM2MjAxNTQ4NDMxMzc4IiwiZmVlIjoiMTAwMTAiLCJiYXNlRmVlIjoiMTAwIiwibWluRmVlIjoiNTAwMCIsIm1lbW9UeXBlIjoiTUVNT19URVhUIiwibWVtb0NvbnRlbnQiOiJsYWxhbGEifSwiZmVlQnVtcEF0dHJpYnV0ZXMiOnsibWF4RmVlIjoiMTAxMDEifSwib3BlcmF0aW9ucyI6W3siaWQiOjAsImF0dHJpYnV0ZXMiOnsiZGVzdGluYXRpb24iOiJHQUJGUUlLNjNSMk5FVEpNN1Q2NzNFQU1aTjRSSkxMR1AzT0ZVRUpVNVNaVlRHV1VLVUxaSk5MNiIsImFzc2V0Ijp7InR5cGUiOiJjcmVkaXRfYWxwaGFudW00IiwiY29kZSI6IlVTREMiLCJpc3N1ZXIiOiJHQTVaU0VKWUIzN0pSQzVBVkNJQTVNT1A0UkhUTTMzNVgyS0dYM0lIT0pBUFA1UkUzNEs0S1pWTiJ9LCJhbW91bnQiOiIzMDAwMCIsInNvdXJjZUFjY291bnQiOm51bGx9LCJuYW1lIjoicGF5bWVudCJ9XX0%3D&network=public'
