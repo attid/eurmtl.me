@@ -87,7 +87,7 @@ async def cmd_asset(asset_code):
 async def cmd_uri():
     # if exist GET data xdr
     xdr = request.args.get('xdr')
-    print(xdr)
+    #print(xdr)
     uri_xdr = xdr_to_uri(xdr) if xdr else None
     resp = await render_template('uri.html', xdr=xdr, uri_xdr=uri_xdr)
     return resp

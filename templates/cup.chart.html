@@ -1,0 +1,15 @@
+{% extends 'cup.main.html' %}
+
+{% block switch_url %}chart{% endblock %}
+
+{% block content %}
+<div class="chart">
+    <!-- Примеры столбцов. Вы можете добавить или изменить высоту столбцов в зависимости от данных -->
+    {% for order in orders['sellers'] %}
+    <div class="bar" style="height: {{order['percent']*2}}px;"></div>
+    {% endfor %}
+    {% for order in orders['buyers'] %}
+    <div class="bar red" style="height: {{order['percent']*2}}px;"></div>
+    {% endfor %}
+</div>
+{% endblock %}

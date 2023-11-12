@@ -92,20 +92,24 @@ async def start_add_transaction():
                 if operation.source:
                     sources[operation.source.account_id] = {}
             for source in sources:
-                rq = requests.get('https://horizon.stellar.org/accounts/' + source)
-                threshold = rq.json()['thresholds']['high_threshold']
-                signers = []
-                for signer in rq.json()['signers']:
-                    signers.append([signer['key'], signer['weight'],
-                                    Keypair.from_public_key(signer['key']).signature_hint().hex()])
-                    with db_pool() as db_session:
-                        db_signer = db_session.query(Signers).filter(Signers.public_key == signer['key']).first()
-                        if db_signer is None:
-                            hint = Keypair.from_public_key(signer['key']).signature_hint().hex()
-                            db_session.add(Signers(username='FaceLess', public_key=signer['key'],
-                                                   signature_hint=hint))
-                            db_session.commit()
-                sources[source] = {'threshold': threshold, 'signers': signers}
+                try:
+                    rq = requests.get('https://horizon.stellar.org/accounts/' + source)
+                    threshold = rq.json()['thresholds']['high_threshold']
+                    signers = []
+                    for signer in rq.json()['signers']:
+                        signers.append([signer['key'], signer['weight'],
+                                        Keypair.from_public_key(signer['key']).signature_hint().hex()])
+                        with db_pool() as db_session:
+                            db_signer = db_session.query(Signers).filter(Signers.public_key == signer['key']).first()
+                            if db_signer is None:
+                                hint = Keypair.from_public_key(signer['key']).signature_hint().hex()
+                                db_session.add(Signers(username='FaceLess', public_key=signer['key'],
+                                                       signature_hint=hint))
+                                db_session.commit()
+                    sources[source] = {'threshold': threshold, 'signers': signers}
+                except:
+                    sources[source] = {'threshold': 0,
+                                       'signers': [[source, 1, Keypair.from_public_key(source).signature_hint().hex()]]}
             # print(json.dumps(sources))
 
         except:
@@ -173,45 +177,18 @@ async def show_transaction(tr_hash):
     if request.method == 'POST':
         form_data = await request.form
         tx_body = form_data.get('tx_body') or form_data.get('xdr')
-        try:
-            tr_full = TransactionEnvelope.from_xdr(tx_body, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-            if tr_full.hash_hex() != transaction.hash:
-                await flash('Not same xdr =(')
-            else:
-                if len(tr_full.signatures) > 0:
-                    with db_pool() as db_session:
-                        for signature in tr_full.signatures:
-                            signer = db_session.query(Signers).filter(
-                                Signers.signature_hint == signature.signature_hint.hex()).first()
-                            if db_session.query(Signatures).filter(Signatures.transaction_hash == transaction.hash,
-                                                                   Signatures.signature_xdr == signature.to_xdr_object(
-                                                                   ).to_xdr()).first():
-                                await flash(f'Can`t add {signer.username if signer else None}. Already was add.',
-                                            'good')
-                            else:
-                                # check is good ?
-                                all_sign = []
-                                for record in json_transaction:
-                                    all_sign.extend(json_transaction[record]['signers'])
-                                json_signer = list(filter(lambda x: x[2] == signature.signature_hint.hex(), all_sign))
-                                if len(json_signer) == 0:
-                                    await flash(f'Bad signature. {signature.signature_hint.hex()} not found')
-                                else:
-                                    user_keypair = Keypair.from_public_key(json_signer[0][0])
-                                    try:
-                                        user_keypair.verify(data=transaction_env.hash(), signature=signature.signature)
-                                        db_session.add(Signatures(signature_xdr=signature.to_xdr_object().to_xdr(),
-                                                                  signer_id=signer.id if signer else None,
-                                                                  transaction_hash=transaction.hash))
-                                        text = f'Added signature from {signer.username if signer else None}'
-                                        await flash(text, 'good')
-                                        alert_singers(tr_hash=transaction.hash, small_text=text,
-                                                      tx_description=transaction.description)
-                                    except BadSignatureError:
-                                        await flash(f'Bad signature. {signature.signature_hint.hex()} not verify')
-                        db_session.commit()
-        except:
-            await flash(f'BAD xdr. Can`t load ')
+        # Вызов функции parse_xdr_for_signatures и ожидание её результата
+        result = await parse_xdr_for_signatures(tx_body)
+
+        # Обработка результатов
+        if result["SUCCESS"]:
+            # Если SUCCESS == True, обработать каждое сообщение как 'good'
+            for msg in result["MESSAGES"]:
+                await flash(msg, 'good')
+        else:
+            # Если SUCCESS == False, обработать каждое сообщение без указания категории
+            for msg in result["MESSAGES"]:
+                await flash(msg)
 
     signers_table = []
     bad_signers = []
@@ -297,6 +274,63 @@ async def show_transaction(tr_hash):
                                  tx_full=transaction_env.to_xdr(), admin_weight=admin_weight,
                                  publish_state=check_publish_state(transaction.hash))
     return resp
+
+
+async def parse_xdr_for_signatures(tx_body):
+    result = {"SUCCESS": False,
+              "MESSAGES": []}
+    try:
+        tr_full: TransactionEnvelope = TransactionEnvelope.from_xdr(tx_body,
+                                                                    network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+    except:
+        result['MESSAGES'].append('BAD xdr. Can`t load')
+        return result
+
+    with db_pool() as db_session:
+        transaction = db_session.query(Transactions).filter(Transactions.hash == tr_full.hash_hex()).first()
+        if transaction is None:
+            result['MESSAGES'].append('Transaction not found')
+            return result
+    try:
+        json_transaction = json.loads(transaction.json)
+    except:
+        result['MESSAGES'].append('Can`t load json')
+        return result
+
+    if len(tr_full.signatures) > 0:
+        with db_pool() as db_session:
+            for signature in tr_full.signatures:
+                signer = db_session.query(Signers).filter(
+                    Signers.signature_hint == signature.signature_hint.hex()).first()
+                if db_session.query(Signatures).filter(Signatures.transaction_hash == transaction.hash,
+                                                       Signatures.signature_xdr == signature.to_xdr_object(
+                                                       ).to_xdr()).first():
+                    result['MESSAGES'].append(f'Can`t add {signer.username if signer else None}. '
+                                              f'Already was added.')
+                else:
+                    # check is good ?
+                    all_sign = []
+                    for record in json_transaction:
+                        all_sign.extend(json_transaction[record]['signers'])
+                    json_signer = list(filter(lambda x: x[2] == signature.signature_hint.hex(), all_sign))
+                    if len(json_signer) == 0:
+                        result['MESSAGES'].append(f'Bad signature. {signature.signature_hint.hex()} not found')
+                    else:
+                        user_keypair = Keypair.from_public_key(json_signer[0][0])
+                        try:
+                            user_keypair.verify(data=tr_full.hash(), signature=signature.signature)
+                            db_session.add(Signatures(signature_xdr=signature.to_xdr_object().to_xdr(),
+                                                      signer_id=signer.id if signer else None,
+                                                      transaction_hash=transaction.hash))
+                            text = f'Added signature from {signer.username if signer else None}'
+                            result['MESSAGES'].append(text)
+                            result['SUCCESS'] = True
+                            alert_singers(tr_hash=transaction.hash, small_text=text,
+                                          tx_description=transaction.description)
+                        except BadSignatureError:
+                            result['MESSAGES'].append(f'Bad signature. {signature.signature_hint.hex()} not verify')
+            db_session.commit()
+            return result
 
 
 @blueprint.route('/sign_all', methods=('GET', 'POST'))

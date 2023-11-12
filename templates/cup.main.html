@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orderbook Page</title>
+    <link rel="stylesheet" href="/static/css/cup.css">
+</head>
+<body>
+    <div class="container">
+        <div class="top-link">
+            <a class="button" href="/cup/{% block switch_url %}orderbook{% endblock %}/{{assets[1].code}}-{{assets[1].issuer}}/{{assets[0].code}}-{{assets[0].issuer}}"><span>{{assets[0].code}} ↔ {{assets[1].code}}</span></a>
+        </div>
+        <div class="header">
+            <a class="button" href="/cup/chart/{{ asset_url }}">Chart</a>
+            <a class="button" href="/cup/orderbook/{{ asset_url }}">Orderbook</a>
+            <a class="button" href="/cup/trades/{{ asset_url }}">Last Trades</a>
+        </div>
+        {% block content %} {% endblock %}
+    </div>
+</body>
+</html>

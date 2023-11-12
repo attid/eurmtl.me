@@ -8,6 +8,8 @@ import routers.federal
 import routers.sign_tools
 import routers.helpers
 import routers.decision
+import routers.cup
+import routers.remote
 
 app = Quart(__name__)
 
@@ -27,6 +29,8 @@ app.register_blueprint(routers.federal.blueprint)
 app.register_blueprint(routers.sign_tools.blueprint)
 app.register_blueprint(routers.helpers.blueprint)
 app.register_blueprint(routers.decision.blueprint)
+app.register_blueprint(routers.cup.blueprint)
+app.register_blueprint(routers.remote.blueprint)
 
 
 # @app.context_processor
