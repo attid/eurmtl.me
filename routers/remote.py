@@ -52,7 +52,7 @@ async def remote_need_sign(public_key):
 
 @blueprint.route('/remote/update_signature', methods=('POST',))
 async def remote_update_signature():
-    data = request.json
+    data = await request.json
     xdr = data.get("xdr")
 
     if not xdr or not is_valid_base64(xdr):
@@ -64,6 +64,22 @@ async def remote_update_signature():
         return jsonify(result), 200  # OK
     else:
         return jsonify(result), 404  # Not Found
+
+
+@blueprint.route('/remote/decode', methods=('GET', 'POST'))
+async def remote_decode_xdr():
+    data = await request.json
+    xdr = data.get("xdr")
+
+    if not xdr or not is_valid_base64(xdr):
+        return jsonify({"error": "Invalid or missing base64 data"}), 400  # Bad Request
+
+    encoded_xdr = decode_xdr_to_text(xdr)
+
+    encoded_xdr = ('<br>'.join(encoded_xdr)).replace('\n', '<br>').replace('  ', '&nbsp;&nbsp;')
+
+    return jsonify({"text": encoded_xdr}), 200
+
 
 if __name__ == '__main__':
     print(asyncio.run(remote_need_sign('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI')))

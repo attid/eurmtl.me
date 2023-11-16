@@ -41,6 +41,21 @@ function generateOfferSelector(fieldName = "offer_id", labelName = "Offer ID") {
     `;
 }
 
+function generatePathSelector(fieldName = "path", labelName = "Path") {
+    return `
+        <div class="form-group account-selector">
+            <label for="${fieldName}">${labelName}</label>
+            <div class="input-group">
+                <input type="text" id="${fieldName}" class="${fieldName}" name="${fieldName}" placeholder="Choose path" required>
+                <button type="button" class="fetchPath button secondary">🔍</button>
+            </div>
+            <div class="${fieldName}Dropdown dropdown-content"></div>
+                Intermediate Path (optional)
+        </div>
+    `;
+}
+
+
 
 document.addEventListener('DOMContentLoaded', function() {
     let blockCounter = 0;
@@ -52,24 +67,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
         if (operationType === "create_account") {
             blockHTML = `
-            <div class="operation-block create_account_block">
-              <h4>Account Block #${blockCounter}</h4>
+            <div class="operation-block create_account_block gather-block">
+                <h4>Create Account Block #${blockCounter}</h4>
 
-              ${generateAccountSelector("destination", "Destination")}
+                ${generateAccountSelector("destination", "Destination")}
 
-              <div class="form-group">
-                <label for="startingBalance">Starting Balance</label>
-                <input type="text" id="startingBalance" name="startingBalance">
-              </div>
+                <div class="form-group">
+                    <label for="startingBalance">Starting Balance</label>
+                    <input type="text" id="startingBalance" name="startingBalance">
+                </div>
 
-              ${generateAccountSelector("sourceAccount")}
+                ${generateAccountSelector("sourceAccount")}
 
-              <button type="button" class="delete-block">Delete Block</button>
+                <div class="operation-buttons">
+                    <button type="button" class="operation-button clone-block">Clone</button>
+                    <button type="button" class="operation-button delete-block">Delete Block</button>
+                </div>
             </div>
           `;
         } else if (operationType === "payment") {
             blockHTML = `
-                <div class="operation-block payment_block">
+                <div class="operation-block payment_block gather-block">
                     <h4>Payment Block #${blockCounter}</h4>
 
                     ${generateAccountSelector("destination", "Destination")}
@@ -83,12 +101,52 @@ document.addEventListener('DOMContentLoaded', function() {
 
                     ${generateAccountSelector("sourceAccount")}
 
-                    <button type="button" class="delete-block">Delete Block</button>
+                    <div class="operation-buttons">
+                        <button type="button" class="operation-button clone-block">Clone</button>
+                        <button type="button" class="operation-button delete-block">Delete Block</button>
+                    </div>
+                </div>
+            `;
+        } else if (operationType === "clawback") {
+            blockHTML = `
+                <div class="operation-block clawback_block gather-block">
+                    <h4>Clawback Block #${blockCounter}</h4>
+
+                    ${generateAssetSelector("asset", "Asset")}
+
+                    ${generateAccountSelector("from", "From")}
+
+                    <div class="form-group">
+                        <label for="amount">Amount</label>
+                        <input type="text" id="amount" name="amount">
+                    </div>
+
+                    ${generateAccountSelector("sourceAccount")}
+
+                    <div class="operation-buttons">
+                        <button type="button" class="operation-button clone-block">Clone</button>
+                        <button type="button" class="operation-button delete-block">Delete Block</button>
+                    </div>
+                </div>
+            `;
+        } else if (operationType === "copy_multi_sign") {
+            blockHTML = `
+                <div class="operation-block copy_multi_sign_block gather-block">
+                    <h4>Copy Multi Sign Block #${blockCounter}</h4>
+
+                    ${generateAccountSelector("from", "From")}
+
+                    ${generateAccountSelector("sourceAccount")}
+
+                    <div class="operation-buttons">
+                        <button type="button" class="operation-button clone-block">Clone</button>
+                        <button type="button" class="operation-button delete-block">Delete Block</button>
+                    </div>
                 </div>
             `;
         } else if (operationType === "trust_payment") {
             blockHTML = `
-                <div class="operation-block trust_payment_block">
+                <div class="operation-block trust_payment_block gather-block">
                     <h4>Trust Payment Block #${blockCounter}</h4>
 
                     ${generateAccountSelector("destination", "Destination")}
@@ -102,31 +160,37 @@ document.addEventListener('DOMContentLoaded', function() {
 
                     ${generateAccountSelector("sourceAccount")}
 
-                    <button type="button" class="delete-block">Delete Block</button>
+                    <div class="operation-buttons">
+                        <button type="button" class="operation-button clone-block">Clone</button>
+                        <button type="button" class="operation-button delete-block">Delete Block</button>
+                    </div>
                 </div>
             `;
         } else if (operationType === "change_trust") {
             blockHTML = `
-                <div class="operation-block change_trust_block">
+                <div class="operation-block change_trust_block gather-block">
                     <h4>Change Trust Block #${blockCounter}</h4>
 
                     ${generateAssetSelector("asset", "Asset")}
 
                     <div class="form-group">
-                        <label for="amount">Trust Limit (optional)</label>
-                        <input type="text" id="amount" name="amount">
+                        <label for="trust_amount">Trust Limit (optional)</label>
+                        <input type="text" id="trust_amount" name="trust_amount">
                         Leave empty to default to the max int64. <br>
                         Set to 0 to remove the trust line.
                     </div>
 
                     ${generateAccountSelector("sourceAccount")}
 
-                    <button type="button" class="delete-block">Delete Block</button>
+                    <div class="operation-buttons">
+                        <button type="button" class="operation-button clone-block">Clone</button>
+                        <button type="button" class="operation-button delete-block">Delete Block</button>
+                    </div>
                 </div>
             `;
         } else if (operationType === "options") {
             blockHTML = `
-                <div class="operation-block options_block">
+                <div class="operation-block options_block gather-block">
                     <h4>Set Options #${blockCounter}</h4>
 
                     <div class="form-group">
@@ -148,12 +212,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
                     ${generateAccountSelector("sourceAccount")}
 
-                    <button type="button" class="delete-block">Delete Block</button>
+                    <div class="operation-buttons">
+                        <button type="button" class="operation-button clone-block">Clone</button>
+                        <button type="button" class="operation-button delete-block">Delete Block</button>
+                    </div>
                 </div>
             `;
         } else if (operationType === "options_signer") {
             blockHTML = `
-                <div class="operation-block options_signer_block">
+                <div class="operation-block options_signer_block gather-block">
                     <h4>Set Options Signer #${blockCounter}</h4>
 
                     ${generateAccountSelector("signerAccount", "Ed25519 Public Key (optional)")}
@@ -167,12 +234,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
                     ${generateAccountSelector("sourceAccount")}
 
-                    <button type="button" class="delete-block">Delete Block</button>
+                    <div class="operation-buttons">
+                        <button type="button" class="operation-button clone-block">Clone</button>
+                        <button type="button" class="operation-button delete-block">Delete Block</button>
+                    </div>
                 </div>
             `;
         } else if (operationType === "buy") {
             blockHTML = `
-                <div class="operation-block buy_block">
+                <div class="operation-block buy_block gather-block">
                     <h4>Buy Block #${blockCounter}</h4>
 
                     ${generateAssetSelector("buying", "Buying")}
@@ -196,12 +266,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="form-group final-cost">
                     </div>
 
-                    <button type="button" class="delete-block">Delete Block</button>
+                    <div class="operation-buttons">
+                        <button type="button" class="operation-button clone-block">Clone</button>
+                        <button type="button" class="operation-button delete-block">Delete Block</button>
+                    </div>
                 </div>
             `;
         } else if (operationType === "sell") {
             blockHTML = `
-                <div class="operation-block sell_block">
+                <div class="operation-block sell_block gather-block">
                     <h4>Sell Block #${blockCounter}</h4>
 
                     ${generateAssetSelector("selling", "Selling")}
@@ -225,12 +298,46 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="form-group final-cost">
                     </div>
 
-                    <button type="button" class="delete-block">Delete Block</button>
+                    <div class="operation-buttons">
+                        <button type="button" class="operation-button clone-block">Clone</button>
+                        <button type="button" class="operation-button delete-block">Delete Block</button>
+                    </div>
+                </div>
+            `;
+        } else if (operationType === "swap") {
+            blockHTML = `
+                <div class="operation-block swap_block gather-block">
+                    <h4>Swap Block #${blockCounter}</h4>
+
+                    ${generateAssetSelector("selling", "Selling")}
+                    ${generateAssetSelector("buying", "Buying")}
+
+                    <div class="form-group">
+                        <label for="amount">Amount you are swap</label>
+                        <input type="text" id="amount" name="amount" class="amount">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="price">Minimum destination amount </label>
+                        <input type="text" id="destination" name="destination" class="destination-input">
+                    </div>
+
+                    ${generatePathSelector()}
+
+                    ${generateAccountSelector("sourceAccount")}
+
+                    <div class="form-group final-cost">
+                    </div>
+
+                    <div class="operation-buttons">
+                        <button type="button" class="operation-button clone-block">Clone</button>
+                        <button type="button" class="operation-button delete-block">Delete Block</button>
+                    </div>
                 </div>
             `;
         } else if (operationType === "sell_passive") {
             blockHTML = `
-                <div class="operation-block sell_passive_block">
+                <div class="operation-block sell_passive_block gather-block">
                     <h4>Sell Passive Block #${blockCounter}</h4>
 
                     ${generateAssetSelector("selling", "Selling")}
@@ -252,12 +359,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="form-group final-cost">
                     </div>
 
-                    <button type="button" class="delete-block">Delete Block</button>
+                    <div class="operation-buttons">
+                        <button type="button" class="operation-button clone-block">Clone</button>
+                        <button type="button" class="operation-button delete-block">Delete Block</button>
+                    </div>
                 </div>
             `;
         } else if (operationType === "manage_data") {
             blockHTML = `
-                <div class="operation-block manage_data_block">
+                <div class="operation-block manage_data_block gather-block">
                     <h4>Manage Data Block #${blockCounter}</h4>
 
                     <div class="form-group account-selector">
@@ -278,7 +388,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
                     ${generateAccountSelector("sourceAccount")}
 
-                    <button type="button" class="delete-block">Delete Block</button>
+                    <div class="operation-buttons">
+                        <button type="button" class="operation-button clone-block">Clone</button>
+                        <button type="button" class="operation-button delete-block">Delete Block</button>
+                    </div>
                 </div>
             `;
         }
@@ -307,6 +420,20 @@ document.addEventListener('DOMContentLoaded', function() {
             if (event.target.classList.contains('delete-block')) {
                 event.target.closest('.operation-block').remove();
             }
+
+            if (event.target.classList.contains('clone-block')) {
+                let originalBlock = event.target.closest('.operation-block');
+                let clonedBlock = originalBlock.cloneNode(true); // Клонируем блок
+
+                // Обновляем заголовок блока
+                let blockHeader = clonedBlock.querySelector('h4');
+                blockHeader.textContent = blockHeader.textContent.replace(/\#\d+$/, `#${blockCounter}`);
+
+                // Вставляем клонированный блок перед кнопкой "Add Operation"
+                document.querySelector(".new-operation").insertAdjacentElement('beforebegin', clonedBlock);
+                blockCounter++;
+            }
+
 
             // Если клик был по кнопке .fetchSequence
             if (event.target.classList.contains('loadsSequence')) {
@@ -369,13 +496,21 @@ document.addEventListener('DOMContentLoaded', function() {
                             publicKey = sourceAccountInput.value;
                         }
                     }
+                    if (event.target.classList.contains('fetchPath')){
+                        let operationBlock = event.target.closest('.operation-block');
+                        let assetFrom = operationBlock.querySelector('.selling').value||0;
+                        let assetFor = operationBlock.querySelector('.buying').value||0;
+                        let assetSum = operationBlock.querySelector('.amount').value||0;
+                        publicKey = `${assetFrom}/${assetFor}/${assetSum}`;
+                    }
 
                     let urls = {
                         'fetchAssetSrc': `/lab/assets/${publicKey}`,
                         'fetchData': `/lab/data/${publicKey}`,
                         'fetchOffers': `/lab/offers/${publicKey}`,
                         'fetchAssetMTL': '/lab/mtl_assets',
-                        'fetchAccounts': '/lab/mtl_accounts'
+                        'fetchAccounts': '/lab/mtl_accounts',
+                        'fetchPath': `/lab/path/${publicKey}`
                     };
 
                     let fetchURL;
@@ -392,7 +527,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             .then(data => {
                                 let dropdownContent = "";
                                 for (let name in data) {
-                                    dropdownContent += `<div class="account-item" data-account="${data[name]}">${name}</div>`;
+                                    dropdownContent += `<div class="account-item" data-account='${data[name]}'>${name}</div>`;
                                 }
                                 dropdown.innerHTML = dropdownContent;
                                 dropdown.style.display = 'block';
@@ -428,6 +563,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
             if (event.target.classList.contains('get_xdr')) {
                 const data = gatherData();
+                if (data === null) {
+                    return;
+                }
 
                 fetch("/lab/build_xdr", {
                     method: "POST",
@@ -503,22 +641,72 @@ document.addEventListener('DOMContentLoaded', function() {
 
 });
 
+function isFieldEmpty(block, fieldName, blockName) {
+    let input = block.querySelector(`input[name="${fieldName}"]`);
+    if (input) {
+        if (!input.value.trim()) {
+            input.style.backgroundColor = 'red'; // Подкрашиваем блок в красный при ошибке
+            // alert(`${blockName} имеет пустое поле '${fieldName}'`);
+            return true; // Поле пустое
+        } else {
+            input.style.backgroundColor = ''; // если ошибки нет
+        }
+    }
+    return false; // Поле заполнено или не существует
+}
+
+
 function gatherData() {
-    const blocks = document.querySelectorAll('.operation-block');
+    const blocks = document.querySelectorAll('.gather-block');
     let data = {};
     let operations = [];
+    let hasError = false; // Флаг для отслеживания наличия ошибок
     data['publicKey'] = document.querySelector(".publicKey").value;
     data['sequence'] = document.querySelector(".sequence_number").value;
+    if (!data['sequence'].trim()){
+        hasError = true; // Устанавливаем флаг ошибки
+        alert(`пустое поле 'sequence'`);
+    }
     data['memo_type'] = document.querySelector(".memo_type").value;
     data['memo'] = document.querySelector(".memo").value;
 
     blocks.forEach((block, index) => {
+        // проверка значений
+        let blockName = block.querySelector('h4').textContent; // Получаем название блока
+        // Поля для проверки в этом блоке
+        let fieldsToCheck = ['amount', 'weight', 'price', 'destination', 'asset', 'startingBalance', 'buying',
+                            'selling', 'data_name'];
+        // Проверяем каждое поле
+        fieldsToCheck.forEach(field => {
+            if (isFieldEmpty(block, field, blockName)) {
+                hasError = true;
+            }
+        });
+
         if (block.classList.contains('payment_block')) {
             let blockData = {
                 type: 'payment',
                 destination: block.querySelector('input[name="destination"]').value,
                 asset: block.querySelector('input[name="asset"]').value,
                 amount: block.querySelector('input[name="amount"]').value,
+                sourceAccount: block.querySelector('input[name="sourceAccount"]').value
+            };
+            operations.push(blockData);
+        }
+        if (block.classList.contains('clawback_block')) {
+            let blockData = {
+                type: 'clawback',
+                from: block.querySelector('input[name="from"]').value,
+                asset: block.querySelector('input[name="asset"]').value,
+                amount: block.querySelector('input[name="amount"]').value,
+                sourceAccount: block.querySelector('input[name="sourceAccount"]').value
+            };
+            operations.push(blockData);
+        }
+        if (block.classList.contains('copy_multi_sign_block')) {
+            let blockData = {
+                type: 'copy_multi_sign',
+                from: block.querySelector('input[name="from"]').value,
                 sourceAccount: block.querySelector('input[name="sourceAccount"]').value
             };
             operations.push(blockData);
@@ -537,7 +725,7 @@ function gatherData() {
             let blockData = {
                 type: 'change_trust',
                 asset: block.querySelector('input[name="asset"]').value,
-                amount: block.querySelector('input[name="amount"]').value,
+                amount: block.querySelector('input[name="trust_amount"]').value,
                 sourceAccount: block.querySelector('input[name="sourceAccount"]').value
             };
             operations.push(blockData);
@@ -594,6 +782,18 @@ function gatherData() {
             };
             operations.push(blockData);
         }
+        if (block.classList.contains('swap_block')) {
+            let blockData = {
+                type: 'swap',
+                buying: block.querySelector('input[name="buying"]').value,
+                selling: block.querySelector('input[name="selling"]').value,
+                amount: block.querySelector('input[name="amount"]').value,
+                destination: block.querySelector('input[name="destination"]').value,
+                path: block.querySelector('input[name="path"]').value,
+                sourceAccount: block.querySelector('input[name="sourceAccount"]').value
+            };
+            operations.push(blockData);
+        }
         if (block.classList.contains('sell_passive_block')) {
             let blockData = {
                 type: 'sell_passive',
@@ -616,6 +816,11 @@ function gatherData() {
         }
 
     });
+
+    if (hasError) {
+        alert(`Ошибки заполнения`);
+        return null; // Возвращаем null, если были ошибки
+    }
 
     data['operations'] = operations;
 

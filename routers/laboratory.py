@@ -1,3 +1,7 @@
+import asyncio
+import json
+from urllib.parse import quote_plus
+
 import requests
 from quart import Blueprint, request, render_template, jsonify
 from stellar_sdk import Server, TransactionBuilder, Network, Asset, TrustLineFlags
@@ -5,7 +9,7 @@ from stellar_sdk import Server, TransactionBuilder, Network, Asset, TrustLineFla
 from config_reader import config
 from db.pool import db_pool
 from db.requests import db_get_dict, EURMTLDictsType, db_save_dict
-from utils import decode_data_value, float2str
+from utils import decode_data_value, float2str, stellar_copy_multi_sign
 
 blueprint = Blueprint('lab', __name__)
 
@@ -108,6 +112,28 @@ async def cmd_build_xdr():
                                           asset=decode_asset(operation['asset']),
                                           amount=float2str(operation['amount']),
                                           source=source_account)
+        if operation['type'] == 'clawback':
+            transaction.append_clawback_op(from_=operation['from'],
+                                           asset=decode_asset(operation['asset']),
+                                           amount=float2str(operation['amount']),
+                                           source=source_account)
+        if operation['type'] == 'copy_multi_sign':
+            public_key = source_account if source_account else data['publicKey']
+            updated_signers = await stellar_copy_multi_sign(public_key_from=operation['from'],
+                                                            public_key_for=public_key)
+            for signer in updated_signers:
+                if signer['key'] == public_key:
+                    transaction.append_set_options_op(master_weight=signer['weight'],
+                                                      source=source_account)
+                elif signer['key'] == 'threshold':
+                    transaction.append_set_options_op(med_threshold=signer['med_threshold'],
+                                                      low_threshold=signer['low_threshold'],
+                                                      high_threshold=signer['high_threshold'],
+                                                      source=source_account)
+                else:
+                    transaction.append_ed25519_public_key_signer(account_id=signer['key'],
+                                                                 weight=signer['weight'],
+                                                                 source=source_account)
         if operation['type'] == 'trust_payment':
             transaction.append_set_trust_line_flags_op(trustor=operation['destination'],
                                                        asset=decode_asset(operation['asset']),
@@ -136,6 +162,19 @@ async def cmd_build_xdr():
                                                     price=float2str(operation['price']),
                                                     offer_id=int(operation['offer_id']),
                                                     source=source_account)
+        if operation['type'] == 'swap':
+            asset_path = []
+            for asset in json.loads(operation['path']):
+                asset_path.append(decode_asset(f'{asset["asset_code"]}-{asset["asset_issuer"]}'))
+            transaction.append_path_payment_strict_send_op(path=asset_path,
+                                                           destination=source_account if source_account else data[
+                                                               'publicKey'],
+                                                           send_asset=decode_asset(operation['selling']),
+                                                           dest_asset=decode_asset(operation['buying']),
+                                                           send_amount=float2str(operation['amount']),
+                                                           dest_min=float2str(operation['destination']),
+
+                                                           source=source_account)
         if operation['type'] == 'sell_passive':
             transaction.append_create_passive_sell_offer_op(selling=decode_asset(operation['selling']),
                                                             buying=decode_asset(operation['buying']),
@@ -222,5 +261,20 @@ async def cmd_offers(account_id):
     return jsonify(result)
 
 
+@blueprint.route('/lab/path/<asset_from>/<asset_for>/<asset_sum>')
+async def cmd_path(asset_from, asset_for, asset_sum):
+    result = {}
+    try:
+        account = Server(horizon_url="https://horizon.stellar.org").strict_send_paths(
+            source_asset=decode_asset(asset_from),
+            source_amount=float2str(asset_sum),
+            destination=[decode_asset(asset_for)]).call()
+        for record in account['_embedded']['records']:
+            result[f"{record['destination_amount']} {record['destination_asset_code']}"] = json.dumps(record['path'])
+    except:
+        pass
+    return jsonify(result)
+
+
 if __name__ == '__main__':
-    cmd_offers('GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V')
+    asyncio.run(cmd_path('XLM', 'BTCMTL-GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V', '150'))

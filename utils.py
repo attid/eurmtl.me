@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 from datetime import datetime
@@ -11,7 +12,7 @@ from stellar_sdk import (
     TextMemo,
     TransactionEnvelope,
     PathPaymentStrictSend,
-    ManageSellOffer, Transaction, Keypair, Server, Asset, TransactionBuilder
+    ManageSellOffer, Transaction, Keypair, Server, Asset, TransactionBuilder, ServerAsync, AiohttpClient
 
 )
 from stellar_sdk.exceptions import NotFoundError
@@ -457,6 +458,7 @@ def decode_xdr_to_text(xdr):
         result.append(f"Прости хозяин, не понимаю")
         print('bad xdr', idx, operation)
     if data_exist:
+        result = [item for item in result if item != '']
         return result
     else:
         return []
@@ -600,9 +602,47 @@ def is_valid_base64(s):
         return False
 
 
+async def stellar_copy_multi_sign(public_key_from, public_key_for):
+    async with ServerAsync(
+            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+    ) as server:
+        updated_signers = []
+        call = await server.accounts().account_id(public_key_from).call()
+        public_key_from_signers = call['signers']
+        updated_signers.append({'key': 'threshold',
+                                'high_threshold': call['thresholds']['high_threshold'],
+                                'low_threshold': call['thresholds']['low_threshold'],
+                                'med_threshold': call['thresholds']['med_threshold']})
+
+        public_key_for_signers = (await server.accounts().account_id(public_key_for).call())['signers']
+
+    current_signers = {signer['key']: signer['weight'] for signer in public_key_for_signers}
+    new_signers = {signer['key']: signer['weight'] for signer in public_key_from_signers}
+    # переносим мастер
+    new_signers[public_key_for] = new_signers[public_key_from]
+    new_signers.pop(public_key_from)
+
+    # Шаг 1: Добавляем подписантов для удаления (вес 0)
+    for signer in current_signers:
+        if signer not in new_signers:
+            updated_signers.append({'key': signer, 'weight': 0})
+
+    # Шаг 2: Обновляем вес для существующих подписантов
+    for signer, weight in current_signers.items():
+        if signer in new_signers and new_signers[signer] != weight:
+            updated_signers.append({'key': signer, 'weight': new_signers[signer]})
+
+    # Шаг 3: Добавляем новых подписантов
+    for signer, weight in new_signers.items():
+        if signer not in current_signers:
+            updated_signers.append({'key': signer, 'weight': weight})
+
+    return updated_signers
+
+
 if __name__ == '__main__':
-    print(decode_xdr_to_text(
-        "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"))
+    print(asyncio.run(stellar_copy_multi_sign('GAEZHXMFRW2MWLWCXSBNZNUSE6SN3ODZDDOMPFH3JPMJXN4DKBPMDEFI',
+                                              'GBTOF6RLHRPG5NRIU6MQ7JGMCV7YHL5V33YYC76YYG4JUKCJTUP5DEFI')))
     exit()
     # simple way to find error in editing
     l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHQlRPRjZSTEhSUEc1TlJJVTZNUTdKR01DVjdZSEw1VjMzWVlDNzZZWUc0SlVLQ0pUVVA1REVGSSIsInNlcXVlbmNlIjoiMTg2NzM2MjAxNTQ4NDMxMzc4IiwiZmVlIjoiMTAwMTAiLCJiYXNlRmVlIjoiMTAwIiwibWluRmVlIjoiNTAwMCIsIm1lbW9UeXBlIjoiTUVNT19URVhUIiwibWVtb0NvbnRlbnQiOiJsYWxhbGEifSwiZmVlQnVtcEF0dHJpYnV0ZXMiOnsibWF4RmVlIjoiMTAxMDEifSwib3BlcmF0aW9ucyI6W3siaWQiOjAsImF0dHJpYnV0ZXMiOnsiZGVzdGluYXRpb24iOiJHQUJGUUlLNjNSMk5FVEpNN1Q2NzNFQU1aTjRSSkxMR1AzT0ZVRUpVNVNaVlRHV1VLVUxaSk5MNiIsImFzc2V0Ijp7InR5cGUiOiJjcmVkaXRfYWxwaGFudW00IiwiY29kZSI6IlVTREMiLCJpc3N1ZXIiOiJHQTVaU0VKWUIzN0pSQzVBVkNJQTVNT1A0UkhUTTMzNVgyS0dYM0lIT0pBUFA1UkUzNEs0S1pWTiJ9LCJhbW91bnQiOiIzMDAwMCIsInNvdXJjZUFjY291bnQiOm51bGx9LCJuYW1lIjoicGF5bWVudCJ9XX0%3D&network=public'
