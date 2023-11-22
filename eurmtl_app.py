@@ -1,15 +1,17 @@
+import sentry_sdk
+from quart import Quart, render_template
+
+import routers.cup
+import routers.decision
+import routers.federal
+import routers.helpers
+import routers.index
+import routers.laboratory
+import routers.remote
+import routers.sign_tools
+from config_reader import config
 from db.models import Base
 from db.pool import engine
-from utils import *
-from quart import Quart, render_template
-import routers.laboratory
-import routers.index
-import routers.federal
-import routers.sign_tools
-import routers.helpers
-import routers.decision
-import routers.cup
-import routers.remote
 
 app = Quart(__name__)
 
@@ -32,13 +34,18 @@ app.register_blueprint(routers.decision.blueprint)
 app.register_blueprint(routers.cup.blueprint)
 app.register_blueprint(routers.remote.blueprint)
 
-
 # @app.context_processor
 # def inject_assets():
 #    return dict(assets=assets)
 
 
 # locale.setlocale(locale.LC_ALL, 'en_GB.UTF-8')
+
+sentry_sdk.init(
+    dsn=config.sentry_dsn,
+    traces_sample_rate=1.0,
+    profiles_sample_rate=1.0,
+)
 
 
 @app.route('/updatedb')

@@ -6,7 +6,7 @@ from quart import Blueprint, send_file, request, session, redirect
 
 from db.models import Signers
 from db.pool import db_pool
-from utils import check_response, check_user_weight
+from utils.stellar_utils import check_response, check_user_weight
 
 blueprint = Blueprint('index', __name__)
 

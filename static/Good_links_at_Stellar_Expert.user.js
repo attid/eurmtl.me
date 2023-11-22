@@ -4,7 +4,7 @@
 // @match       https://stellar.expert/explorer/public/account/*
 // @match       https://stellar.expert/explorer/public/tx/*
 // @grant       none
-// @version     0.7
+// @version     0.8
 // @description Change links at Stellar Expert
 // @author      skynet
 // @updateURL   https://eurmtl.me/static/Good_links_at_Stellar_Expert.user.js
@@ -22,23 +22,27 @@ let observer;
 
         let links = document.querySelectorAll('.account-balance');
         links.forEach((link) => {
+            // Извлекаем элемент с классом 'asset-link', который содержит атрибут 'aria-label'
             let assetLink = link.querySelector('.asset-link');
-            let asset = assetLink.getAttribute('aria-label');
-            if (asset) {
-                let newHref;
+            if (assetLink) {
+                let asset = assetLink.getAttribute('aria-label');
 
-                // Если asset содержит "-", значит это первый формат
-                if (asset.includes('-')) {
-                    newHref = `https://stellar.expert/explorer/public/asset/${asset}`;
-                } else {
-                    // Иначе это второй формат
-                    newHref = `https://stellar.expert/explorer/public/liquidity-pool/${asset}`;
+                if (asset) {
+                    let newHref;
+
+                    // Если asset содержит "-", значит это первый формат
+                    if (asset.includes('-')) {
+                        newHref = `https://stellar.expert/explorer/public/asset/${asset}`;
+                    } else {
+                        // Иначе это второй формат
+                        newHref = `https://stellar.expert/explorer/public/liquidity-pool/${asset}`;
+                    }
+
+                    link.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        window.location.href = newHref;
+                    });
                 }
-
-                link.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    window.location.href = newHref;
-                });
             }
         });
 
@@ -178,4 +182,3 @@ let observer;
         observer.observe(document.body, { attributes: false, childList: true, subtree: true });
     }
 })();
-

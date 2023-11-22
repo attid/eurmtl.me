@@ -1,18 +1,11 @@
 import asyncio
-import json
-import requests
-from datetime import datetime
-from quart import Blueprint, request, make_response, render_template, flash, session, redirect, abort, jsonify
-from stellar_sdk import Network, TransactionEnvelope
-from stellar_sdk import Keypair
-from stellar_sdk.exceptions import BadSignatureError
-from stellar_sdk import DecoratedSignature
-from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
-from db.models import Transactions, Signers, Signatures, Alerts
+
+from quart import Blueprint, request, jsonify
+
+from db.models import Transactions, Signers, Signatures
 from db.pool import db_pool
 from routers.sign_tools import parse_xdr_for_signatures
-from utils import decode_xdr_to_text, decode_xdr_to_base64, check_publish_state, check_response, check_user_weight, \
-    send_telegram_message, is_valid_base64
+from utils.stellar_utils import decode_xdr_to_text, is_valid_base64
 
 blueprint = Blueprint('remote', __name__)
 

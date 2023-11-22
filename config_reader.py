@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     bot_token: SecretStr
     signing_key: SecretStr
     skynet_token: SecretStr
+    sentry_dsn: str
 
     class Config:
         env_file = dotenv_path

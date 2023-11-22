@@ -1,9 +1,5 @@
-import re
-from datetime import timedelta
-from sys import argv
-from typing import List, Dict, cast
-from sqlalchemy import select, and_, case, distinct, Date, extract, desc, cast as sql_cast
 from sqlalchemy.orm import Session
+
 from db.models import *
 
 

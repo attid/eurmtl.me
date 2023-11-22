@@ -1,6 +1,5 @@
 import asyncio
 import json
-from urllib.parse import quote_plus
 
 import requests
 from quart import Blueprint, request, render_template, jsonify
@@ -9,7 +8,7 @@ from stellar_sdk import Server, TransactionBuilder, Network, Asset, TrustLineFla
 from config_reader import config
 from db.pool import db_pool
 from db.requests import db_get_dict, EURMTLDictsType, db_save_dict
-from utils import decode_data_value, float2str, stellar_copy_multi_sign
+from utils.stellar_utils import decode_data_value, float2str, stellar_copy_multi_sign
 
 blueprint = Blueprint('lab', __name__)
 

@@ -1,13 +1,16 @@
-import pyqrcode
 import uuid
-from quart import Blueprint, request, make_response, render_template, flash
+import pyqrcode
+from datetime import datetime, timedelta
+from urllib.parse import quote_plus
+from quart import Blueprint, request, render_template, flash
 from config_reader import start_path
 from db.pool import db_pool
-from db.requests import db_get_dict, EURMTLDictsType
-from utils import float2str, add_trust_line_uri, xdr_to_uri
-from urllib.parse import quote_plus
+from db.requests import db_get_dict, EURMTLDictsType, db_save_dict
+from utils.gspread_utils import gs_get_asset
+from utils.stellar_utils import add_trust_line_uri, float2str, xdr_to_uri
 
 blueprint = Blueprint('sellers', __name__)
+last_update_time = datetime.now() - timedelta(minutes=20)
 
 
 @blueprint.route('/seller/<account_id>', methods=('GET', 'POST'))
@@ -58,16 +61,19 @@ async def cmd_asset(asset_code):
     if len(asset_code) < 3:
         await flash('BAD asset code')
 
+    global last_update_time
     assets = db_get_dict(db_pool(), EURMTLDictsType.Assets)
+
+    if asset_code not in assets:
+        if datetime.now() - last_update_time > timedelta(minutes=15):
+            issuer = gs_get_asset(asset_code)
+            if issuer:
+                assets[asset_code] = issuer
+                db_save_dict(db_pool(), EURMTLDictsType.Assets, assets)
+            last_update_time = datetime.now()
 
     if asset_code in assets:
         qr_text = add_trust_line_uri(assets[asset_code], asset_code, assets[asset_code])
-        # (f'web+stellar:tx?xdr={quote_plus(add_asset(assets[asset_code], asset_code, assets[asset_code]))}'
-        #            # f'&callback={quote_plus(f"https://eurmtl.me/sign_tools/{transaction.hash}")}'
-        #            f'&msg={quote_plus(f"Add trustline for {asset_code}")}'
-        #            # f'&pubkey=GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI'
-        #            f"{quote_plus('&replace=sourceAccount:X,seqNum:Y;X:account on which to create the trustline,Y:actual seqNum')}"
-        #            f'&origin_domain=eurmtl.me')
         qr_img = f'/static/qr/{uuid.uuid4().hex}.svg'
         qr = pyqrcode.create(qr_text)
         qr.svg(start_path + qr_img, scale=4)
@@ -87,7 +93,7 @@ async def cmd_asset(asset_code):
 async def cmd_uri():
     # if exist GET data xdr
     xdr = request.args.get('xdr')
-    #print(xdr)
+    # print(xdr)
     uri_xdr = xdr_to_uri(xdr) if xdr else None
     resp = await render_template('uri.html', xdr=xdr, uri_xdr=uri_xdr)
     return resp

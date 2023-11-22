@@ -1,16 +1,8 @@
 import asyncio
 from datetime import datetime, timezone
-
-import requests
 from dateutil.parser import parse
-from quart import Blueprint, request, render_template, jsonify
-from stellar_sdk import Server, TransactionBuilder, Network, Asset, TrustLineFlags
-
-from config_reader import config
-from db.pool import db_pool
-from db.requests import db_get_dict, EURMTLDictsType, db_save_dict
-from utils import decode_data_value, float2str
-
+from quart import Blueprint, render_template
+from stellar_sdk import Server, Asset
 blueprint = Blueprint('cup', __name__)
 
 

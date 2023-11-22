@@ -1,8 +1,7 @@
 import uuid as uuid
-from sqlalchemy import Table, String, Integer, Column, Text, DateTime, Boolean, create_engine, BLOB, ForeignKey, JSON, \
-    BigInteger
 from datetime import datetime
 
+from sqlalchemy import String, Integer, Column, Text, DateTime, create_engine, ForeignKey, BigInteger
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from config_reader import config

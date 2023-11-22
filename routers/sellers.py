@@ -1,22 +1,9 @@
-import json
-
-import pyqrcode
-import requests
-from datetime import datetime
-
 import uuid
-from flask import Blueprint, render_template, request, abort, make_response, flash, redirect, session, url_for
-from stellar_sdk import Network, TransactionEnvelope
-from stellar_sdk import Keypair
-from stellar_sdk.exceptions import BadSignatureError
-from stellar_sdk import DecoratedSignature
-from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
-
-from config_reader import start_path
-from db.models import Transactions, Signers, Signatures
-from db.pool import db_pool
-from utils import decode_xdr_to_text, decode_xdr_to_base64, check_publish_state, check_response, float2str
+import pyqrcode
 from urllib.parse import quote_plus
+from flask import Blueprint, render_template, request, make_response, flash
+from config_reader import start_path
+from utils.stellar_utils import float2str
 
 blueprint = Blueprint('sellers', __name__)
 

@@ -7,10 +7,34 @@
 
 {% if qr_text %}
 
-страничка для открытия трастлайна к {{asset_code}} от эмитента {{asset_issuer}} <br>
+<section id="main">
+    <div class="row">
+        <div class="col text-center">Открытие трастлайна к токену {{asset_code}}</div>
+    </div>
+    <div class="row">
+        <div class="col text-center">
+            от эмитента
+        </div>
+    </div>
+    <div class="row">
+        <div class="col text-center">
+            <span id="text-to-copy">{{asset_issuer}}</span>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col text-center">
+            <a href="https://stellar.expert/explorer/public/asset/{{asset_code}}-{{asset_issuer}}" target="_blank" class="button secondary outline">Посмотреть в stellar.expert</a>
+            <a href="{{qr_text}}" target="_blank" class="button secondary outline">Добавить в лобстер</a>
+            <a href="https://t.me/MyMTLWalletBot?start=asset_{{asset_code}}-0" target="_blank" class="button secondary outline">Добавить в MMWB</a>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col text-center">
+            <img src="{{ qr_img }}" alt="{{asset_code}}-{{asset_issuer}}"/>
+        </div>
+    </div>
+</section>
 
-<img src="{{ qr_img }}"> <br>
-<a href="{{qr_text}}">Link to open in lobster</a>
 {% endif %}
 
 {% endblock %}
