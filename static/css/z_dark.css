@@ -1,0 +1,23 @@
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #121212; /* Темный фон */
+        color: #ffffff; /* Светлый текст */
+    }
+    a {
+        color: #bb86fc; /* Цвет ссылок для темной темы */
+    }
+    select,
+    input,
+    textarea {
+        background-color: #333333;
+        color: #ffffff;
+    }
+    .account-item{
+        background-color: #333333;
+        color: #ffffff;
+    }
+    .account-item:hover {
+        background-color: #bdbfc4;
+    }
+
+}
