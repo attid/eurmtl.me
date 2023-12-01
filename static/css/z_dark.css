@@ -1,23 +1,28 @@
 @media (prefers-color-scheme: dark) {
     body {
         background-color: #121212; /* Темный фон */
-        color: #ffffff; /* Светлый текст */
+        color: #ccc; /* Светлый текст */
     }
     a {
-        color: #bb86fc; /* Цвет ссылок для темной темы */
+        color: #9b70d0; /* Цвет ссылок для темной темы */
     }
     select,
     input,
     textarea {
-        background-color: #333333;
-        color: #ffffff;
+        background-color: #333;
+        color: #ccc;
     }
     .account-item{
-        background-color: #333333;
-        color: #ffffff;
+        background-color: #333;
+        color: #ccc;
     }
     .account-item:hover {
-        background-color: #bdbfc4;
+        background-color: #111;
     }
 
+    :root {
+        --color-darkGrey: #555;
+        --color-primary: #195b3c;
+        --color-lightGrey: #a5a7aa;
+    }
 }
