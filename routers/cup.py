@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from dateutil.parser import parse
 from quart import Blueprint, render_template
 from stellar_sdk import Server, Asset
+
 blueprint = Blueprint('cup', __name__)
 
 
@@ -32,7 +33,7 @@ async def cmd_orderbook(asset1, asset2):
         sellers_offers['_embedded']['records'] = sorted(sellers_offers['_embedded']['records'],
                                                         key=lambda x: float(x['price']), reverse=True)
         buyers_offers['_embedded']['records'] = sorted(buyers_offers['_embedded']['records'],
-                                                        key=lambda x: float(x['price']), reverse=False)
+                                                       key=lambda x: float(x['price']), reverse=False)
 
         if float(sellers_offers['_embedded']['records'][-1]['price']) > 1:
             need_round = 3
@@ -100,7 +101,8 @@ async def cmd_orderbook(asset1, asset2):
     asset_url = f'{asset1.code}-{asset1.issuer}' if asset1.issuer else f'{asset1.code}'
     asset_url = f'{asset_url}/{asset2.code}-{asset2.issuer}' if asset2.issuer else f'{asset_url}/{asset2.code}'
     resp = await render_template('cup.orderbook.html', orders=orders, spread_amount=spread_amount,
-                                 spread_percentage=spread_percentage, assets=[asset1, asset2], asset_url=asset_url)
+                                 spread_percentage=spread_percentage, assets=[asset1, asset2], asset_url=asset_url,
+                                 scopuly_url=get_scopuly_url(asset1, asset2), active_page='orderbook')
     return resp
 
 
@@ -139,7 +141,8 @@ async def cmd_trades(asset1, asset2):
 
         asset_url = f'{asset1.code}-{asset1.issuer}/{asset2.code}-{asset2.issuer}'
         resp = await render_template('cup.trades.html', trades=results,
-                                     assets=[asset1, asset2], asset_url=asset_url)
+                                     assets=[asset1, asset2], asset_url=asset_url,
+                                     active_page='trades')
 
         return resp
     except Exception as e:
@@ -229,7 +232,93 @@ async def cmd_chart(asset1, asset2):
     return resp
 
 
+def get_send_swap_cost(asset1, asset2, amount):
+    server = Server(horizon_url="https://horizon.stellar.org")
+    swap_list = server.strict_send_paths(asset1, amount, [asset2]).limit(200).call()
+    if swap_list['_embedded']['records']:
+        return swap_list['_embedded']['records'][0]['destination_amount']
+    else:
+        return 0
+
+
+def get_receive_swap_cost(asset1, asset2, amount):
+    server = Server(horizon_url="https://horizon.stellar.org")
+    swap_list = server.strict_receive_paths([asset1], asset2, amount).limit(200).call()
+    if swap_list['_embedded']['records']:
+        return swap_list['_embedded']['records'][0]['source_amount']
+    else:
+        return 0
+
+
+@blueprint.route('/cup/swap/<asset1>/<asset2>')
+async def cmd_swap_book(asset1, asset2):
+    asset1, asset2 = decode_asset(asset1), decode_asset(asset2)
+    cost_list = ('10000', '1000', '100', '10', '1')
+
+    orders = {
+        'sellers': [],
+        'buyers': []
+    }
+    need_round = 7
+    try:
+        # if float(sellers_offers['_embedded']['records'][-1]['price']) > 1:
+        need_round = 3
+        for cost in cost_list:
+            swap_cost = get_send_swap_cost(asset1, asset2, cost)
+
+            order_info = {
+                'amount': round(float(cost), need_round),
+                'price': round(float(cost) / float(swap_cost), need_round),
+                'total': round(float(swap_cost), need_round)
+            }
+            orders['sellers'].append(order_info)
+
+        for cost in reversed(cost_list):
+            swap_cost = get_receive_swap_cost(asset2, asset1, cost)
+
+            order_info = {
+                'amount': round(float(cost), need_round),
+                'price': round(float(cost) / float(swap_cost), need_round),
+                'total': round(float(swap_cost), need_round)
+            }
+            orders['buyers'].append(order_info)
+
+    except Exception as e:
+        print(e)
+        pass
+
+    lowest_sell_price = min(order['price'] for order in orders['sellers']) if orders['sellers'] else 1
+    highest_buy_price = max(order['price'] for order in orders['buyers']) if orders['buyers'] else 1
+
+    spread_amount = round(lowest_sell_price - highest_buy_price, need_round)
+    spread_percentage = round((spread_amount / lowest_sell_price) * 100, 2)
+
+    # Теперь передаем все необходимые данные в шаблон:
+    # asset_url = f'{asset1.code}-{asset1.issuer}/{asset2.code}-{asset2.issuer}'
+    asset_url = f'{asset1.code}-{asset1.issuer}' if asset1.issuer else f'{asset1.code}'
+    asset_url = f'{asset_url}/{asset2.code}-{asset2.issuer}' if asset2.issuer else f'{asset_url}/{asset2.code}'
+    resp = await render_template('cup.swap.html', orders=orders, spread_amount=spread_amount,
+                                 spread_percentage=spread_percentage, assets=[asset1, asset2], asset_url=asset_url,
+                                 active_page='swap', scopuly_url=get_scopuly_url(asset1, asset2))
+    return resp
+
+
+def get_scopuly_url(asset1, asset2):
+    # Base URL for the Scopuly trade link
+    base_url = "https://scopuly.com/trade"
+
+    def get_issuer(asset):
+        # Special handling for native asset (XLM)
+        if asset.code == "XLM":
+            return "native"
+        else:
+            return asset.issuer
+
+    # Construct and return the full URL
+    return f"{base_url}/{asset1.code}-{asset2.code}/{get_issuer(asset1)}/{get_issuer(asset2)}"
+
+
 if __name__ == '__main__':
-    asyncio.run(cmd_trades('EURMTL-GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V',
-                           'USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'))
+    asyncio.run(cmd_swap_book('EURMTL-GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V',
+                              'USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'))
     pass

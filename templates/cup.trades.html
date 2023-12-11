@@ -1,26 +1,28 @@
 {% extends 'cup.main.html' %}
 
-{% block switch_url %}trades{% endblock %}
-
 {% block content %}
-<div class="order-table">
-    <div class="row">
-        <div>Price ({{assets[1].code}})</div>
-        <div>Amount ({{assets[0].code}})</div>
-        <div>When</div>
-    </div>
 
+<table class="highlight">
+    <thead>
+    <tr>
+        <th>Price ({{assets[1].code}})</th>
+        <th>Amount ({{assets[0].code}})</th>
+        <th>When</th>
+    </tr>
+    </thead>
+    <tbody>
     {% for trade in trades %}
-    <div class="row">
+    <tr>
         {% if trade['up'] %}
-        <div class="price up">⬆ {{trade['price']}}</div>
+        <td class="green-text">⬆ {{trade['price']}}</td>
         {% else %}
-        <div class="price down">⬇ {{trade['price']}}</div>
+        <td class="red-text">⬇ {{trade['price']}}</td>
         {% endif %}
-        <div class="amount">{{trade['amount']}}</div>
-        <div class="when">{{trade['minutes_ago']}}m</div>
-    </div>
+        <td>{{trade['amount']}}</td>
+        <td>{{trade['minutes_ago']}}m</td>
+    </tr>
     {% endfor %}
+    </tbody>
+</table>
 
-</div>
 {% endblock %}

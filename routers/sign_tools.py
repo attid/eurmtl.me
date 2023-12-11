@@ -1,4 +1,7 @@
+import asyncio
 import json
+from random import random, shuffle
+
 import requests
 from datetime import datetime
 from quart import Blueprint, request, render_template, flash, session, redirect, abort
@@ -198,7 +201,8 @@ async def show_transaction(tr_hash):
         signers = []
         has_votes = 0
         # find bad signer and calc votes
-        for signer in json_transaction[address]['signers']:
+        sorted_signers = sorted(json_transaction[address]['signers'], key=lambda x: x[1])
+        for signer in sorted_signers:
             with db_pool() as db_session:
                 signature = db_session.query(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
                     Signatures.transaction_hash == transaction.hash, Signers.public_key == signer[0]).first()
@@ -213,18 +217,9 @@ async def show_transaction(tr_hash):
                     # await flash(json_transaction[address]['threshold'], 'good')
                     signature_xdr = DecoratedSignature.from_xdr_object(
                         DecoratedSignatureXdr.from_xdr(signature.signature_xdr))
-                    if signature_xdr in transaction_env.signatures:
-                        pass
-                    else:
+                    if signature_xdr not in transaction_env.signatures:
                         transaction_env.signatures.append(signature_xdr)
-                        # await flash(f'*{address} need {json_transaction[address]["threshold"]} {has_votes} Added signature from {username} {signer[1]}', 'good')
                 has_votes += signer[1]
-                # with suppress(ValueError):
-                #    if signature_xdr in transaction_env.signatures.index(signature_xdr):
-                #        print('signature_xdr exist')
-                #    else:
-                #        print('signature_xdr addede')
-
             else:
                 bad_signers.append(username)
             if signer[1] > 0:
@@ -258,6 +253,10 @@ async def show_transaction(tr_hash):
     send = request.args.get('send', default=None)
     if send is not None:
         try:
+            if request.args.get('random', default=None) is not None:
+                shuffle(transaction_env.signatures)
+                await flash('Signatures shuffled', 'good')
+
             transaction_resp = requests.post('https://horizon.stellar.org/transactions/',
                                              data={"tx": transaction_env.to_xdr()})
             if transaction_resp.status_code == 200:
@@ -331,7 +330,7 @@ async def parse_xdr_for_signatures(tx_body):
                         except BadSignatureError:
                             result['MESSAGES'].append(f'Bad signature. {signature.signature_hint.hex()} not verify')
             db_session.commit()
-            return result
+    return result
 
 
 @blueprint.route('/sign_all', methods=('GET', 'POST'))
@@ -415,3 +414,9 @@ def alert_singers(tr_hash, small_text, tx_description):
         alert_query = db_session.query(Alerts).filter(Alerts.transaction_hash == tr_hash).all()
         for alert in alert_query:
             send_telegram_message(alert.tg_id, text)
+
+
+if __name__ == '__main__':
+    xdr = 'AAAAAgAAAACbUeUHNfn9lIj6LioAl6J4EwlEYcu/Vw/pGS+++oBWBgAJJ8AC4KLIAAAAGQAAAAAAAAABAAAAE1VwZGF0ZSBzaWduIHdlaWdodHMAAAAABgAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAA3iAF79FElH6CPy+dqHgkEBz8YVfteor3AyWu5GmuxlAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAA2H7++0KxttAtUMy0Fgq6CCGcVPBII2TodWERXetmsPAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAA5bumZMFAUBwLkrdrnMElM8Dd8NKGwGPAncvfnh9UPaAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAB6GAqawjMe8TfXEDQhbyIy5XajtWdrRHVWlEvV8Gr60AAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAB+c655SYYUEWyLNu6HYeS+I+YiN1v2UjzO1T8D+wwTrAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAACAAAAAEAAAAIAAAAAQAAAAgAAAAAAAAAAQAAAABV7mlOMsaqtm81h/Xd3/GWM/RPm9V5bZtQgJLDCCVV4QAAAAAAAAAAAAAAAA=='
+    r = asyncio.run(parse_xdr_for_signatures(xdr))
+    print(r)
