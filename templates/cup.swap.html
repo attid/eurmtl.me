@@ -1,0 +1,41 @@
+{% extends 'cup.main.html' %}
+
+{% block content %}
+
+<table class="highlight">
+    <thead>
+    <tr>
+        <th>Amount ({{assets[0].code}})</th>
+        <th>Price ({{assets[1].code}})</th>
+        <th>Total ({{assets[1].code}})</th>
+    </tr>
+    </thead>
+    <tbody>
+    {% for order in orders['sellers'] %}
+    <tr>
+        <td>{{order['amount']}}</td>
+        <td class="red-text">{{order['price']}}</td>
+        <td>{{order['total']}}</td>
+    </tr>
+    {% endfor %}
+
+    <!-- Spread -->
+    <tr class="grey lighten-2">
+        <td colspan="3" class="center-align">Spread: {{spread_amount}} ({{spread_percentage}}%)</td>
+    </tr>
+    <!-- Дополнительные строки после Spread -->
+    {% for order in orders['buyers'] %}
+    <tr>
+        <td>{{order['amount']}}</td>
+        <td class="green-text">{{order['price']}}</td>
+        <td>{{order['total']}}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+</table>
+<div class="row">
+    <a href="https://stellar.expert/explorer/public/market/{{asset_url}}" class="btn col s6">Stellar.Expert</a>
+    <a href="{{scopuly_url}}" class="btn col s6">Scopuly.com</a>
+</div>
+
+{% endblock %}

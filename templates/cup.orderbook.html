@@ -1,36 +1,41 @@
 {% extends 'cup.main.html' %}
 
-{% block switch_url %}orderbook{% endblock %}
-
 {% block content %}
-<div class="order-table">
-    <div class="row">
-        <div>Amount ({{assets[0].code}})</div>
-        <div>Price ({{assets[1].code}})</div>
-        <div>Total ({{assets[1].code}})</div>
-    </div>
+
+<table class="highlight">
+    <thead>
+    <tr>
+        <th>Amount ({{assets[0].code}})</th>
+        <th>Price ({{assets[1].code}})</th>
+        <th>Total ({{assets[1].code}})</th>
+    </tr>
+    </thead>
+    <tbody>
     {% for order in orders['sellers'] %}
-    <div class="row sellers">
-        <div class="amount">{{order['amount']}}</div>
-        <div class="price">{{order['price']}}</div>
-        <div class="total">{{order['total']}}</div>
-    </div>
+    <tr>
+        <td>{{order['amount']}}</td>
+        <td class="red-text">{{order['price']}}</td>
+        <td>{{order['total']}}</td>
+    </tr>
     {% endfor %}
 
-    <div class="spread">
-        <span>Spread: {{spread_amount}} ({{spread_percentage}}%)</span>
-    </div>
-
+    <!-- Spread -->
+    <tr class="grey lighten-2">
+        <td colspan="3" class="center-align">Spread: {{spread_amount}} ({{spread_percentage}}%)</td>
+    </tr>
+    <!-- Дополнительные строки после Spread -->
     {% for order in orders['buyers'] %}
-    <div class="row buyers">
-        <div class="amount">{{order['amount']}}</div>
-        <div class="price">{{order['price']}}</div>
-        <div class="total">{{order['total']}}</div>
-    </div>
+    <tr>
+        <td>{{order['amount']}}</td>
+        <td class="green-text">{{order['price']}}</td>
+        <td>{{order['total']}}</td>
+    </tr>
     {% endfor %}
-    <div class="row">
-        <a href="https://stellar.expert/explorer/public/market/{{asset_url}}">stellar.expert</a>
-    </div>
+    </tbody>
+</table>
+<div class="row">
+    <a href="https://stellar.expert/explorer/public/market/{{asset_url}}" class="btn col s6">Stellar.Expert</a>
+    <a href="{{scopuly_url}}" class="btn col s6">Scopuly.com</a>
 </div>
-{% endblock %}
 
+{% endblock %}
