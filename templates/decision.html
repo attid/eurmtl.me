@@ -2,7 +2,15 @@
 
 
 {% block head_scripts %}
-<script src="/static/decision.js"></script>
+<script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+<link rel="stylesheet" href="https://cdn.quilljs.com/1.3.6/quill.snow.css">
+<link rel="stylesheet" href="/static/css/quill-emoji.css">
+<script src="/static/quill-emoji.js"></script>
+<style>
+    #editor-container {
+        min-height: 150px;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
@@ -18,34 +26,96 @@
 
 <form action="" method="post">
     <fieldset id="create-tx">
+        <p>
+            <label for="short_subject">Тема (В реестр)</label>
+            <input type="text" id="short_subject" name="short_subject" required placeholder="Тема в реестр"
+                   value="{{ short_subject }}">
+        </p>
         <legend>Вопрос</legend>
         <div class="question_number">
             <label for="question_number">Номер вопроса:</label>
             <div class="input-group">
-                <input type="text" id="question_number" name="question_number" class="question_number" required placeholder="Номер вопроса, нажмите кнопку чтоб получить" value="{{ question_number }}"
-                {% if links_url %}
-                     disabled >
-                {% else %}
-                    ><button type="button" class="loadsDecisionNum button secondary">🔍</button>
-                {% endif %}
+                <input type="text" id="question_number" name="question_number" class="question_number" required
+                       placeholder="Номер вопроса, нажмите кнопку чтоб получить" value="{{ question_number }}"
+                       {% if links_url %} disabled {% endif %}>
+                <button type="button" id="loadsDecisionNum" class="loadsDecisionNum button secondary"
+                        {% if links_url %} disabled {% endif %}>🔍
+                </button>
             </div>
         </div>
         <p>
-            <label for="short_subject">Тема (В реестр)</label>
-            <input type="text" id="short_subject" name="short_subject" required placeholder="Тема в реестр" value="{{ short_subject }}">
+            <input type="hidden" name="inquiry" id="inquiry">
+            <label for="editor-container">Вопрос (Идет в группу без темы)</label>
         </p>
-        <p>
-            <label for="inquiry">Вопрос (Идет в группу без темы)</label>
-            <textarea id="inquiry" name="inquiry" placeholder="Введите ваш вопрос" required>{{ inquiry }}</textarea>
-        </p>
+        <div id="editor-container">
+            {{ inquiry|safe }}
+        </div>
         <p>
             <label>Чтение</label>
-            <label><input type="radio" name="reading" value="1" {{ 'checked' if reading == 1 else '' }} > Первое чтение</label>
-            <label><input type="radio" name="reading" value="2" {{ 'checked' if reading == 2 else '' }} > Второе чтение</label>
-            <label><input type="radio" name="reading" value="3" {{ 'checked' if reading == 3 else '' }} > Третье чтение</label>
+            <label><input type="radio" name="reading" value="1" {{ 'checked' if reading == 1 else '' }}> Первое
+                чтение</label>
+            <label><input type="radio" name="reading" value="2" {{ 'checked' if reading == 2 else '' }}> Второе
+                чтение</label>
+            <label><input type="radio" name="reading" value="3" {{ 'checked' if reading == 3 else '' }}> Третье
+                чтение</label>
         </p>
         <input type="submit" class="button primary" value="Опубликовать">
     </fieldset>
 </form>
+
+<script>
+    var form = document.querySelector('form');
+    form.onsubmit = function() {
+        var html = quill.root.innerHTML;
+        document.getElementById('inquiry').value = html;
+    };
+
+    var toolbarOptions = {
+        container: [
+            ['bold', 'italic', 'underline', 'strike', 'code'],
+            ['link'],
+            ['clean'],
+            ['emoji']
+        ],
+        handlers: {
+            'emoji': function () {}
+        }
+    }
+
+    var quill = new Quill('#editor-container', {
+        modules: {
+            "toolbar": toolbarOptions,
+            "emoji-toolbar": true,
+            "emoji-shortname": true
+        },
+        theme: 'snow',
+    });
+
+    async function getNumber() {
+        if (document.querySelector("#question_number").disabled) {
+            return; // Exit the function if disabled
+        }
+
+        fetch(`/decision/number`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error("Network response was not ok");
+            }
+            return response.json();
+        })
+        .then(data => {
+            document.querySelector("#question_number").value = data.number;
+            var currentText = quill.root.innerHTML; // Fetch current content from Quill editor
+            var shortSubject = document.querySelector("#short_subject").value;
+            quill.root.innerHTML = "<b>Вопрос " + data.number + ": "+ shortSubject +"</b><br> " + currentText; // Update content in Quill editor
+        })
+        .catch(error => {
+            console.log("There was a problem with the fetch operation:", error.message);
+        });
+    }
+    document.getElementById('loadsDecisionNum').addEventListener('click', getNumber);
+
+
+</script>
 
 {% endblock %}
