@@ -34,7 +34,7 @@ display_decimals=7
 is_unlimited=true
 name="MMWB"
 desc="MMWB are crypto-shares in the form of investment tokens that you can purchase if you want to support https://t.me/MyMTLWalletBot"
-image="https://eurmtl.me/static/img/mmwb.jpg"
+image="https://eurmtl.me/static/img/mmwb.png"
 
 
 [[VALIDATORS]]
