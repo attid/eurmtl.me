@@ -2,7 +2,7 @@ import asyncio
 import json
 
 import requests
-from quart import Blueprint, request, render_template, jsonify
+from quart import Blueprint, request, render_template, jsonify, session
 from stellar_sdk import Server, TransactionBuilder, Network, Asset, TrustLineFlags
 
 from config_reader import config
@@ -17,6 +17,7 @@ blueprint = Blueprint('lab', __name__)
 @blueprint.route('/lab')
 @blueprint.route('/lab/')
 async def cmd_laboratory():
+    session['return_to'] = request.url
     return await render_template('laboratory.html')
 
 

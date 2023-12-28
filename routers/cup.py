@@ -245,7 +245,7 @@ def get_receive_swap_cost(asset1, asset2, amount):
     server = Server(horizon_url="https://horizon.stellar.org")
     swap_list = server.strict_receive_paths([asset1], asset2, amount).limit(200).call()
     if swap_list['_embedded']['records']:
-        return swap_list['_embedded']['records'][0]['source_amount']
+        return swap_list['_embedded']['records'][-1]['source_amount']
     else:
         return 0
 
