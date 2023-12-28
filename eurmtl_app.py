@@ -1,3 +1,5 @@
+import logging
+
 import sentry_sdk
 from quart import Quart, render_template
 
@@ -9,11 +11,16 @@ import routers.index
 import routers.laboratory
 import routers.remote
 import routers.sign_tools
+import routers.web_editor
 from config_reader import config
 from db.models import Base
 from db.pool import engine
 
 app = Quart(__name__)
+
+logging.basicConfig(filename='app.log', level=logging.INFO,
+                    format='%(asctime)s %(levelname)s %(name)s %(threadName)s : %(message)s')
+
 
 # app.config['HOME_PATH'] = ''
 # assets = Environment(app)
@@ -27,12 +34,14 @@ app.config["EXPLAIN_TEMPLATE_LOADING"] = False
 
 app.register_blueprint(routers.index.blueprint)
 app.register_blueprint(routers.laboratory.blueprint)
-app.register_blueprint(routers.federal.blueprint)
+# app.register_blueprint(routers.federal.blueprint)
+app.register_blueprint(routers.federal.cors_enabled_blueprint)
 app.register_blueprint(routers.sign_tools.blueprint)
 app.register_blueprint(routers.helpers.blueprint)
 app.register_blueprint(routers.decision.blueprint)
 app.register_blueprint(routers.cup.blueprint)
 app.register_blueprint(routers.remote.blueprint)
+app.register_blueprint(routers.web_editor.blueprint)
 
 # @app.context_processor
 # def inject_assets():

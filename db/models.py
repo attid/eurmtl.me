@@ -69,6 +69,8 @@ class Decisions(Base):
     num = Column('num', Integer, nullable=False)
     reading = Column('reading', Integer, nullable=False)
     url = Column('url', String(64), nullable=False)
+    username = Column(String(64), nullable=False)
+    status = Column(String(64), nullable=False)
 
 
 class Alerts(Base):
@@ -76,6 +78,28 @@ class Alerts(Base):
     id = Column(Integer, primary_key=True)
     tg_id = Column(BigInteger, nullable=True)
     transaction_hash = Column(String(64), nullable=True)
+
+
+class WebEditorMessages(Base):
+    __tablename__ = 't_web_editor_messages'
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(BigInteger, nullable=False)
+    message_id = Column(BigInteger, nullable=False)
+    message_text = Column(Text(12000), nullable=False)
+
+
+class Sep6Transactions(Base):
+    __tablename__ = 't_sep6_transactions'
+    uuid = Column('uuid', String(32), default=lambda: uuid.uuid4().hex, primary_key=True)
+    admin_uuid = Column('admin_uuid', String(32), default=lambda: uuid.uuid4().hex)
+    kind = Column('kind', String(32), nullable=True)
+    started_at = Column('started_at', DateTime(), default=datetime.now)
+    completed_at = Column('completed_at', DateTime(), nullable=True)
+    amount_in = Column('amount_in', String(32), nullable=True)
+    amount_out = Column('amount_out', String(32), nullable=True)
+    amount_fee = Column('amount_fee', String(32), nullable=True)
+    stellar_transaction_id = Column('stellar_transaction_id', String(64), nullable=True)
+    external_transaction_id = Column('external_transaction_id', String(64), nullable=True)
 
 
 if __name__ == '__main__':

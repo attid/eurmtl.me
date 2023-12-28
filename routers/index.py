@@ -6,7 +6,8 @@ from quart import Blueprint, send_file, request, session, redirect
 
 from db.models import Signers
 from db.pool import db_pool
-from utils.stellar_utils import check_response, check_user_weight
+from utils.stellar_utils import check_user_weight
+from utils.telegram_utils import check_response
 
 blueprint = Blueprint('index', __name__)
 
@@ -82,6 +83,7 @@ async def restart():
 
             return "Restarting..."
 
+
 @blueprint.route('/login')
 async def login_telegram():
     data = {
@@ -101,7 +103,11 @@ async def login_telegram():
             if user and user.tg_id != data['id']:
                 user.tg_id = data['id']
                 db_session.commit()
-        return redirect('/lab')
+        return_to_url = session.get('return_to', None)
+        if return_to_url:
+            return redirect(return_to_url)
+        else:
+            return redirect('/lab')
     else:
         return 'Authorization failed'
 

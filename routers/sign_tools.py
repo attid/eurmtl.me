@@ -79,6 +79,7 @@ async def start_adduser():
 @blueprint.route('/sign_tools', methods=('GET', 'POST'))
 @blueprint.route('/sign_tools/', methods=('GET', 'POST'))
 async def start_add_transaction():
+    session['return_to'] = request.url
     if request.method == 'POST':
         form_data = await request.form
         tx_description = form_data['tx_description']
@@ -148,6 +149,7 @@ async def start_add_transaction():
 async def show_transaction(tr_hash):
     if len(tr_hash) != 64 and len(tr_hash) != 32:
         abort(404)
+    session['return_to'] = request.url
 
     with db_pool() as db_session:
         if len(tr_hash) == 64:
@@ -344,6 +346,7 @@ async def start_show_all_transactions():
 
 @blueprint.route('/edit_xdr/<tr_hash>', methods=('GET', 'POST'))
 async def edit_xdr(tr_hash):
+    session['return_to'] = request.url
     if len(tr_hash) != 64 and len(tr_hash) != 32:
         abort(404)
 
