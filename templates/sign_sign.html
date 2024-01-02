@@ -13,7 +13,7 @@
                 <a href="https://laboratory.stellar.org/#txsigner?network=public"
                    class="btn waves-effect waves-light flex-item" target="_blank">Open Laboratory<i
                         class="material-icons right">launch</i></a>
-                <a href="https://t.me/MyMTLWalletBot?start=sign_0585bbf1d377490682670d3a4e890804"
+                <a href="https://t.me/MyMTLWalletBot?start=sign_{{ uuid }}"
                    class="btn waves-effect waves-light flex-item" target="_blank">Open at MyMTLWalletBot<i
                         class="material-icons right">send</i></a>
                 <a href="?send" class="btn waves-effect waves-light flex-item">Send to Stellar<i
@@ -98,28 +98,37 @@
 </div>
 {% endif %}
 
-
-<div class="row flex-container">
-    <button class="btn waves-effect waves-light flex-item" onclick="copy_tx()">Copy Transaction<i class="material-icons right">content_copy</i>
-    </button>
-    <button class="btn waves-effect waves-light flex-item" onclick="getDecode()">Decode<i class="material-icons right">code</i>
-    </button>
-    {% if admin_weight > 0 %}
-    <button class="btn waves-effect waves-light flex-item" onclick="add_alert()" id="alert-btn">
-        {% if alert %}<i class="material-icons left">notifications_active</i> Alert me{% else %}<i
-            class="material-icons left">notifications_off</i> Alert me{% endif %}
-    </button>
-    {% endif %}
-</div>
-
-<div id="responseDiv" class="section" style="display: none;"></div>
-
 <div class="row">
     <div class="col s12" id="defXdrDiv">
         <div class="card-panel">
             <pre class="tx-body">{{ tx_body }}</pre>
         </div>
     </div>
+</div>
+
+<div class="row">
+    <div class="col s12">
+        <div class="flex-container">
+            <button class="btn waves-effect waves-light flex-item" onclick="copy_tx()">Copy Transaction<i
+                    class="material-icons right">content_copy</i>
+            </button>
+            <button class="btn waves-effect waves-light flex-item" onclick="getDecode()">Decode<i
+                    class="material-icons right">code</i>
+            </button>
+            {% if admin_weight > 0 %}
+            <button class="btn waves-effect waves-light flex-item" onclick="add_alert()" id="alert-btn">
+                {% if alert %}<i class="material-icons left">notifications_active</i> Alert me{% else %}<i
+                    class="material-icons left">notifications_off</i> Alert me{% endif %}
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div id="responseCard" class="section" style="display: none;">
+         <div class="card-panel" id="responseDiv">
+        </div>
+
 </div>
 
 
@@ -185,7 +194,7 @@
         {% for signer in bad_signers %}
         {% if signer %}
         {% if signer[0] == '@' %}
-        <a class="waves-effect waves-teal btn-flat" href="https://t.me/{{ signer[1:] }}">{{ signer }}</a>
+        <a href="https://t.me/{{ signer[1:] }}">{{ signer }}</a>
         {% endif %}
         {% endif %}
         {% endfor %}
@@ -257,7 +266,6 @@
     const txBodyTextarea = document.querySelector("#tx_body");
     const defXdrDiv = document.querySelector("#defXdrDiv .tx-body");
     const ignorantsNicks = document.querySelector(".ignorants-nicks");
-    const responseDiv = document.getElementById("responseDiv");
     const alertBtn = document.getElementById("alert-btn");
 
     function reload_page() {
@@ -298,14 +306,16 @@
 
     async function getDecode() {
         try {
-            let response = await fetch('/decode/{{tx_hash}}');
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            } else {
-                let text = await response.text();
-                responseDiv.innerHTML = text;
-                responseDiv.style.display = 'block';
-            }
+            let response = await $.ajax({
+                url: '/decode/{{tx_hash}}',
+                method: 'GET',
+                dataType: 'html'
+            });
+            const responseDiv = $("#responseDiv");
+            const responseCard = $("#responseCard");
+            responseDiv.html(response);
+            responseCard.hide();
+            responseCard.fadeIn();
         } catch (error) {
             console.error('There was a problem fetching the response:', error);
             M.toast({html: 'Произошла ошибка при получении ответа'});
