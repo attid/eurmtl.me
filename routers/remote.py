@@ -1,6 +1,6 @@
 import asyncio
 
-from quart import Blueprint, request, jsonify
+from quart import Blueprint, request, jsonify, abort
 
 from db.models import Transactions, Signers, Signatures
 from db.pool import db_pool
@@ -72,6 +72,23 @@ async def remote_decode_xdr():
     encoded_xdr = ('<br>'.join(encoded_xdr)).replace('\n', '<br>').replace('  ', '&nbsp;&nbsp;')
 
     return jsonify({"text": encoded_xdr}), 200
+
+
+@blueprint.route('/remote/get_xdr/<tr_hash>')
+async def remote_get_xdr(tr_hash):
+    if len(tr_hash) != 64 and len(tr_hash) != 32:
+        abort(404)
+
+    with db_pool() as db_session:
+        if len(tr_hash) == 64:
+            transaction = db_session.query(Transactions).filter(Transactions.hash == tr_hash).first()
+        else:
+            transaction = db_session.query(Transactions).filter(Transactions.uuid == tr_hash).first()
+
+    if transaction is None:
+        return 'Transaction not exist =('
+
+    return jsonify({"xdr": transaction.body}), 200
 
 
 if __name__ == '__main__':
