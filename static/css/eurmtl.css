@@ -1,0 +1,64 @@
+.flex-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px; /* Adjust the gap size as needed */
+}
+.flex-item {
+    flex: 1 1 auto;
+    margin: 5px; /* Adjust the margin size as needed */
+}
+@media (max-width: 600px) {
+    .flex-item {
+        flex-basis: calc(50% - 10px); /* Adjust the flex-basis as needed */
+    }
+}
+.tx-body {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    cursor: pointer;
+    user-select: all;
+    -webkit-user-select: all;
+}
+#editor-container {
+    min-height: 150px;
+}
+strong {
+    font-weight: bold !important;
+}
+
+
+@media (prefers-color-scheme: dark) {
+    body{
+        background-color: #121212; /* Темный фон */
+        color: #ccc; /* Светлый текст */
+    }
+    .card, .card-panel {
+        background-color: #424242; /* Темный фон */
+    }
+    .dropdown-content {
+        background-color: #3e2723;
+    }
+
+    a {
+        color: #9b70d0; /* Цвет ссылок для темной темы */
+    }
+    select,
+    input,
+    textarea {
+        background-color: #333;
+        color: #ccc;
+    }
+    .account-item{
+        background-color: #333;
+        color: #ccc;
+    }
+    .account-item:hover {
+        background-color: #111;
+    }
+
+    :root {
+        --color-darkGrey: #555;
+        --color-primary: #195b3c;
+        --color-lightGrey: #a5a7aa;
+    }
+}

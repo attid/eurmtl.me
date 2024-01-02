@@ -8,7 +8,7 @@ from stellar_sdk import Server, TransactionBuilder, Network, Asset, TrustLineFla
 from config_reader import config
 from db.pool import db_pool
 from db.requests import db_get_dict, EURMTLDictsType, db_save_dict
-from utils.stellar_utils import decode_data_value, float2str, stellar_copy_multi_sign
+from utils.stellar_utils import decode_data_value, float2str, stellar_copy_multi_sign, decode_xdr_to_base64
 
 blueprint = Blueprint('lab', __name__)
 
@@ -100,9 +100,9 @@ async def cmd_build_xdr():
     transaction = TransactionBuilder(source_account=root_account, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
                                      base_fee=10101)
     transaction.set_timeout(60 * 60 * 24 * 7)
-    if data['memo_type'] == 'text':
+    if data['memo_type'] == 'memo_text':
         transaction.add_text_memo(data['memo'])
-    if data['memo_type'] == 'hash':
+    if data['memo_type'] == 'memo_hash':
         transaction.add_hash_memo(data['memo'])
 
     for operation in data['operations']:
@@ -208,10 +208,18 @@ async def cmd_build_xdr():
                 source=source_account)
 
     transaction = transaction.build()
-    transaction.transaction.sequence = int(data['sequence'])
+    # transaction.transaction.sequence = int(data['sequence'])
     xdr = transaction.to_xdr()
 
     return jsonify({'xdr': xdr})
+
+
+@blueprint.route('/lab/xdr_to_json', methods=['POST'])
+async def cmd_xdr_to_json():
+    data = await request.json
+    xdr = data.get("xdr")
+    result = decode_xdr_to_base64(xdr, return_json=True)
+    return jsonify(result)
 
 
 @blueprint.route('/lab/assets/<account_id>')

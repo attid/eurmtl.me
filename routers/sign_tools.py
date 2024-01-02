@@ -5,6 +5,7 @@ from random import random, shuffle
 import requests
 from datetime import datetime
 from quart import Blueprint, request, render_template, flash, session, redirect, abort
+from sqlalchemy import func
 from stellar_sdk import DecoratedSignature
 from stellar_sdk import Keypair
 from stellar_sdk import Network, TransactionEnvelope
@@ -82,12 +83,19 @@ async def start_add_transaction():
     session['return_to'] = request.url
     if request.method == 'POST':
         form_data = await request.form
-        tx_description = form_data['tx_description']
+        use_memo = 'use_memo' in form_data  # Проверка, был ли отмечен checkbox
         tx_body = form_data.get('tx_body')
-        if len(tx_description) < 5:
+
+        # Определение описания на основе выбора пользователя
+        if use_memo:
+            tx_description = form_data.get('tx_memo')
+        else:
+            tx_description = form_data.get('tx_description')
+
+        # Проверка длины описания
+        if not tx_description or len(tx_description) < 5:
             await flash('Need more description')
-            resp = await render_template('sign_add.html', tx_description=tx_description, tx_body=tx_body)
-            return resp
+            return await render_template('sign_add.html', tx_description=tx_description, tx_body=tx_body)
 
         try:
             tr = TransactionEnvelope.from_xdr(tx_body, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
@@ -338,10 +346,25 @@ async def parse_xdr_for_signatures(tx_body):
 @blueprint.route('/sign_all', methods=('GET', 'POST'))
 @blueprint.route('/sign_all/', methods=('GET', 'POST'))
 async def start_show_all_transactions():
+    next_page = request.args.get('next', default=0, type=int)
+    limit = 100
+    offset = next_page * limit
+
     with db_pool() as db_session:
-        transactions = db_session.query(Transactions).order_by(Transactions.add_dt.desc()).all()
-        resp = await render_template('sign_all.html', transactions=transactions)
-        return resp
+        transactions_query = db_session.query(
+            Transactions.hash.label('hash'),
+            Transactions.description.label('description'),
+            Transactions.add_dt.label('add_dt'),
+            Transactions.state.label('state'),
+            func.count(Signatures.signature_xdr).label('signature_count')
+        ).outerjoin(
+            Signatures, Transactions.hash == Signatures.transaction_hash
+        ).group_by(Transactions).order_by(Transactions.add_dt.desc())
+
+        transactions = transactions_query.offset(offset).limit(limit).all()
+        next_page = next_page + 1 if len(transactions) == limit else None
+
+        return await render_template('sign_all.html', transactions=transactions, next_page=next_page)
 
 
 @blueprint.route('/edit_xdr/<tr_hash>', methods=('GET', 'POST'))

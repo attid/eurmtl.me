@@ -2,49 +2,81 @@
 <html>
 <head>
     <meta http-equiv="content-type" content="text/html; charset=UTF-8">
-    <title>Montelibero multisignature service</title>
-    <link rel="stylesheet" href="/static/css/main.min.css?5">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+    <link rel="stylesheet" href="/static/css/eurmtl.css?1">
+    <title>MTL Stellar Transaction Laboratory</title>
     <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico"/>
     {% block head_scripts %}{% endblock %}
 </head>
 <body>
-<div class="container">
-    <nav class="nav">
-        {% block nav %}
-        <div class="nav-left">
-            <a class="brand" href="#">MTL Multisign</a>
-            <div class="tabs">
-                <a href="/sign_tools">Add transaction</a>
-                <a href="/lab">Build transaction</a>
-                <!-- Проверка, есть ли 'username' в сессии -->
-                {% if session['userdata'] %}
-                <a href="/sign_all">All transaction</a>
-                <a href="/decision">Add decision</a>
-                <a href="/logout">Logout @{{ session['userdata']['username'] }}</a>
-                {% else %}
-                <script async src="https://telegram.org/js/telegram-widget.js?21"
-                        data-telegram-login="MyMTLWalletBot"
-                        data-size="small"
-                        data-auth-url="https://eurmtl.me/login"
-                        data-request-access="write">
-                </script>
-                {% endif %}
-            </div>
+
+{% macro nav_menu() %}
+{% block nav %}
+<li class="{{ 'active' if request.path == '/lab' else '' }}"><a href="/lab">Build transaction</a></li>
+<li class="{{ 'active' if request.path == '/sign_tools' else '' }}"><a href="/sign_tools">Add to MultiSign</a></li>
+
+<!-- Проверка, есть ли 'username' в сессии -->
+{% if session['userdata'] %}
+<li class="{{ 'active' if request.path == '/decision' else '' }}"><a href="/decision">Add decision</a></li>
+<li class="{{ 'active' if request.path == '/sign_all' else '' }}"><a href="/sign_all">All transaction</a></li>
+<li><a href="/logout">Logout @{{ session['userdata']['username'] }}</a></li>
+{% else %}
+<script async src="https://telegram.org/js/telegram-widget.js?21"
+        data-telegram-login="MyMTLWalletBot"
+        data-size="small"
+        data-auth-url="https://eurmtl.me/login"
+        data-request-access="write">
+</script>
+{% endif %}
+{% endblock %}
+{% endmacro %}
+
+
+<nav>
+    <div class="nav-wrapper orange accent-4">
+        <a href="" class="brand-logo hide-on-med-and-down">MTL Transaction Laboratory</a>
+        <a href="" class="brand-logo hide-on-large-only" >MTL TL</a>
+        <a href="#" data-target="mobile-demo" class="sidenav-trigger"><i class="material-icons">menu</i></a>
+
+        <ul id="nav-mobile" class="right hide-on-med-and-down">
+            {{ nav_menu() }}
+        </ul>
+    </div>
+</nav>
+
+<ul class="sidenav" id="mobile-demo">
+    {{ nav_menu() }}
+</ul>
+
+
+<div class="container" style="max-width: 900px;">
+
+    <!-- Место для flash-сообщений -->
+    <div class="container">
+        {% for message in get_flashed_messages(category_filter=['message']) %}
+        <div class="card-panel red lighten-4"><span class="red-text text-darken-4">{{ message }}</span></div>
+        {% endfor %}
+        {% for message in get_flashed_messages(category_filter=['good']) %}
+        <div class="card-panel green lighten-4"><span class="green-text text-darken-4">{{ message }}</span></div>
+        {% endfor %}
+    </div>
+
+
+    <div class="card">
+        <div class="card-content">
+            {% block content %} {% endblock %}
         </div>
-        {% endblock %}
-    </nav>
-    {% for message in get_flashed_messages(category_filter=('message')) %}
-    <h4><span class="tx-error">{{ message }}</span></h4>
-    {% endfor %}
-    {% for message in get_flashed_messages(category_filter=('good')) %}
-    <h4><span class="tx-good">{{ message }}</span></h4>
-    {% endfor %}
-    <section id="main">
-        {% block content %} {% endblock %}
-
-
-    </section>
+    </div>
 </div>
-<script src="/static/jquery-3.6.0.min.js"></script>
+
+<script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+      M.AutoInit();
+    });
+</script>
+{% block bottom_scripts %}{% endblock %}
 </body>
 </html>

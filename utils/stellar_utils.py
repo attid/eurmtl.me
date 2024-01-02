@@ -61,7 +61,7 @@ def decode_xdr_from_base64(xdr):
     # print(decoded_json)
 
 
-def decode_xdr_to_base64(xdr):
+def decode_xdr_to_base64(xdr, return_json=False):
     transaction_envelope = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     transaction: Transaction = transaction_envelope.transaction
     new_json = {'attributes': {}, 'feeBumpAttributes': {'maxFee': '10101'}, 'operations': []}
@@ -99,7 +99,9 @@ def decode_xdr_to_base64(xdr):
                                      }
         elif isinstance(operation, ManageData):
             op_json['attributes'] = {'name': operation.data_name,
+                                     'dataName': operation.data_name,
                                      'value': operation.data_value.decode(),
+                                     'dataValue': operation.data_value.decode(),
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, CreateAccount):
@@ -156,6 +158,8 @@ def decode_xdr_to_base64(xdr):
 
         new_json['operations'].append(op_json)
     # print(new_json)
+    if return_json:
+        return new_json
     # Convert the dictionary into JSON
     json_data = json.dumps(new_json)
     # Convert the JSON data into bytes

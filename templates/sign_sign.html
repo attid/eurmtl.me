@@ -2,144 +2,190 @@
 
 {% block content %}
 
-<div class="tx_description">{{tx_description}}</div>
+<div class="section">
+    <div class="card-panel">{{ tx_description }}</div>
 
-<div class="row control-buttons">
-    <button class="button outline" onclick="copy_url()">Copy URL</button>
-    <a href="https://laboratory.stellar.org/#txsigner?network=public" id="laboratory-url"
-       target="_blank" class="button secondary outline">Open Laboratory</a>
-    <a href="https://t.me/MyMTLWalletBot?start=sign_{{uuid}}" id="mmwb-url"
-       target="_blank" class="button secondary outline">Open at MyMTLWalletBot</a>
-    <button class="button outline" onclick="show_sign_div()">Sign Here</button>
-    <a href="?send" id="send" class="button secondary outline">Send to Stellar</a>
+    <div class="row">
+        <div class="col s12">
+            <div class="flex-container">
+                <button class="btn waves-effect waves-light flex-item" onclick="copy_url()">Copy URL<i
+                        class="material-icons right">content_copy</i></button>
+                <a href="https://laboratory.stellar.org/#txsigner?network=public"
+                   class="btn waves-effect waves-light flex-item" target="_blank">Open Laboratory<i
+                        class="material-icons right">launch</i></a>
+                <a href="https://t.me/MyMTLWalletBot?start=sign_0585bbf1d377490682670d3a4e890804"
+                   class="btn waves-effect waves-light flex-item" target="_blank">Open at MyMTLWalletBot<i
+                        class="material-icons right">send</i></a>
+                <a href="?send" class="btn waves-effect waves-light flex-item">Send to Stellar<i
+                        class="material-icons right">send</i></a>
+            </div>
+        </div>
+    </div>
 </div>
 
-<h5 class="required-signs">Collected {{has_votes}} from {{thresholds}}</h5>
-{% if publish_state[0] == 1 %}
-<h4 class="published"><a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}">Transaction is published at {{publish_state[1]}}</a></h4>
-{% endif %}
-{% if publish_state[0] == 10 %}
-<h4 class="published"><a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}" style="color:Tomato;">Transaction
-    is published with error at {{publish_state[1]}}</a></h4>
-{% endif %}
-
-<form action="" method="post" id="txForm">
-    <fieldset id="update-tx">
-        <legend>Update transaction</legend>
-        <p>
-            <label for="tx_body">Transaction body</label>
-            <textarea id="tx_body" name="tx_body" placeholder="Transaction body with new signatures"></textarea>
-        </p>
-        <p id="signP" style="display: none;">
-            <label for="private_key">Private Key</label>
-            <input type="text" id="private_key" name="private_key"
-                   placeholder="private_key with S" value=""
-                   oninput="sign_tx()" onpaste="sign_tx()" autocomplete="off">
-            <input type="button" class="button primary" value="Sign" onclick="sign_tx()">
-        </p>
-        <div class="form-buttons">
-            <button type="button" class="button primary" onclick="paste_tx()">Paste Transaction</button>
-            <input type="submit" class="button primary" value="Update"/>
-
-        </div>
-    </fieldset>
-
-</form>
-
-{% if publish_state[0] == 1 %}
-<h4 class="published"><a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}">Transaction is published at {{publish_state[1]}}</a> You
-    don't need to sign it. But you can if you want. ^_^ </h4>
-{% endif %}
-{% if publish_state[0] == 10 %}
-<h4 class="published"><a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}" style="color:Tomato;">Transaction
-    is published with error at {{publish_state[1]}}</a></h4>
-{% endif %}
-
-<div class="row control-buttons">
-    <button class="button outline" onclick="copy_tx()">Copy Transaction</button>
-    <button class="button outline" onclick="getDecode()">Decode</button>
-    {% if admin_weight > 0 %}
-    <button class="button outline" onclick="add_alert()" id="alert-btn">{% if alert %}[+] Alert me{% else %}[ ] Alert me{% endif %}</button>
+<div class="section">
+    {% if publish_state[0] == 1 %}
+    <div class="card-panel green lighten-4">
+        <h6 class="published">
+            <a href="https://stellar.expert/explorer/public/tx/{{ tx_hash }}">Transaction is published at {{
+                publish_state[1] }}</a>
+        </h6>
+    </div>
+    {% endif %}
+    {% if publish_state[0] == 10 %}
+    <div class="card-panel red lighten-4">
+        <h6 class="published">
+            <a href="https://stellar.expert/explorer/public/tx/{{ tx_hash }}" class="red-text text-darken-4">Transaction
+                is published with error at {{ publish_state[1] }}</a>
+        </h6>
+    </div>
     {% endif %}
 </div>
-<div id="responseDiv" style="display: none;"></div>
+
+
+<form action="" method="post" id="txForm">
+    <div class="row">
+        <div class="input-field col s12">
+            <textarea id="tx_body" name="tx_body" class="materialize-textarea"
+                      placeholder="Transaction body with new signatures"></textarea>
+            <label for="tx_body">Transaction body</label>
+        </div>
+
+        <div class="input-field col s12" id="signP" style="display: none;">
+            <input type="text" id="private_key" name="private_key" class="validate"
+                   placeholder="private_key with S" value=""
+                   oninput="sign_tx()" onpaste="sign_tx()" autocomplete="off">
+            <label for="private_key">Private Key</label>
+        </div>
+
+        <div class="col s12">
+            <div class="flex-container">
+                <button type="button" class="btn waves-effect waves-light flex-item" onclick="paste_tx()">Paste
+                    Transaction<i class="material-icons right">content_paste</i>
+                </button>
+                <button type="submit" class="btn waves-effect waves-light flex-item">Update<i
+                        class="material-icons right">update</i>
+                </button>
+                <button type="button" class="btn waves-effect waves-light flex-item" onclick="sign_tx()"
+                        style="display: none;" id="signButton">Sign<i class="material-icons right">edit</i>
+                </button>
+                <button type="button" class="btn waves-effect waves-light flex-item" onclick="show_sign_div()"
+                        id="signButton0"> Sign Here<i class="material-icons right">edit</i>
+                </button>
+            </div>
+        </div>
+
+
+    </div>
+</form>
+
+
+{% if publish_state[0] == 1 %}
+<div class="card-panel green lighten-4">
+    <h6 class="published">
+        <a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}">Transaction is published at
+            {{publish_state[1]}}</a>
+        <span>You don't need to sign it. But you can if you want. ^_^</span>
+    </h6>
+</div>
+{% endif %}
+{% if publish_state[0] == 10 %}
+<div class="card-panel red lighten-4">
+    <h6 class="published">
+        <a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}" class="red-text text-darken-4">Transaction is
+            published with error at {{publish_state[1]}}</a>
+    </h6>
+</div>
+{% endif %}
+
+
+<div class="row flex-container">
+    <button class="btn waves-effect waves-light flex-item" onclick="copy_tx()">Copy Transaction<i class="material-icons right">content_copy</i>
+    </button>
+    <button class="btn waves-effect waves-light flex-item" onclick="getDecode()">Decode<i class="material-icons right">code</i>
+    </button>
+    {% if admin_weight > 0 %}
+    <button class="btn waves-effect waves-light flex-item" onclick="add_alert()" id="alert-btn">
+        {% if alert %}<i class="material-icons left">notifications_active</i> Alert me{% else %}<i
+            class="material-icons left">notifications_off</i> Alert me{% endif %}
+    </button>
+    {% endif %}
+</div>
+
+<div id="responseDiv" class="section" style="display: none;"></div>
+
 <div class="row">
-    <div class="col" id="defXdrDiv">
-        <span class="tx-body">{{tx_body}}</span>
+    <div class="col s12" id="defXdrDiv">
+        <div class="card-panel">
+            <pre class="tx-body">{{ tx_body }}</pre>
+        </div>
     </div>
 </div>
 
 
 {% for record in signers_table %}
-<h5 class="required-signs">Collected {{record['has_votes']}} from {{record['threshold']}} for
-    <span class="head-address"
-          title="{{record['sources']}}">{{record['sources'][:4]}}..{{record['sources'][-4:]}}</span></h5>
-<div class="row singers">
-    <fieldset class="signer" id="signatures">
-        <legend>Signatures</legend>
-        <div class="row signer">
-            <div class="col-6">
-                <span class="signer-header">Public key</span>
-            </div>
-            <div class="col-2">
-                <span class="signer-header">Telegram</span>
-            </div>
-            <div class="col-2">
-                <span class="signer-header">Signs days ago</span>
-            </div>
-            <div class="col-1">
-                <span class="signer-header">Weight</span>
-            </div>
-            <div class="col-1">
-                <span class="signer-header">Did sign?</span>
-            </div>
+<div class="section">
+    <h5 class="required-signs">Collected {{ record['has_votes'] }} from {{ record['threshold'] }} for <span
+            class="head-address" title="{{ record['sources'] }}">{{ record['sources'][:4] }}..{{ record['sources'][-4:] }}</span>
+    </h5>
+    <div class="card">
+        <div class="card-content">
+            <span class="card-title">Signatures</span>
+            <table class="highlight">
+                <thead>
+                <tr>
+                    <th>Public key</th>
+                    <th>Telegram</th>
+                    <th>Signs days ago</th>
+                    <th>Weight</th>
+                    <th>Did sign?</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for signer in record['signers'] %}
+                <tr>
+                    <td><a href="https://stellar.expert/explorer/public/account/{{ signer[0] }}">{{ signer[0][:4] }}..{{
+                        signer[0][-8:-4] }}..{{ signer[0][-4:] }}</a></td>
+                    <td>
+                        {% if admin_weight == 0 %}
+                        FaceLess
+                        {% elif signer[1] and signer[1][0] == '@' %}
+                        <a href="https://t.me/{{ signer[1][1:] }}">{{ signer[1] }}</a>
+                        {% else %}
+                        {{ signer[1] }}
+                        {% endif %}
+                    </td>
+                    <td>{{ signer[2] }}</td>
+                    <td>{{ signer[3] }}</td>
+                    <td>
+                        {% if signer[4] %}
+                        <i class="material-icons green-text">check_circle</i>
+                        {% else %}
+                        <i class="material-icons red-text">cancel</i>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
         </div>
-
-
-        {% for signer in record['signers'] %}
-        <div class="row signer">
-            <div class="col-6">
-                <a class="signer-key"
-                   href="https://stellar.expert/explorer/public/account/{{signer[0]}}">{{signer[0][:4]}}..{{signer[0][-8:-4]}}..{{signer[0][-4:]}}</a>
-            </div>
-            <div class="col-2">
-                {% if admin_weight == 0 %}
-                FaceLess
-                {% elif signer[1] and signer[1][0] == '@' %}
-                <a class="signer-telegram" href="https://t.me/{{signer[1][1:]}}">{{signer[1]}}</a>
-                {% elif signer[1] %}
-                {{signer[1]}}
-                {% endif %}
-            </div>
-            <div class="col-2">
-                <span class="signer-recent-signs many-signs">{{signer[2]}}</span>
-            </div>
-            <div class="col-1">
-                <span class="signer-weight">{{signer[3]}}</span>
-            </div>
-            <div class="col-1">
-                {% if signer[4] %}
-                <span class="signer-signed">Signed</span>
-                {% endif %}
-            </div>
-        </div>
-        {% endfor %}
-    </fieldset>
+    </div>
 </div>
 {% endfor %}
 
 
 {% if admin_weight > 0 %}
 <h5>Those who not yet signed:</h5>
-<div class="row ignorants">
-    <div class="col-2">
-        <button class="button outline" onclick="copy_ignorants()">Copy them</button>
+<div class="row">
+    <div class="col s2">
+        <button class="btn waves-effect waves-light" onclick="copy_ignorants()">Copy them<i
+                class="material-icons right">content_copy</i></button>
     </div>
-    <div class="col-10 ignorants-nicks">
+    <div class="col s10">
         {% for signer in bad_signers %}
         {% if signer %}
         {% if signer[0] == '@' %}
-        <a class="singer-telegram" href="https://t.me/{{signer[1:]}}">{{signer}}</a>
+        <a class="waves-effect waves-teal btn-flat" href="https://t.me/{{ signer[1:] }}">{{ signer }}</a>
         {% endif %}
         {% endif %}
         {% endfor %}
@@ -148,84 +194,109 @@
 {% endif %}
 
 
-<h2 class="history-tittle">Transaction signatures</h2>
+<h4>Transaction signatures</h4>
 <div class="row">
-    <div class="col-1">
-        <span class="history-header">Number</span>
+    <div class="col s2">
+        <span class="flow-text">Number</span>
     </div>
-    <div class="col-2">
-        <span class="history-header">Time</span>
+    <div class="col s2">
+        <span class="flow-text">Time</span>
     </div>
-    <div class="col-3">
-        <span class="history-header">User</span>
+    <div class="col s3">
+        <span class="flow-text">User</span>
     </div>
-    <div class="col-4">
-        <span class="history-header">Signatures</span>
+    <div class="col s4">
+        <span class="flow-text">Signatures</span>
     </div>
 </div>
 
-
 {% for signature in signatures %}
 <div class="row">
-    <div class="col-1">
-        {{signature[0]}}
-    </div>
-    <div class="col-2">
-        {{signature[1]}}
-    </div>
-    <div class="col-3">
+    <div class="col s2">{{ signature[0] }}</div>
+    <div class="col s2">{{ signature[1] }}</div>
+    <div class="col s3">
         {% if admin_weight == 0 %}
         FaceLess
         {% else %}
-        {{signature[2]}}
+        {{ signature[2] }}
         {% endif %}
     </div>
-    <div class="col-4">
-        <span class="tx-body">{{signature[3]}}</span>
+    <div class="col s4">
+        <span class="tx-body">{{ signature[3] }}</span>
     </div>
 </div>
 {% endfor %}
 
 {% if qr_text %}
-<img src="{{ qr_img }}"> <br>
-<a href="{{qr_text}}">Link to open QR</a>
+<div class="section">
+    <img src="{{ qr_img }}">
+    <br>
+    <a href="{{ qr_text }}" class="btn waves-effect waves-light">Link to open QR<i
+            class="material-icons right">qr_code</i></a>
+</div>
 {% endif %}
 
-<h2 class="history-tittle">Full transaction</h2>
-<span class="tx-body">{{tx_full}}</span>
-
-<div class="row control-buttons">
-    <a href="/edit_xdr/{{tx_hash}}" id="edit_xdr"
-       class="button secondary outline">Edit xdr</a>
+<h4>Full transaction</h4>
+<div class="section">
+    <pre class="tx-body">{{ tx_full }}</pre>
 </div>
 
+<div class="row flex-container">
+    <a href="/edit_xdr/{{ tx_hash }}" class="btn waves-effect waves-light flex-item">Edit xdr in Stellar Laboratory<i
+            class="material-icons right">edit</i></a>
+    <a href="/edit_xdr/{{ tx_hash }}" class="btn waves-effect waves-light flex-item">Edit xdr in Eurmtl.me<i
+            class="material-icons right">edit</i></a>
+</div>
+
+{% endblock %}
+
+{% block bottom_scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/10.4.1/stellar-sdk.min.js"></script>
 <script>
+    // Элементы DOM, к которым часто обращаемся
+    const txBodyTextarea = document.querySelector("#tx_body");
+    const defXdrDiv = document.querySelector("#defXdrDiv .tx-body");
+    const ignorantsNicks = document.querySelector(".ignorants-nicks");
+    const responseDiv = document.getElementById("responseDiv");
+    const alertBtn = document.getElementById("alert-btn");
 
     function reload_page() {
         location.reload();
     }
 
     function paste_tx() {
-        navigator.clipboard.readText().then(
-            clipText => document.querySelector("#tx_body").innerText = clipText);
+        if (!navigator.clipboard) {
+            M.toast({html: 'Clipboard API не доступен'});
+            return;
+        }
+        navigator.clipboard.readText().then(clipText => txBodyTextarea.innerText = clipText);
     }
 
     async function copy_tx() {
-        await navigator.clipboard.writeText(document.querySelector("#defXdrDiv .tx-body").innerText);
+        if (!navigator.clipboard) {
+            M.toast({html: 'Clipboard API не доступен'});
+            return;
+        }
+        await navigator.clipboard.writeText(defXdrDiv.innerText);
     }
 
     async function copy_url() {
+        if (!navigator.clipboard) {
+            M.toast({html: 'Clipboard API не доступен'});
+            return;
+        }
         await navigator.clipboard.writeText(window.location.href);
     }
 
     async function copy_ignorants() {
-        await navigator.clipboard.writeText(document.querySelector(".ignorants-nicks").innerText);
+        if (!navigator.clipboard) {
+            M.toast({html: 'Clipboard API не доступен'});
+            return;
+        }
+        await navigator.clipboard.writeText(ignorantsNicks.innerText);
     }
 
     async function getDecode() {
-        var responseDiv = document.getElementById("responseDiv");
-
         try {
             let response = await fetch('/decode/{{tx_hash}}');
             if (!response.ok) {
@@ -237,25 +308,30 @@
             }
         } catch (error) {
             console.error('There was a problem fetching the response:', error);
+            M.toast({html: 'Произошла ошибка при получении ответа'});
         }
     }
 
     function show_sign_div() {
-      var signDiv = document.getElementById('signP');
-      signDiv.style.display = 'block';
+        const signDiv = document.getElementById('signP');
+        const signButton = document.getElementById('signButton');
+        const signButton0 = document.getElementById('signButton0');
+
+        signDiv.style.display = 'block';
+        signButton.style.display = 'block';
+        signButton0.style.display = 'none';
     }
 
     async function sign_tx() {
-        let xdr = document.querySelector("#defXdrDiv .tx-body").innerText;
+        let xdr = defXdrDiv.innerText;
         let privateKey = document.getElementById("private_key").value;
 
         if (!privateKey || privateKey.length < 56) {
-            console.error('Private key is empty or less than 56 characters');
+            M.toast({html: 'Приватный ключ пуст или короче 56 символов'});
             return;
         }
 
         const server = new StellarSdk.Server('https://horizon.stellar.org');
-
 
         try {
             let sourceKeys = StellarSdk.Keypair.fromSecret(privateKey);
@@ -264,17 +340,15 @@
             transaction.sign(sourceKeys);
 
             let signedXDR = transaction.toEnvelope().toXDR().toString('base64');
-
-            let txBodyTextarea = document.querySelector("#txForm #tx_body");
             txBodyTextarea.value = signedXDR;
 
         } catch (error) {
             console.error('Error signing transaction:', error);
+            M.toast({html: 'Ошибка при подписании транзакции'});
         }
     }
 
     async function add_alert() {
-        var alertBtn = document.getElementById("alert-btn");
         try {
             let response = await fetch('/add_alert/{{tx_hash}}');
             if (!response.ok) {
@@ -285,10 +359,8 @@
             }
         } catch (error) {
             console.error('There was a problem fetching the response:', error);
+            M.toast({html: 'Произошла ошибка при получении ответа'});
         }
     }
-
-
 </script>
-
 {% endblock %}

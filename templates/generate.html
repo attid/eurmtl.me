@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+<div class="row">
+    <div class="col s12 m6">
+        <div class="card">
+            <div class="card-content">
+                <span class="card-title">Генерация адреса</span>
+                <div class="input-field">
+                    <input id="prefix" type="text" class="validate">
+                    <label for="prefix">Префикс</label>
+                </div>
+                <div class="card-action">
+                    <button class="btn waves-effect waves-light" onclick="generate_address()" style="width: 100%;">
+                        Генерировать<i class="material-icons right">send</i></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col s12 m6">
+        <div class="card">
+            <div class="card-content">
+                <span class="card-title">Ключи и Сид-фраза</span>
+                <div class="input-field">
+                    <input id="public_key" type="text" class="validate">
+                    <label for="public_key">Публичный ключ</label>
+                </div>
+                <div class="input-field">
+                    <input id="private_key" type="text" class="validate">
+                    <label for="private_key">Приватный ключ</label>
+                </div>
+                <div class="input-field">
+                    <textarea id="seed_phrase" class="materialize-textarea"></textarea>
+                    <label for="seed_phrase">Сид-фраза</label>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block bottom_scripts %}
+<script src="/static/bip39.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/10.4.1/stellar-sdk.min.js"></script>
+<script>
+    function playSuccessSound() {
+        var context = new (window.AudioContext || window.webkitAudioContext)();
+        var oscillator = context.createOscillator();
+        var contextGain = context.createGain();
+
+        oscillator.connect(contextGain);
+        contextGain.connect(context.destination);
+
+        oscillator.frequency.value = 520; // Частота в Гц
+        oscillator.type = 'square'; // Тип звуковой волны: square, sine, triangle, sawtooth
+
+        contextGain.gain.setValueAtTime(0, context.currentTime);
+        contextGain.gain.linearRampToValueAtTime(1, context.currentTime + 0.01);
+        contextGain.gain.linearRampToValueAtTime(0, context.currentTime + 1);
+
+        oscillator.start(context.currentTime);
+        oscillator.stop(context.currentTime + 1); // Продолжительность звучания в секундах
+    }
+
+    async function fromMnemonicPhrase(mnemonic, passphrase = '', index = 0) {
+        const seed = await bip39.mnemonicToSeed(mnemonic, passphrase);
+        console.log(seed);
+        const rawSeed = seed.slice(0, 32);
+        const keypair = StellarSdk.Keypair.fromRawEd25519Seed(rawSeed);
+
+        return keypair;
+    }
+
+    // Пример использования
+    const mnemonic = 'huge slush sample lemon rookie caught sugar shove sand agent chase icon';
+    fromMnemonicPhrase(mnemonic).then(keypair => {
+        console.log(keypair.publicKey());
+    });
+
+
+
+
+    async function generate_address() {
+        // Получаем значение префикса
+        var prefix = document.getElementById('prefix').value;
+
+        // Паттерн для проверки на допустимые символы в Stellar public key (буквы верхнего регистра от A до Z, исключая I, O, L и S, и цифры от 2 до 7)
+        var pattern = /^[ABCDEFGHIJKLMNOPQRSTUVWXYZ234567]*$/;
+
+        // Проверяем, соответствует ли префикс паттерну
+        if (!pattern.test(prefix)) {
+            // Если префикс содержит недопустимые символы, показываем уведомление и выходим из функции
+            M.toast({html: 'Префикс может содержать только символы ABCDEFGHIJKLMNOPQRSTUVWXYZ и цифры 2-7.'});
+            return;
+        }
+
+        var found = false;
+        var attempts = 0;
+        while (!found) {
+            var mnemonic = bip39.generateMnemonic();
+            var seed = await bip39.mnemonicToSeed(mnemonic);
+            var derivedKey = await deriveEd25519Key(seed.slice(0, 32)); // Используем новую функцию для деривации ключа
+
+            var keypair = StellarSdk.Keypair.fromSecret(StellarSdk.StrKey.encodeEd25519SecretSeed(derivedKey));
+
+            if (keypair.publicKey().endsWith(prefix)) {
+                found = true;
+                document.getElementById('public_key').value = keypair.publicKey();
+                document.getElementById('private_key').value = keypair.secret();
+                document.getElementById('seed_phrase').value = mnemonic;
+
+                // Воспроизводим звук в случае успешного нахождения адреса
+                playSuccessSound();
+            } else {
+                console.log(`Attempt ${attempts}: Not matched`);
+            }
+
+            attempts += 1;
+        }
+    }
+</script>
+
+
+{% endblock %}

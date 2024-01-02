@@ -2,7 +2,7 @@ import os
 import signal
 import subprocess
 import uuid
-from quart import Blueprint, send_file, request, session, redirect
+from quart import Blueprint, send_file, request, session, redirect, render_template
 
 from db.models import Signers
 from db.pool import db_pool
@@ -14,14 +14,7 @@ blueprint = Blueprint('index', __name__)
 
 @blueprint.route('/')
 async def cmd_index():
-    text = 'This is a technical domain montelibero.org. ' \
-           'You can get more information on the website <a href="https://montelibero.org">montelibero.org</a> ' \
-           'or in telegram <a href="https://t.me/Montelibero_org">Montelibero_org</a>' \
-           '<br><br><br>' \
-           'Это технический домен montelibero.org. ' \
-           'Больше информации вы можете получить на сайте <a href="https://montelibero.org">montelibero.org</a> ' \
-           'или в телеграм <a href="https://t.me/Montelibero_ru">Montelibero_ru</a>'
-    return text
+    return await render_template('index.html')
 
 
 @blueprint.route('/mytest', methods=('GET', 'POST'))
@@ -49,7 +42,7 @@ async def cmd_mytest():
 
 
 @blueprint.route('/uuid', methods=('GET', 'POST'))
-async def cmd_uuid():
+async def get_uid():
     return uuid.uuid4().hex
 
 
@@ -114,5 +107,5 @@ async def login_telegram():
 
 @blueprint.route('/logout')
 async def logout():
-    await session.pop('userdata', None)
+    session.pop('userdata', None)
     return redirect('/lab')

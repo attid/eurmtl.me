@@ -3,20 +3,84 @@
 {% block content %}
 
 <form action="" method="post">
-    <fieldset id="create-tx">
-        <legend>New transaction</legend>
-        <p>
+    <div class="row">
+        <!-- Checkbox для выбора между использованием мемо и вводом описания -->
+        <div class="input-field col s12">
+            <p>
+                <label>
+                    <input type="checkbox" id="use_memo_checkbox" name="use_memo"/>
+                    <span>Использовать мемо из транзакции в качестве описания</span>
+                </label>
+            </p>
+        </div>
+
+        <!-- Поле для мемо -->
+        <div class="input-field col s12" id="memo_field" style="display: none;">
+            <textarea id="tx_memo" name="tx_memo" class="materialize-textarea" disabled
+                      placeholder="Memo from transaction (automatically filled)"></textarea>
+            <label for="tx_memo">Memo</label>
+        </div>
+
+        <!-- Поле для описания -->
+        <div class="input-field col s12" id="description_field">
+            <textarea id="tx_description" name="tx_description" class="materialize-textarea"
+                      placeholder="Custom description for the transaction">{{ tx_description }}</textarea>
             <label for="tx_description">Description</label>
-            <textarea id="tx_description" name="tx_description"
-                      placeholder="An optional description that can contain references for the transaction justification.">{{ tx_description }}</textarea>
-        </p>
-        <p>
-            <label for="tx_body">Transaction body</label>
-            <textarea id="tx_body" name="tx_body"
+        </div>
+
+        <!-- Поле для тела транзакции -->
+        <div class="input-field col s12">
+            <textarea id="tx_body" name="tx_body" class="materialize-textarea"
                       placeholder="Transaction body from Stellar laboratory or other XDR encoded string">{{ tx_body }}</textarea>
-        </p>
-        <input type="submit" class="button primary" value="Create">
-    </fieldset>
+            <label for="tx_body">Transaction body</label>
+        </div>
+
+        <div class="col s12">
+            <button type="submit" class="btn waves-effect waves-light">Create<i class="material-icons right">send</i>
+            </button>
+        </div>
+    </div>
 </form>
+
+{% endblock %}
+
+{% block bottom_scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/10.4.1/stellar-sdk.min.js"></script>
+
+<script>
+$(document).ready(function() {
+    $('#use_memo_checkbox').change(async function() {
+        if ($(this).is(':checked')) {
+            // Проверить наличие транзакции
+            let txBody = $('#tx_body').val();
+            if (!txBody) {
+                M.toast({html: 'Сначала введите транзакцию.'});
+                $(this).prop('checked', false);
+                return;
+            }
+
+            try {
+                // Попытка загрузить транзакцию и извлечь мемо
+                const tx = new StellarSdk.TransactionBuilder.fromXDR(txBody, StellarSdk.Networks.TESTNET);
+                if (tx.memo.type === 'none' || !tx.memo.value) {
+                    M.toast({html: 'В транзакции нет мемо.'});
+                    $(this).prop('checked', false);
+                } else {
+                    $('#tx_memo').val(tx.memo.value);
+                    $('#description_field').hide();
+                    $('#memo_field').show();
+                }
+            } catch (error) {
+                M.toast({html: 'Не удалось загрузить транзакцию: ' + error.message});
+                $(this).prop('checked', false);
+            }
+        } else {
+            $('#tx_memo').val('');
+            $('#description_field').show();
+            $('#memo_field').hide();
+        }
+    });
+});
+</script>
 
 {% endblock %}

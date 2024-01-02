@@ -158,5 +158,10 @@ def decode_color(color):
     return tuple(int(color[i:i + 2], 16) for i in (0, 2, 4))
 
 
+@blueprint.route('/generate', methods=('GET', 'POST'))
+async def cmd_generate():
+    return await render_template('generate.html')
+
+
 if __name__ == '__main__':
     pass
