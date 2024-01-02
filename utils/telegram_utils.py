@@ -7,28 +7,38 @@ import hmac
 import hashlib
 
 
-def send_telegram_message(chat_id, text):
+def send_telegram_message(chat_id, text, entities=None):
+    """
+    Sends a Telegram message to the specified chat.
+
+    Parameters:
+        chat_id (int): The ID of the chat to send the message to.
+        text (str): The text of the message.
+        entities (list, optional): A list of message entities to be applied to the text (default: None).
+
+    Returns:
+        int: The ID of the sent message.
+    """
     token = config.skynet_token.get_secret_value()
     url = f'https://api.telegram.org/bot{token}/sendMessage'
     data = {
         'chat_id': chat_id,
-        'text': text,
-        'parse_mode': 'HTML'  # Опционально: для форматирования текста
+        'text': text
     }
+    if entities:
+        data['entities'] = entities
+    else:
+        data['parse_mode'] = 'HTML'
+
     response = requests.post(url, data=data)
     if response.ok:
         # print(f'Message sent successfully: {response.json()}')
         return response.json()['result']['message_id']
     else:
         print(f'Failed to send message: {response.content}')
-    resp = {'ok': True, 'result': {'message_id': 109, 'author_signature': 'SkyNet',
-                                   'sender_chat': {'id': -1001863399780, 'title': 'BM: First rearding | Первое чтение',
-                                                   'type': 'channel'},
-                                   'chat': {'id': -1001863399780, 'title': 'BM: First rearding | Первое чтение',
-                                            'type': 'channel'}, 'date': 1696287194, 'text': 'f'}}
 
 
-def edit_telegram_message(chat_id, message_id, text, reply_markup=None):
+def edit_telegram_message(chat_id, message_id, text, reply_markup=None, entities=None):
     """
     Edit a message in the Telegram chat.
 
@@ -37,6 +47,7 @@ def edit_telegram_message(chat_id, message_id, text, reply_markup=None):
         message_id (int): The ID of the message to be edited.
         text (str): The new text of the message.
         reply_markup (Optional[Any]): Optional parameter. The reply markup of the message.
+        entities (Optional[Any]): Optional parameter. The entities of the message.
 
     Returns:
         bool: True if the message was edited successfully, False otherwise.
@@ -46,15 +57,18 @@ def edit_telegram_message(chat_id, message_id, text, reply_markup=None):
     data = {
         'chat_id': chat_id,
         'message_id': message_id,
-        'text': text,
-        'parse_mode': 'HTML'  # Опционально: для форматирования текста
+        'text': text
     }
 
-    # Если reply_markup предоставлен, добавляем его в данные запроса
     if reply_markup:
         data['reply_markup'] = reply_markup
 
-    response = requests.post(url, json=data)  # Используем json=data для корректной отправки JSON-параметров
+    if entities:
+        data['entities'] = entities
+    else:
+        data['parse_mode'] = 'HTML'
+
+    response = requests.post(url, json=data)
     if response.ok:
         # print(f'Message edited successfully: {response.json()}')
         return True
@@ -139,25 +153,6 @@ def check_response_webapp(data):
     hash_value, check_data_string = prepare_data_check_string(data)
     result = is_hash_valid(hash_value, check_data_string, config.skynet_token.get_secret_value())
     return result
-
-
-def convert_html_to_telegram_format(html_content):
-
-    # Удаление тегов <span> и их атрибутов, оставляя содержимое
-    html_content = re.sub(r'<span[^>]*>', '', html_content)
-    html_content = html_content.replace('</span>', '')
-
-    # Удаление оставшихся HTML тегов
-    html_content = (html_content.replace('<p>', '')
-                    .replace('</p>', '\n')
-                    .replace('<br>', '\n')
-                    .replace('<ul>', '')
-                    .replace('</ul>', '')
-                    .replace('<li>', ' - ')
-                    .replace('</li>', '\n')
-                    .replace('\n\n\n', '\n\n')
-                    )
-    return html_content
 
 
 if __name__ == '__main__':

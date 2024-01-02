@@ -1,11 +1,12 @@
 import json
 import urllib.parse
 import uuid
-from quart import Blueprint, request, render_template, flash, jsonify, session, redirect, abort
+from quart import Blueprint, request, render_template, jsonify, session
+from sulguk import transform_html
+
 from db.models import WebEditorMessages
 from db.pool import db_pool
-from utils.telegram_utils import send_telegram_message, edit_telegram_message, is_bot_admin, check_response, \
-    is_user_admin, check_response_webapp, convert_html_to_telegram_format
+from utils.telegram_utils import edit_telegram_message, is_bot_admin, is_user_admin, check_response_webapp
 
 blueprint = Blueprint('web_editor', __name__)
 
@@ -104,11 +105,12 @@ async def web_editor_action():
 
             # Сохраняем изменения в базе данных
             db_session.commit()
+            tg_inquiry = transform_html(data['text'])
 
             # Выполняем редактирование сообщения в Telegram
             reply_markup_json = await get_reply_markup(chat_id, message_id)
             edit_success = edit_telegram_message(int(f'-100{chat_id}'), int(message_id),
-                                                 convert_html_to_telegram_format(data['text']),
+                                                 tg_inquiry.text, entities=tg_inquiry.entities,
                                                  reply_markup=reply_markup_json)
             if edit_success:
                 return jsonify({'ok': True}), 200

@@ -31,6 +31,7 @@ logging.basicConfig(filename='app.log', level=logging.INFO,
 
 app.config['SECRET_KEY'] = config.secret_key.get_secret_value()
 app.config["EXPLAIN_TEMPLATE_LOADING"] = False
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 app.register_blueprint(routers.index.blueprint)
 app.register_blueprint(routers.laboratory.blueprint)
@@ -77,3 +78,4 @@ async def mmwb_tools():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
+    # app.run(host='0.0.0.0', port=8000, ssl_context=('/tmp/cert.pem', '/tmp/key.pem'))

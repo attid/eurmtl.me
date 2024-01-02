@@ -1,13 +1,14 @@
 import asyncio
 import uuid
 from quart import Blueprint, request, render_template, flash, jsonify, session, redirect, abort
+from sulguk import transform_html
 
 from config_reader import config
 from db.models import Decisions
 from db.pool import db_pool
 from utils.gspread_utils import gs_update_decision, gs_get_last_id, gs_save_new_decision
 from utils.stellar_utils import check_user_weight
-from utils.telegram_utils import send_telegram_message, edit_telegram_message, convert_html_to_telegram_format
+from utils.telegram_utils import send_telegram_message, edit_telegram_message
 
 blueprint = Blueprint('decision', __name__)
 
@@ -45,7 +46,6 @@ async def cmd_add_decision():
         short_subject = form_data['short_subject']
         inquiry = form_data['inquiry']
         reading = int(form_data['reading'])
-        tg_inquiry = convert_html_to_telegram_format(inquiry)
 
         user_weight = await check_user_weight()
         # for testing
@@ -61,7 +61,9 @@ async def cmd_add_decision():
                            f'<a href="http://eurmtl.me/d/{d_uuid}">Edit on eurmtl.me</a>'
                            f'Added by {username}')
 
-            message_id = send_telegram_message(f'-100{chat_ids[reading]}', f'{tg_inquiry}{bottom_text}')
+            tg_inquiry = transform_html(inquiry + bottom_text)
+            message_id = send_telegram_message(int(f'-100{chat_ids[reading]}'),
+                                               tg_inquiry.text, entities=tg_inquiry.entities)
             if message_id is None:
                 await flash('Error with telegram publishing')
             else:
@@ -118,7 +120,6 @@ async def cmd_show_decision(decision_id):
             short_subject = form_data['short_subject']
             inquiry = form_data['inquiry']
             reading = int(form_data['reading'])
-            tg_inquiry = convert_html_to_telegram_format(inquiry)
             username = '@' + session['userdata']['username']
 
             # new or update
@@ -128,9 +129,9 @@ async def cmd_show_decision(decision_id):
                     decision: Decisions = db_session.query(Decisions).filter(Decisions.uuid == decision_id).first()
                     decision.full_text = inquiry
                     db_session.commit()
-                    edit_telegram_message(chat_id=f'-100{chat_ids[reading]}',
-                                          text=f'{tg_inquiry}\n'
-                                               f'{get_bottom_text(links_url, decision.uuid, decision.username)}',
+                    tg_inquiry = transform_html(inquiry + get_bottom_text(links_url, decision.uuid, decision.username))
+                    edit_telegram_message(chat_id=int(f'-100{chat_ids[reading]}'),
+                                          text=tg_inquiry.text, entities=tg_inquiry.entities,
                                           message_id=decision.url.split('/')[-1])
 
             # если сменили чтение,
@@ -141,8 +142,9 @@ async def cmd_show_decision(decision_id):
                 else:
                     new_uuid = uuid.uuid4().hex
 
-                    message_id = send_telegram_message(f'-100{chat_ids[reading]}',
-                                                       f'{tg_inquiry}\n{get_bottom_text(links_url, new_uuid, username)}')
+                    tg_inquiry = transform_html(inquiry + get_bottom_text(links_url, new_uuid, username))
+                    message_id = send_telegram_message(int(f'-100{chat_ids[reading]}'),
+                                                       tg_inquiry.text, entities=tg_inquiry.entities)
                     if message_id is None:
                         await flash('Error with telegram publishing')
                     else:

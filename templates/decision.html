@@ -1,16 +1,9 @@
 {% extends 'base.html' %}
 
-
 {% block head_scripts %}
 <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
 <link rel="stylesheet" href="https://cdn.quilljs.com/1.3.6/quill.snow.css">
 <link rel="stylesheet" href="/static/css/quill-emoji.css">
-<script src="/static/quill-emoji.js"></script>
-<style>
-    #editor-container {
-        min-height: 150px;
-    }
-</style>
 {% endblock %}
 
 {% block content %}
@@ -23,45 +16,65 @@
 </div>
 {% endif %}
 
-
 <form action="" method="post">
-    <fieldset id="create-tx">
-        <p>
+    <div class="row">
+        <div class="input-field col s12">
+            <input type="text" id="short_subject" name="short_subject" required value="{{ short_subject }}">
             <label for="short_subject">Тема (В реестр)</label>
-            <input type="text" id="short_subject" name="short_subject" required placeholder="Тема в реестр"
-                   value="{{ short_subject }}">
-        </p>
-        <legend>Вопрос</legend>
-        <div class="question_number">
-            <label for="question_number">Номер вопроса:</label>
-            <div class="input-group">
-                <input type="text" id="question_number" name="question_number" class="question_number" required
-                       placeholder="Номер вопроса, нажмите кнопку чтоб получить" value="{{ question_number }}"
-                       {% if links_url %} disabled {% endif %}>
-                <button type="button" id="loadsDecisionNum" class="loadsDecisionNum button secondary"
-                        {% if links_url %} disabled {% endif %}>🔍
-                </button>
+        </div>
+
+        <div class="input-field col s10">
+            <input type="text" id="question_number" name="question_number" class="question_number" required value="{{ question_number }}" {% if links_url %} disabled {% endif %}>
+            <label for="question_number">Номер вопроса</label>
+        </div>
+        <div class="input-field col s1 offset-s1">
+            <button type="button" id="loadsDecisionNum" class="btn-small waves-effect waves-light" {% if links_url %} disabled {% endif %}>🔍</button>
+        </div>
+
+        <div class="input-field col s12">
+        </div>
+        <div class="card col s12">
+            <div class="card-content">
+                <div>
+                    <span class="card-title">Вопрос (Идет в канал без темы как написано ниже)</span>
+                </div>
+                <div id="editor-container">
+                    {{ inquiry|safe }}
+                </div>
             </div>
         </div>
-        <p>
-            <input type="hidden" name="inquiry" id="inquiry">
-            <label for="editor-container">Вопрос (Идет в группу без темы)</label>
-        </p>
-        <div id="editor-container">
-            {{ inquiry|safe }}
-        </div>
-        <p>
+
+        <div class="col s12">
             <label>Чтение</label>
-            <label><input type="radio" name="reading" value="1" {{ 'checked' if reading == 1 else '' }}> Первое
-                чтение</label>
-            <label><input type="radio" name="reading" value="2" {{ 'checked' if reading == 2 else '' }}> Второе
-                чтение</label>
-            <label><input type="radio" name="reading" value="3" {{ 'checked' if reading == 3 else '' }}> Третье
-                чтение</label>
-        </p>
-        <input type="submit" class="button primary" value="Опубликовать">
-    </fieldset>
+            <p>
+                <label>
+                    <input type="radio" name="reading" value="1" {{ 'checked' if reading == 1 else '' }} />
+                    <span>Первое чтение</span>
+                </label>
+            </p>
+            <p>
+                <label>
+                    <input type="radio" name="reading" value="2" {{ 'checked' if reading == 2 else '' }} />
+                    <span>Второе чтение</span>
+                </label>
+            </p>
+            <p>
+                <label>
+                    <input type="radio" name="reading" value="3" {{ 'checked' if reading == 3 else '' }} />
+                    <span>Третье чтение</span>
+                </label>
+            </p>
+        </div>
+
+        <button type="submit" class="btn waves-effect waves-light col s10 offset-s1">
+            Опубликовать<i class="material-icons right">send</i>
+        </button>
+    </div>
 </form>
+{% endblock %}
+
+{% block bottom_scripts %}
+<script src="/static/quill-emoji.js"></script>
 
 <script>
     var form = document.querySelector('form');
@@ -108,6 +121,7 @@
             var currentText = quill.root.innerHTML; // Fetch current content from Quill editor
             var shortSubject = document.querySelector("#short_subject").value;
             quill.root.innerHTML = "<b>Вопрос " + data.number + ": "+ shortSubject +"</b><br> " + currentText; // Update content in Quill editor
+            M.updateTextFields(); // Обновляем текстовые поля
         })
         .catch(error => {
             console.log("There was a problem with the fetch operation:", error.message);
@@ -117,5 +131,4 @@
 
 
 </script>
-
 {% endblock %}

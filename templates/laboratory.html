@@ -1,91 +1,85 @@
 {% extends 'base.html' %}
 
-{% block head_scripts %}
-<script src="/static/laboratory.js?4"></script>
-{% endblock %}
-
 {% block content %}
+<section id="main">
+    <div class="new-operation"></div>
 
-<div class="container">
-
-    <section id="main">
-        <form action="" method="post">
-
-            <!-- Public key input -->
-            <p>
-            <div class="account-selector">
-                <label for="publicKey">Public key:</label>
-                <div class="input-group">
-                    <input type="text" class="publicKey" name="publicKey" maxlength="56" id="publicKey"
-                           placeholder="Enter public key" required>
-                    <button type="button" class="fetchAccounts button secondary">⛰️</button>
-                    <button type="button" class="openAccounts button secondary">👁</button>
-                </div>
-                <div class="publicKeyDropdown dropdown-content"></div>
-            </div>
-
-            <!-- Sequence Number and button -->
-            <div class="sequence-selector">
-                <label for="sequence_number">Sequence Number:</label>
-                <div class="input-group">
-                    <input type="text" id="sequence_number" name="sequence_number" class="sequence_number" required>
-                    <button type="button" class="loadsSequence button secondary">🔍</button>
-                </div>
-            </div>
-
-            <!-- Memo type and input -->
-            <p>
-                <label for="memo_type">Memo Type:</label>
-                <select id="memo_type" name="memo_type" class="memo_type">
-                    <option value="none">None</option>
-                    <option value="text">Text</option>
-                    <option value="hash">Hash</option>
-                </select>
-            </p>
-
-            <p>
-                <label for="memo">Memo:</label>
-                <input type="text" id="memo" name="memo" class="memo" placeholder="Enter memo">
-            </p>
-
+    <div class="card">
+        <div class="card-content">
+            <span class="card-title col s8">Добавить операцию</span>
             <!-- Operation selection and add operation button -->
-            <div class="new-operation"></div>
-
-            <div class="operation-block add-new">
-
-                <label for="operation">Operation:</label>
-                <select id="operation" name="operation">
-                    <option value="payment">Payment</option>
-                    <option value="trust_payment">Payment with Trust</option>
-                    <option value="change_trust">Change Trust</option>
-                    <option value="buy">Buy</option>
-                    <option value="sell">Sell</option>
-                    <option value="sell_passive">Sell passive</option>
-                    <option value="create_account">Create account</option>
-                    <option value="manage_data">Manage Data</option>
-                    <option value="options">Set Option</option>
-                    <option value="options_signer">Set Option (Signer)</option>
-                    <option value="clawback">Clawback</option>
-                    <option value="copy_multi_sign">Copy Multi Sign</option>
-                    <option value="swap">Swap</option>
-                </select>
-
-                <br>
-
-                <button type="button" id="add_operation" class="button primary">Add Operation</button>
-            </div>
-
-            <div class="operation-block get_xdr">
-                <div class="col">
-                    <span class="tx-body"></span>
+            <div class="row">
+                <div class="input-field col s12">
+                    <select id="operation" name="operation" onchange="addOperation()">
+                        <option value="" disabled selected>Choose operation type</option>
+                        <option value="payment">Payment</option>
+                        <option value="trust_payment">Payment with Trust</option>
+                        <option value="change_trust">Change Trust</option>
+                        <option value="buy">Buy</option>
+                        <option value="sell">Sell</option>
+                        <option value="sell_passive">Sell passive</option>
+                        <option value="create_account">Create account</option>
+                        <option value="manage_data">Manage Data</option>
+                        <option value="options">Set Option</option>
+                        <option value="options_signer">Set Option (Signer)</option>
+                        <option value="clawback">Clawback</option>
+                        <option value="copy_multi_sign">Copy Multi Sign</option>
+                        <option value="swap">Swap</option>
+                    </select>
+                    <label>Operation</label>
                 </div>
+            </div>
+        </div>
+    </div>
 
-                <button type="button" class="get_xdr" id="get_xdr">Get XDR</button>
+    <div class="card">
+        <div class="card-content">
+            <!-- Кнопка Get XDR внутри flex-container -->
+            <div class="row">
+                <div class="col s12 flex-container">
+                    <button type="button" id="get_xdr" class="btn waves-effect waves-light flex-item"
+                            onclick="handleXDR()">Get XDR<i class="material-icons right">calculate</i>
+                    </button>
+                </div>
             </div>
 
-        </form>
-    </section>
+            <!-- Новая карточка под кнопкой -->
+            <div class="row">
+                <div class="col s12">
+                    <div class="card-panel">
+                        <pre class="tx-body"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
-</div>
+    <div class="card">
+        <div class="card-content">
+            <div class="row">
+                <div class="input-field col s12">
+                    <textarea id="xdr-input" class="materialize-textarea"></textarea>
+                    <label for="xdr-input">XDR Input</label>
+                </div>
+            </div>
 
+            <div class="row">
+                <div class="col s12 flex-container">
+                    <button type="button" class="btn waves-effect waves-light flex-item" onclick="importTransaction()">
+                        Импортировать транзакцию
+                    </button>
+                    <button type="button" class="btn waves-effect waves-light flex-item" onclick="importOperations()">
+                        Импортировать операции
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</section>
 {% endblock %}
+
+{% block bottom_scripts %}
+<script src="/static/main.js?4"></script>
+{% endblock %}
+

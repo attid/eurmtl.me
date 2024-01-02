@@ -1,22 +1,38 @@
 {% extends 'base.html' %}
 
 {% block content %}
+<div class="row">
+    <form class="col s12 m7" method="post" action="/add_user">
+        <div class="row">
+            <div class="input-field col s12">
+                <input id="username" name="username" type="text" data-length="20" value="{{ username }}">
+                <label for="username">Username with @</label>
+            </div>
+        </div>
+        <div class="row">
+            <div class="input-field col s12">
+                <input id="public_key" name="public_key" type="text" data-length="56">
+                <label for="public_key">Public key starting with G</label>
+            </div>
+        </div>
+        <button class="btn waves-effect waves-light col s4 offset-s1" type="submit" name="action">Send
+            <i class="material-icons right">send</i>
+        </button>
+    </form>
+    <!-- Card Panel -->
+    <div class="col s12 m5">
+        <h4 class="header">New User</h4>
+        <div class="card-panel teal"><span class="white-text">А тут можно написать условия как оно работает</span>
+        </div>
+    </div>
 
-<form action="" method="post">
-    <fieldset id="create-tx">
-        <legend>New user</legend>
-        <p>
-            <label for="username">Username</label>
-            <input type="text" id="username" name="username"
-                      placeholder="Username with @" value="{{ username }}">
-        </p>
-        <p>
-            <label for="public_key">Username</label>
-            <input type="text" id="public_key" name="public_key"
-                      placeholder="public_key with G" value="{{ public_key }}">
-        </p>
-        <input type="submit" class="button primary" value="Create">
-    </fieldset>
-</form>
+</div>
+{% endblock %}
 
+{% block bottom_scripts %}
+<script>
+    $(document).ready(function() {
+        $('input#username, input#public_key').characterCounter();
+    });
+</script>
 {% endblock %}

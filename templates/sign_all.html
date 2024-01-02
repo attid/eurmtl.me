@@ -1,24 +1,45 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<table>
+<table class="highlight">
     <thead>
-        <tr>
-            <th>№</th>
-            <th>Date</th>
-            <th>Transaction</th>
-            <th>Description</th>
-        </tr>
+    <tr>
+        <th>№</th>
+        <th>Date</th>
+        <th>Link</th>
+        <th>Description</th>
+        <th>Signatures</th>
+        <th>Status</th>
+    </tr>
     </thead>
     <tbody>
-        {% for transaction in transactions %}
-            <tr>
-                <td>{{ loop.index }}</td>
-                <td>{{ transaction.add_dt }}</td>
-                <td><a href="/sign_tools/{{ transaction.hash }}">{{ transaction.hash }}</a></td>
-                <td>{{ transaction.description }}</td>
-            </tr>
-        {% endfor %}
+    {% for transaction in transactions %}
+    <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ transaction.add_dt }}</td>
+        <td><a href="/sign_tools/{{ transaction.hash }}">Смотреть</a></td>
+        <td>{{ transaction.description }}</td>
+        <td>{{ transaction.signature_count }}</td>
+        <td>
+            {% if transaction.state == 0 %}
+            <i class="material-icons green-text">fiber_new</i> <!-- Зелёный для новых -->
+            {% elif transaction.state == 1 %}
+            <i class="material-icons yellow-text">send</i> <!-- Жёлтый для ожидающих отправки -->
+            {% elif transaction.state == 2 %}
+            <i class="material-icons orange-text">check_circle</i> <!-- Зелёный для отправленных -->
+            {% elif transaction.state == 3 %}
+            <i class="material-icons red-text">cancel</i> <!-- Красный для отменённых -->
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
     </tbody>
 </table>
+<div class="section">
+    {% if next_page %}
+    <a href="?next={{next_page}}" class="waves-effect waves-light btn">
+        <i class="material-icons left">cloud_download</i>Показать следующие 100
+    </a>
+    {% endif %}
+</div>
 {% endblock %}
