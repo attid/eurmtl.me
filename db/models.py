@@ -83,9 +83,18 @@ class Alerts(Base):
 class WebEditorMessages(Base):
     __tablename__ = 't_web_editor_messages'
     id = Column(Integer, primary_key=True)
-    chat_id = Column(BigInteger, nullable=False)
-    message_id = Column(BigInteger, nullable=False)
+    chat_id = Column(BigInteger, nullable=False, default=0)
+    message_id = Column(BigInteger, nullable=False, default=0)
     message_text = Column(Text(12000), nullable=False)
+    uuid = Column('uuid', String(32))
+
+
+class WebEditorLogs(Base):
+    __tablename__ = 't_web_editor_logs'
+    id = Column(Integer, primary_key=True)
+    web_editor_message_id = Column(Integer, nullable=False)
+    message_text = Column(Text(12000), nullable=False)
+    dt = Column(DateTime(), default=datetime.now)
 
 
 class Sep6Transactions(Base):

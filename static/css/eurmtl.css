@@ -25,6 +25,11 @@
 strong {
     font-weight: bold !important;
 }
+td.description {
+    max-width: 300px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
 
 
 @media (prefers-color-scheme: dark) {

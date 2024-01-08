@@ -16,9 +16,9 @@
     {% for transaction in transactions %}
     <tr>
         <td>{{ loop.index }}</td>
-        <td>{{ transaction.add_dt }}</td>
+        <td>{{ transaction.add_dt.strftime('%Y-%m-%d') }}</td>
         <td><a href="/sign_tools/{{ transaction.hash }}">Смотреть</a></td>
-        <td>{{ transaction.description }}</td>
+        <td class="description">{{ transaction.description }}</td>
         <td>{{ transaction.signature_count }}</td>
         <td>
             {% if transaction.state == 0 %}

@@ -149,7 +149,7 @@ async def cmd_build_xdr():
                                                        source=source_account)
         if operation['type'] == 'change_trust':
             transaction.append_change_trust_op(asset=decode_asset(operation['asset']),
-                                               limit=operation['amount'] if len(operation['amount']) > 0 else None,
+                                               limit=operation['limit'] if len(operation['limit']) > 0 else None,
                                                source=source_account)
         if operation['type'] == 'create_account':
             transaction.append_create_account_op(destination=operation['destination'],

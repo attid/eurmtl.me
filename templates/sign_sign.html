@@ -170,7 +170,11 @@
                         {% if signer[4] %}
                         <i class="material-icons green-text">check_circle</i>
                         {% else %}
-                        <i class="material-icons red-text">cancel</i>
+                            {% if publish_state[0] > 0 %}
+                                <i class="material-icons red-text">hourglass_bottom</i>
+                            {% else %}
+                                <i class="material-icons yellow-text">hourglass_top</i>
+                            {% endif %}
                         {% endif %}
                     </td>
                 </tr>
@@ -190,7 +194,7 @@
         <button class="btn waves-effect waves-light" onclick="copy_ignorants()">Copy them<i
                 class="material-icons right">content_copy</i></button>
     </div>
-    <div class="col s10">
+    <div class="col s10" id="ignorants-nicks">
         {% for signer in bad_signers %}
         {% if signer %}
         {% if signer[0] == '@' %}
@@ -265,7 +269,6 @@
     // Элементы DOM, к которым часто обращаемся
     const txBodyTextarea = document.querySelector("#tx_body");
     const defXdrDiv = document.querySelector("#defXdrDiv .tx-body");
-    const ignorantsNicks = document.querySelector(".ignorants-nicks");
     const alertBtn = document.getElementById("alert-btn");
 
     function reload_page() {
@@ -297,6 +300,7 @@
     }
 
     async function copy_ignorants() {
+        const ignorantsNicks = document.querySelector("#ignorants-nicks");
         if (!navigator.clipboard) {
             M.toast({html: 'Clipboard API не доступен'});
             return;
