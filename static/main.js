@@ -29,7 +29,8 @@ function getSourceKey(buttonElement){
     var $button = $(buttonElement);
     var $inputField = $button.closest('.account-selector');
     var sourceAccount = $inputField.find('.sourceAccount').val();
-    var publicKey = $("#publicKey").val();
+    var publicKey = $('[id^="publicKey-"]').val();
+
 
     var keyToUse = sourceAccount && sourceAccount.length === 56 ? sourceAccount : (publicKey.length === 56 ? publicKey : null);
 
@@ -221,11 +222,17 @@ function generateOfferSelector(fieldName = "offer_id", labelName = "Offer ID", f
 function generateInput(fieldName = "amount", labelName = "Amount", validation, fieldValue = "", helperText = "") {
     var uid = get_uid();
     var fullId = `${fieldName}-${uid}`;
+    var onInputAttribute = '';
+
+    if (validation === 'float_trade') {
+        onInputAttribute = `oninput="calculateFinalCost(this)"`;
+    }
+
     return `
 <div class="row input-field">
     <div class="input-field col s10">
         <input id="${fullId}" type="text" class="validate" data-type="${fieldName}"
-            data-validation="${validation}" value="${fieldValue}">
+            data-validation="${validation}" value="${fieldValue}" ${onInputAttribute}>
         <label for="${fullId}">${labelName}</label>
         ${helperText ? `<span class="helper-text">${helperText}</span>` : ""}
     </div>
@@ -277,7 +284,7 @@ function generatePathSelector(fieldName = "path", labelName = "Path") {
     `;
 }
 
-function fetchPath(buttonElement, pathFieldId) {
+function fetchPath0(buttonElement, pathFieldId) {
     var $button = $(buttonElement);
     var $inputField = $button.closest('.input-field');
     var $pathInput = $('#' + pathFieldId);
@@ -288,6 +295,19 @@ function fetchPath(buttonElement, pathFieldId) {
     var publicKey = `${sellingAsset}/${buyingAsset}/${amount}`;
 
     fetchDataAndShowDropdown(`/lab/path/${publicKey}`, 'path'+publicKey, $inputField, $pathInput);
+}
+
+function fetchPath(buttonElement, pathFieldId) {
+    var $button = $(buttonElement);
+    var $inputField = $button.closest('.input-field'); // Возвращаем это значение
+    var $operationBlock = $button.closest('.card-content');
+
+    var sellingAsset = $operationBlock.find('[data-type="selling"]').val() || 0;
+    var buyingAsset = $operationBlock.find('[data-type="buying"]').val() || 0;
+    var amount = $operationBlock.find('[data-type="amount"]').val() || 0;
+    var publicKey = `${sellingAsset}/${buyingAsset}/${amount}`;
+
+    fetchDataAndShowDropdown(`/lab/path/${publicKey}`, 'path'+publicKey, $inputField, $('#' + pathFieldId));
 }
 
 function getBlockCounter() {
@@ -374,7 +394,7 @@ function generateCardChangeTrust() {
         ${generateCardHeader("Change Trust", blockId)}
         ${generateAssetSelector("asset", "Asset")}
 
-        ${generateInput("trust_amount", "Trust Limit (optional)", "float", "",
+        ${generateInput("limit", "Trust Limit (optional)", "float_null", "",
             "Leave empty to default to the max int64. Set to 0 to remove the trust line.")}
 
         ${generateAccountSelector("sourceAccount")}
@@ -392,8 +412,8 @@ function generateCardBuy() {
         ${generateAssetSelector("buying", "Buying")}
         ${generateAssetSelector("selling", "Selling")}
 
-        ${generateInput("amount", "Amount you are buying (zero to delete offer)", "float")}
-        ${generateInput("price", "Price per unit (buying in terms of selling)", "float")}
+        ${generateInput("amount", "Amount you are buying (zero to delete offer)", "float_trade")}
+        ${generateInput("price", "Price per unit (buying in terms of selling)", "float_trade","","Тут будет расчет получаемого")}
 
         ${generateOfferSelector()}
 
@@ -412,8 +432,8 @@ function generateCardSell() {
         ${generateAssetSelector("selling", "Selling")}
         ${generateAssetSelector("buying", "Buying")}
 
-        ${generateInput("amount", "Amount you are selling (zero to delete offer)", "float")}
-        ${generateInput("price", "Price per unit (selling in terms of buying)", "float")}
+        ${generateInput("amount", "Amount you are selling (zero to delete offer)", "float_trade")}
+        ${generateInput("price", "Price per unit (buying in terms of selling)", "float_trade","","Тут будет расчет получаемого")}
 
         ${generateOfferSelector()}
 
@@ -432,8 +452,8 @@ function generateCardSellPassive() {
         ${generateAssetSelector("selling", "Selling")}
         ${generateAssetSelector("buying", "Buying")}
 
-        ${generateInput("amount", "Amount you are selling (zero to delete offer)", "float")}
-        ${generateInput("price", "Price per unit (selling in terms of buying)", "float")}
+        ${generateInput("amount", "Amount you are selling (zero to delete offer)", "float_trade")}
+        ${generateInput("price", "Price per unit (buying in terms of selling)", "float_trade","","Тут будет расчет получаемого")}
 
         ${generateAccountSelector("sourceAccount")}
     </div>
@@ -599,13 +619,16 @@ function getCardByName(selectedOperation){
             newCardHTML = generateCardChangeTrust();
             break;
         case 'buy':
+        case 'manageBuyOffer':
             newCardHTML = generateCardBuy();
             break;
         case 'sell':
+        case 'manageSellOffer':
             newCardHTML = generateCardSell();
             break;
         case 'sell_passive':
         case 'sellPassive':
+        case 'createPassiveSellOffer':
             newCardHTML = generateCardSellPassive();
             break;
         case 'create_account':
@@ -726,9 +749,18 @@ function validateInput(value, validationType, dataType, type, index) {
             }
             break;
         case 'float':
+        case 'float_trade':
             value = value.replace(',', '.');
             if (isNaN(parseFloat(value))) {
                 throw new Error(`Не число с плавающей точкой для ${dataType} в блоке ${type} #${index}`);
+            }
+            break;
+        case 'float_null':
+            if (value) {
+                value = value.replace(',', '.');
+                if (isNaN(parseFloat(value))) {
+                    throw new Error(`Не число с плавающей точкой для ${dataType} в блоке ${type} #${index}`);
+                }
             }
             break;
         case 'text':
@@ -849,15 +881,17 @@ function processOperations(jsonData) {
             let camelCaseDataType = toCamelCase(dataType);
 
             // Обработка поля asset
-            if (dataType.toLowerCase().includes('asset')) {
-                let asset = op.attributes[camelCaseDataType];
-                let value = '';
+            if (dataType.toLowerCase().includes('asset') ||
+                dataType.toLowerCase().includes('buying') ||
+                dataType.toLowerCase().includes('selling')) {
+                    let asset = op.attributes[camelCaseDataType];
+                    let value = '';
 
-                if (asset && asset.type === 'native') {
-                    value = 'XLM';
-                } else if (asset) {
-                    value = `${asset.code}-${asset.issuer}`;
-                }
+                    if (asset && asset.type === 'native') {
+                        value = 'XLM';
+                    } else if (asset) {
+                        value = `${asset.code}-${asset.issuer}`;
+                    }
 
                 $(this).val(value);
             } else if (op.attributes.hasOwnProperty(camelCaseDataType)) {
@@ -946,3 +980,34 @@ function importTransaction() {
     });
 }
 
+function calculateFinalCost(inputElement) {
+    var $inputElement = $(inputElement);
+    var $operationBlock = $inputElement.closest('.card-content');
+
+    const amountInput = $operationBlock.find('[data-type="amount"]');
+    const priceInput = $operationBlock.find('[data-type="price"]');
+    const helperTextDiv = priceInput.closest('.input-field').find('.helper-text');
+    const sellingInput = $operationBlock.find('[data-type="selling"]');
+    const buyingInput = $operationBlock.find('[data-type="buying"]');
+
+    let amount = parseFloat(amountInput.val().replace(',', '.'));
+    let price = parseFloat(priceInput.val().replace(',', '.'));
+    let sellingValue = sellingInput.val() ? sellingInput.val().split('-')[0] : '';
+    let buyingValue = buyingInput.val() ? buyingInput.val().split('-')[0] : '';
+
+    if (!isNaN(amount) && !isNaN(price)) {
+        let finalCost = amount * price;
+        let operationType = $operationBlock.data('type');
+        let textOutput = '';
+
+        if (operationType === 'buy') {
+            textOutput = `Вы продадите ${finalCost.toFixed(2)} ${sellingValue}`;
+        } else {
+            textOutput = `Вы купите ${finalCost.toFixed(2)} ${buyingValue}`;
+        }
+
+        helperTextDiv.text(textOutput);
+    } else {
+        helperTextDiv.text('');
+    }
+}

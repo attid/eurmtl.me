@@ -1,8 +1,10 @@
 import asyncio
 
+import uuid
 from quart import Blueprint, request, jsonify, abort
 
-from db.models import Transactions, Signers, Signatures
+from config_reader import config
+from db.models import Transactions, Signers, Signatures, WebEditorMessages
 from db.pool import db_pool
 from routers.sign_tools import parse_xdr_for_signatures
 from utils.stellar_utils import decode_xdr_to_text, is_valid_base64
@@ -89,6 +91,22 @@ async def remote_get_xdr(tr_hash):
         return 'Transaction not exist =('
 
     return jsonify({"xdr": transaction.body}), 200
+
+
+@blueprint.route('/remote/get_new_pin_id')
+async def remote_get_new_pin_id():
+    api_key = request.headers.get('Authorization')
+    if api_key != f"Bearer {config.eurmtl_key.get_secret_value()}":
+        return jsonify({"message": "Unauthorized"}), 401
+
+    message_uuid = uuid.uuid4().hex
+
+    with db_pool() as db_session:
+        msg = WebEditorMessages(uuid=message_uuid, message_text='New Text')
+        db_session.add(msg)
+        db_session.commit()
+
+    return jsonify({"uuid": message_uuid}), 200
 
 
 if __name__ == '__main__':

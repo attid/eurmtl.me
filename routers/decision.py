@@ -58,7 +58,7 @@ async def cmd_add_decision():
 
             username = '@' + session['userdata']['username']
             bottom_text = (f'\n---\n'
-                           f'<a href="http://eurmtl.me/d/{d_uuid}">Edit on eurmtl.me</a>'
+                           f'<a href="http://eurmtl.me/d/{d_uuid}">Edit on eurmtl.me</a>\n'
                            f'Added by {username}')
 
             tg_inquiry = transform_html(inquiry + bottom_text)

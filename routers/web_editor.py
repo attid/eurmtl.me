@@ -1,10 +1,10 @@
 import json
 import urllib.parse
 import uuid
-from quart import Blueprint, request, render_template, jsonify, session
+from quart import Blueprint, request, render_template, jsonify, session, abort
 from sulguk import transform_html
 
-from db.models import WebEditorMessages
+from db.models import WebEditorMessages, WebEditorLogs
 from db.pool import db_pool
 from utils.telegram_utils import edit_telegram_message, is_bot_admin, is_user_admin, check_response_webapp
 
@@ -17,23 +17,32 @@ async def web_editor():
     tg_web_app_start_param = request.args.get('tgWebAppStartParam')
     if tg_web_app_start_param:
         chat_id, message_id = tg_web_app_start_param.split('_')
+        chat_id = int(chat_id)
         session['WebEditor'] = (chat_id, message_id)
 
         # Проверяем, является ли бот администратором в чате
-        if not is_bot_admin(chat_id):
+        if chat_id > 0 and not is_bot_admin(chat_id):
             return 'Бот не является администратором в данном чате', 403
 
         # Затем ищем в базе текст для этого сообщения
         with db_pool() as db_session:
-            message_record = db_session.query(WebEditorMessages).filter(
-                WebEditorMessages.chat_id == chat_id,
-                WebEditorMessages.message_id == message_id
-            ).first()
+            if chat_id == 0:
+                message_record = db_session.query(WebEditorMessages).filter(
+                    WebEditorMessages.uuid == message_id
+                ).first()
+            else:
+                message_record = db_session.query(WebEditorMessages).filter(
+                    WebEditorMessages.chat_id == chat_id,
+                    WebEditorMessages.message_id == message_id
+                ).first()
 
         if message_record:
             # Если текст найден, отображаем его в редакторе
             return await render_template('web_editor.html', message_text=message_record.message_text)
         else:
+            if chat_id == 0:
+                abort(404)
+
             # Если текста нет, пробуем отредактировать сообщение в Telegram
             random_hash = uuid.uuid4().hex
             reply_markup_json = await get_reply_markup(chat_id, message_id)
@@ -70,32 +79,44 @@ async def get_reply_markup(chat_id, message_id):
 async def web_editor_action():
     data = await request.json
     chat_id, message_id = session.get('WebEditor', (0, 0))
+    chat_id = int(chat_id)
 
     # Получаем initData
     init_data_str = data.get('initData')
 
     # Проверяем, что initData, chat_id, message_id не пустая и в правильном формате
-    if not init_data_str or not chat_id or not message_id:
+    if not init_data_str or not message_id:
         return jsonify({'ok': False, 'error': 'initData отсутствует'}), 400
 
     # Проверяем права пользователя на редактирование
-    if not user_has_edit_permissions(init_data_str, chat_id):
+    if chat_id > 0 and not user_has_edit_permissions(init_data_str, chat_id):
         return jsonify({'ok': False, 'error': 'Нет прав на редактирование'}), 403
 
     # Если есть текст, это запрос на сохранение
     if 'text' in data:
         with db_pool() as db_session:
-            # Ищем соответствующую запись
-            message_record = db_session.query(WebEditorMessages).filter(
-                WebEditorMessages.chat_id == chat_id,
-                WebEditorMessages.message_id == message_id
-            ).first()
+            if chat_id == 0:
+                message_record = db_session.query(WebEditorMessages).filter(
+                    WebEditorMessages.uuid == message_id
+                ).first()
+            else:
+                message_record = db_session.query(WebEditorMessages).filter(
+                    WebEditorMessages.chat_id == chat_id,
+                    WebEditorMessages.message_id == message_id
+                ).first()
 
             # Если запись найдена, обновляем текст
             if message_record:
+                log_record = WebEditorLogs(
+                    web_editor_message_id=message_record.id,
+                    message_text=message_record.message_text
+                )
+                db_session.add(log_record)
+
                 message_record.message_text = data['text']
             else:
-                # Если запись не найдена, создаем новую
+                if chat_id == 0:
+                    abort(404)
                 new_message_record = WebEditorMessages(
                     chat_id=chat_id,
                     message_id=message_id,
@@ -105,6 +126,8 @@ async def web_editor_action():
 
             # Сохраняем изменения в базе данных
             db_session.commit()
+            if chat_id == 0:
+                return jsonify({'ok': True}), 200
             tg_inquiry = transform_html(data['text'])
 
             # Выполняем редактирование сообщения в Telegram

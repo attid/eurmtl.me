@@ -14,12 +14,12 @@ from stellar_sdk import (
     TextMemo,
     TransactionEnvelope,
     PathPaymentStrictSend,
-    ManageSellOffer, Transaction, Keypair, Server, Asset, TransactionBuilder, ServerAsync, AiohttpClient
-
+    ManageSellOffer, Transaction, Keypair, Server, Asset, TransactionBuilder, ServerAsync, AiohttpClient,
+    ManageData, CreatePassiveSellOffer, ManageBuyOffer, SetOptions, ChangeTrust, AllowTrust, AccountMerge,
+    Clawback
 )
 from stellar_sdk.sep import stellar_uri, stellar_web_authentication
 import config_reader
-from config_reader import config
 from db.models import Signers, Transactions
 from db.requests import EURMTLDictsType, db_get_dict
 from db.pool import db_pool
@@ -109,7 +109,7 @@ def decode_xdr_to_base64(xdr, return_json=False):
                                      'startingBalance': operation.starting_balance,
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
-        elif isinstance(operation, ManageSellOffer):
+        elif isinstance(operation, ManageSellOffer) or isinstance(operation, ManageBuyOffer):
             op_json['attributes'] = {'amount': operation.amount,
                                      'price': operation.price.n / operation.price.d,
                                      'offerId': operation.offer_id,
@@ -117,8 +117,13 @@ def decode_xdr_to_base64(xdr, return_json=False):
                                      'buying': operation.buying.to_dict(),
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
-
-        # Добавить здесь декодирование других типов операций по аналогии
+        elif isinstance(operation, CreatePassiveSellOffer):
+            op_json['attributes'] = {'amount': operation.amount,
+                                     'price': operation.price.n / operation.price.d,
+                                     'selling': operation.selling.to_dict(),
+                                     'buying': operation.buying.to_dict(),
+                                     'sourceAccount': operation.source.account_id if operation.source is not None else None
+                                     }
         elif isinstance(operation, SetOptions):
             op_json['attributes'] = {
                 'signer': None if operation.signer is None else {'type': 'ed25519PublicKey',
@@ -131,15 +136,6 @@ def decode_xdr_to_base64(xdr, return_json=False):
                 'highThreshold': operation.high_threshold,
                 'homeDomain': operation.home_domain
             }
-        # {'attributes': {'sourceAccount': 'GAQ5ERJVI6IW5UVNPEVXUUVMXH3GCDHJ4BJAXMAAKPR5VBWWAUOMABIZ', 'sequence': '198986603622825985', 'fee': '5000', 'baseFee': '100', 'minFee': '100'},
-        # 'feeBumpAttributes': {'maxFee': '100'}, 'operations': [
-        # {'id': 1688742251202, 'name': 'pathPaymentStrictSend',
-        # 'attributes': {'destination': 'GAQ5ERJVI6IW5UVNPEVXUUVMXH3GCDHJ4BJAXMAAKPR5VBWWAUOMABIZ',
-        # 'sendAsset': {'type': 'credit_alphanum12', 'code': 'MTLBR', 'issuer': 'GAMU3C7Q7CUUC77BAN5JLZWE7VUEI4VZF3KMCMM3YCXLZPBYK5Q2IXTA'},
-        # 'path': [],
-        # 'destAsset': {'type': 'credit_alphanum4', 'code': 'TIC', 'issuer': 'GBJ3HT6EDPWOUS3CUSIJW5A4M7ASIKNW4WFTLG76AAT5IE6VGVN47TIC'},
-        # 'destMin': '22.0835395',
-        # 'sendAmount': '22083.5395092'}}]}
         elif isinstance(operation, PathPaymentStrictSend):
             op_json['attributes'] = {'sendAsset': operation.send_asset.to_dict(),
                                      'destination': operation.destination.account_id,
@@ -149,7 +145,6 @@ def decode_xdr_to_base64(xdr, return_json=False):
                                      'destAsset': operation.dest_asset.to_dict(),
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
-
         else:
             op_json['attributes'] = {
                 'detail': 'Unsupported operation type'
