@@ -5,42 +5,77 @@
 
 {% block content %}
 
-
-<div class="row control-buttons">
-    <a href="https://laboratory.stellar.org/#txsigner?network=public" id="laboratory-url"
-       target="_blank" class="button secondary outline">Open Laboratory</a>
-    <button class="button outline" onclick="copy_tx()">Copy Transaction</button>
-    <button class="button outline" onclick="getDecode()">Decode</button>
-    {% if uri_xdr %}
-    <a href="{{ uri_xdr }}" id="uri-url"
-       target="_blank" class="button secondary outline">Open in Lobster*</a>
-    {% endif %}
-</div>
-
-<div id="responseDiv" style="display: none;"></div>
 <div class="row">
-    <div class="col" id="defXdrDiv">
-        <span class="tx-body">{{xdr}}</span>
-    </div>
-</div>
+    <div class="col s12">
+        <div class="flex-container">
 
-<p>
-    <label for="private_key">Private Key</label>
-    <input type="text" id="private_key" name="private_key"
-           placeholder="private_key with S" value=""
-           oninput="sign_tx()" onpaste="sign_tx()" autocomplete="off">
-</p>
-<input type="button" class="button primary" value="Sign" onclick="sign_tx()">
 
-<div id="signedDiv" style="display: none;">
-    <div class="row">
-        <div class="col">
-            <span class="tx-body"></span>
+            <a href="https://laboratory.stellar.org/#txsigner?network=public" target="_blank"
+               class="btn waves-effect waves-light flex-item">Open Laboratory</a>
+            <button class="btn waves-effect waves-light flex-item" onclick="copy_tx()">Copy Transaction<i
+                    class="material-icons right">content_copy</i></button>
+            <button class="btn waves-effect waves-light flex-item" onclick="getDecode()">Decode<i
+                    class="material-icons right">code</i></button>
+            {% if uri_xdr %}
+            <a href="{{ uri_xdr }}" target="_blank"
+               class="btn waves-effect waves-light flex-item">Open in Lobster*</a>
+            {% endif %}
+
         </div>
     </div>
+</div>
+
+
+<div id="responseCard" class="section" style="display: none;">
+    <div class="card-panel" id="responseDiv">
+        
+    </div>
+</div>
+
+
+<div class="row">
+    <div class="col s12" id="defXdrDiv">
+        <div class="card-panel">
+            <pre class="tx-body">{{xdr}}</pre>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="input-field col s12" id="signP" style="display: block;">
+        <input type="password" id="private_key" name="private_key" class="validate" placeholder="private_key with S"
+               value="" oninput="sign_tx()" onpaste="sign_tx()" autocomplete="off">
+        <label for="private_key" class="active">Private Key</label>
+    </div>
+
+
+</div>
+
+<div class="row">
+    <div class="col s12">
+        <div class="flex-container">
+            <button type="button" class="btn waves-effect waves-light flex-item" onclick="sign_tx()">Sign<i
+                    class="material-icons right">edit</i></button>
+        </div>
+    </div>
+</div>
+
+<div id="signedDiv" style="display: none;">
+
     <div class="row">
-        <div class="col">
-            <input type="button" class="button primary" value="Submit" onclick="submit_tx()">
+        <div class="col s12">
+            <div class="card-panel">
+                <pre class="tx-body"></pre>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col s12">
+            <div class="flex-container">
+                <button type="button" class="btn waves-effect waves-light flex-item" onclick="submit_tx()">Submit<i
+                        class="material-icons right">send</i></button>
+            </div>
         </div>
     </div>
 </div>
@@ -54,20 +89,39 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/10.4.1/stellar-sdk.min.js"></script>
 <script>
     async function copy_tx() {
+        if (!navigator.clipboard) {
+            M.toast({html: 'Clipboard API не доступен'});
+            return;
+        }
         await navigator.clipboard.writeText(document.querySelector("#defXdrDiv .tx-body").innerText);
     }
 
     async function getDecode() {
         var responseDiv = document.getElementById("responseDiv");
+        let xdr = document.querySelector("#defXdrDiv .tx-body").innerText;
 
         try {
-            let response = await fetch('/decode/{{tx_hash}}');
+            let response = await fetch('/remote/decode', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ xdr: xdr })
+            });
+
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             } else {
-                let text = await response.text();
-                responseDiv.innerHTML = text;
-                responseDiv.style.display = 'block';
+                let data = await response.json();
+                if(data.error) {
+                    console.error('Server returned an error:', data.error);
+                    responseDiv.innerHTML = data.error;
+                } else {
+                    responseDiv.innerHTML = data.text; // предполагается, что сервер возвращает JSON с полем text
+                }
+                const responseCard = $("#responseCard");
+                responseCard.hide();
+                responseCard.fadeIn();
             }
         } catch (error) {
             console.error('There was a problem fetching the response:', error);

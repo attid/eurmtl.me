@@ -24,15 +24,27 @@
         </div>
 
         <div class="input-field col s10">
-            <input type="text" id="question_number" name="question_number" class="question_number" required value="{{ question_number }}" {% if links_url %} disabled {% endif %}>
+            <input type="text" id="question_number" name="question_number" class="question_number" required
+                   value="{{ question_number }}" {% if links_url %} disabled {% endif %}>
             <label for="question_number">Номер вопроса</label>
         </div>
         <div class="input-field col s1 offset-s1">
-            <button type="button" id="loadsDecisionNum" class="btn-small waves-effect waves-light" {% if links_url %} disabled {% endif %}>🔍</button>
+            <button type="button" id="loadsDecisionNum" class="btn-small waves-effect waves-light" {% if links_url %}
+                    disabled {% endif %}>🔍
+            </button>
         </div>
 
+        <!-- Новый выпадающий список со статусами -->
         <div class="input-field col s12">
+            <select id="status" name="status">
+                <option value="" disabled>Выберите статус</option>
+                {% for value, selected in statuses %}
+                <option value="{{ value }}" {{ selected }} >{{ value }}</option>
+                {% endfor %}
+            </select>
+            <label for="status">Статус вопроса</label>
         </div>
+
         <div class="card col s12">
             <div class="card-content">
                 <input type="hidden" name="inquiry" id="inquiry">

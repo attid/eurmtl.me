@@ -1,0 +1,12 @@
+Как добавить новую операцию
+
+1 - самое просто начать с разшифровки чтоб знать все поля и названия
+запускаем decode_xdr_to_base64(xdr, return_json=True) и добиваемся работы без ошибок.
+
+2 - main.js создаем копию например generateCardClawback и прописываеем все поля (в generateInput имя верблюды)
+
+3 - добавляем новую функцию в getCardByName (не забываем вариант с жирафом)
+
+4 - добавляем в laboratory.html в <select id="operation" name="operation" onchange="addOperation()">
+
+5 - добавляем в cmd_build_xdr

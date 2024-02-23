@@ -30,9 +30,10 @@ def send_telegram_message(chat_id, text, entities=None):
     else:
         data['parse_mode'] = 'HTML'
 
-    response = requests.post(url, data=data)
+    response = requests.post(url, json=data)
     if response.ok:
-        # print(f'Message sent successfully: {response.json()}')
+        #print(f'Sending message: {data}')
+        #print(f'Message sent successfully: {response.json()}')
         return response.json()['result']['message_id']
     else:
         print(f'Failed to send message: {response.content}')
@@ -70,7 +71,8 @@ def edit_telegram_message(chat_id, message_id, text, reply_markup=None, entities
 
     response = requests.post(url, json=data)
     if response.ok:
-        # print(f'Message edited successfully: {response.json()}')
+        # print(f'Sending message: {data}')
+        # print(f'Message sent successfully: {response.json()}')
         return True
     else:
         print(f'Failed to edit message: {response.content}')

@@ -13,24 +13,26 @@ from utils.telegram_utils import send_telegram_message, edit_telegram_message
 blueprint = Blueprint('decision', __name__)
 
 chat_ids = (0, 1863399780, 1652080456, 1649743884)  # -100
+statuses = ("❗️ #active", "☑️ #next", "✅ #done", "🔂 #resign", "🔇 #canceled")
 
 
-# chat_ids = (0, 1837984392, 1837984392, 1837984392)  # -100 test
+#chat_ids = (0, 1837984392, 1837984392, 1837984392)  # -100 test
 
 
-def get_bottom_text(links_url, uuid_url, username):
-    bottom_text = ['---', ]
+def get_full_text(status, start_text, links_url, uuid_url, username):
+    full_text = [status, start_text.replace('<p><br></p>', ''), '---']
+
     if links_url[0]:
-        bottom_text.append(f'<a href="{links_url[0][0]}">Первое чтение</a>')
+        full_text.append(f'<a href="{links_url[0][0]}">Первое чтение</a>')
     if links_url[1]:
-        bottom_text.append(f'<a href="{links_url[1][0]}">Второе чтение</a>')
+        full_text.append(f'<a href="{links_url[1][0]}">Второе чтение</a>')
     if links_url[2]:
-        bottom_text.append(f'<a href="{links_url[2][0]}">Третье чтение</a>')
+        full_text.append(f'<a href="{links_url[2][0]}">Третье чтение</a>')
 
-    bottom_text.append('-')
-    bottom_text.append(f'<a href="http://eurmtl.me/d/{uuid_url}">Edit on eurmtl.me</a>')
-    bottom_text.append(f'Added by {username}')
-    return '\n'.join(bottom_text)
+    full_text.append('-')
+    full_text.append(f'<a href="http://eurmtl.me/d/{uuid_url}">Edit on eurmtl.me</a>')
+    full_text.append(f'Added by {username}')
+    return '<br>'.join(full_text)
 
 
 @blueprint.route('/decision', methods=('GET', 'POST'))
@@ -38,13 +40,14 @@ def get_bottom_text(links_url, uuid_url, username):
 async def cmd_add_decision():
     question_number, short_subject, reading = '', '', 1
     session['return_to'] = request.url
-    inquiry = '<br><b>Предложение:</b><br><br><b>Обоснование:</b>'
+    inquiry = '<br><b>Предложение:</b> <br><br><b>Обоснование:</b> <br>'
 
     if request.method == 'POST':
         form_data = await request.form
         question_number = form_data['question_number']
         short_subject = form_data['short_subject']
         inquiry = form_data['inquiry']
+        status = form_data['status']
         reading = int(form_data['reading'])
 
         user_weight = await check_user_weight()
@@ -57,11 +60,8 @@ async def cmd_add_decision():
             d_uuid = uuid.uuid4().hex
 
             username = '@' + session['userdata']['username']
-            bottom_text = (f'\n---\n'
-                           f'<a href="http://eurmtl.me/d/{d_uuid}">Edit on eurmtl.me</a>\n'
-                           f'Added by {username}')
 
-            tg_inquiry = transform_html(inquiry + bottom_text)
+            tg_inquiry = transform_html(get_full_text(status, inquiry, [[], [], []], d_uuid, username))
             message_id = send_telegram_message(int(f'-100{chat_ids[reading]}'),
                                                tg_inquiry.text, entities=tg_inquiry.entities)
             if message_id is None:
@@ -81,12 +81,14 @@ async def cmd_add_decision():
                     des.full_text = inquiry
                     des.url = url
                     des.username = username
+                    des.status = status
                     db_session.add(des)
                     db_session.commit()
                 return redirect(f'/d/{d_uuid}')
     # resp = await make_response()
+    statuses_list = [(status, "") for status in statuses]
     return await render_template('decision.html', question_number=question_number,
-                                 short_subject=short_subject, inquiry=inquiry, reading=reading)
+                                 short_subject=short_subject, inquiry=inquiry, reading=reading, statuses=statuses_list)
 
 
 @blueprint.route('/d/<decision_id>', methods=('GET', 'POST'))
@@ -102,6 +104,8 @@ async def cmd_show_decision(decision_id):
         return 'Decision not exist =('
 
     question_number, short_subject, inquiry, reading = decision.num, decision.description, decision.full_text, decision.reading
+
+    status = decision.status
 
     links_url = (db_session.query(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 1).first(),
                  db_session.query(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 2).first(),
@@ -121,6 +125,7 @@ async def cmd_show_decision(decision_id):
             inquiry = form_data['inquiry']
             reading = int(form_data['reading'])
             username = '@' + session['userdata']['username']
+            status = form_data['status']
 
             # new or update
             # если не меняем чтение то обновление
@@ -128,8 +133,9 @@ async def cmd_show_decision(decision_id):
                 with db_pool() as db_session:
                     decision: Decisions = db_session.query(Decisions).filter(Decisions.uuid == decision_id).first()
                     decision.full_text = inquiry
+                    decision.status = status
                     db_session.commit()
-                    tg_inquiry = transform_html(inquiry + get_bottom_text(links_url, decision.uuid, decision.username))
+                    tg_inquiry = transform_html(get_full_text(status, inquiry, links_url, decision.uuid, decision.username))
                     edit_telegram_message(chat_id=int(f'-100{chat_ids[reading]}'),
                                           text=tg_inquiry.text, entities=tg_inquiry.entities,
                                           message_id=decision.url.split('/')[-1])
@@ -142,7 +148,7 @@ async def cmd_show_decision(decision_id):
                 else:
                     new_uuid = uuid.uuid4().hex
 
-                    tg_inquiry = transform_html(inquiry + get_bottom_text(links_url, new_uuid, username))
+                    tg_inquiry = transform_html(get_full_text(status, inquiry, links_url, new_uuid, username))
                     message_id = send_telegram_message(int(f'-100{chat_ids[reading]}'),
                                                        tg_inquiry.text, entities=tg_inquiry.entities)
                     if message_id is None:
@@ -159,6 +165,7 @@ async def cmd_show_decision(decision_id):
                             des.full_text = inquiry
                             des.url = url
                             des.username = username
+                            des.status = status
                             db_session.add(des)
                             db_session.commit()
 
@@ -171,7 +178,10 @@ async def cmd_show_decision(decision_id):
 
                         return redirect(f'/d/{new_uuid}')
 
+    statuses_list = [(status_, "selected" if status_ == status else "") for status_ in statuses]
+
     return await render_template('decision.html', question_number=question_number,
+                                 statuses=statuses_list,
                                  short_subject=short_subject, inquiry=inquiry, reading=reading, links_url=links_url)
 
 
@@ -210,4 +220,5 @@ async def update_decision_text():
 
 
 if __name__ == "__main__":
-    print(asyncio.run(gs_update_decision(155, 5, 5)))
+    pass
+    # print(asyncio.run(gs_update_decision(155, 5, 5)))

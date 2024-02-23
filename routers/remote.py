@@ -6,6 +6,7 @@ from quart import Blueprint, request, jsonify, abort
 from config_reader import config
 from db.models import Transactions, Signers, Signatures, WebEditorMessages
 from db.pool import db_pool
+from db.requests import db_get_dict, EURMTLDictsType
 from routers.sign_tools import parse_xdr_for_signatures
 from utils.stellar_utils import decode_xdr_to_text, is_valid_base64
 
@@ -107,6 +108,26 @@ async def remote_get_new_pin_id():
         db_session.commit()
 
     return jsonify({"uuid": message_uuid}), 200
+
+
+@blueprint.route('/remote/good_assets', methods=['GET'])
+async def remote_good_assets():
+    db_data = db_get_dict(db_pool(), EURMTLDictsType.Assets)
+
+    # Переструктурирование данных
+    account_assets = {}
+    for asset, account in db_data.items():
+        if account not in account_assets:
+            account_assets[account] = []
+        account_assets[account].append(asset)
+
+    # Формирование ответа
+    accounts = [{
+        "account": account,
+        "assets": [{"asset": asset} for asset in assets]
+    } for account, assets in account_assets.items()]
+
+    return jsonify({"accounts": accounts})
 
 
 if __name__ == '__main__':

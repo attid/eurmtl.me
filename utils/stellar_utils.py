@@ -16,7 +16,7 @@ from stellar_sdk import (
     PathPaymentStrictSend,
     ManageSellOffer, Transaction, Keypair, Server, Asset, TransactionBuilder, ServerAsync, AiohttpClient,
     ManageData, CreatePassiveSellOffer, ManageBuyOffer, SetOptions, ChangeTrust, AllowTrust, AccountMerge,
-    Clawback
+    Clawback, SetTrustLineFlags, TrustLineFlags
 )
 from stellar_sdk.sep import stellar_uri, stellar_web_authentication
 import config_reader
@@ -109,6 +109,13 @@ def decode_xdr_to_base64(xdr, return_json=False):
                                      'startingBalance': operation.starting_balance,
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
+        elif isinstance(operation, SetTrustLineFlags):
+            op_json['attributes'] = {'trustor': operation.trustor,
+                                     'asset': operation.asset.to_dict(),
+                                     'setFlags': operation.set_flags.value if operation.set_flags else None,
+                                     'clearFlags': operation.clear_flags.value if operation.clear_flags else None,
+                                     'sourceAccount': operation.source.account_id if operation.source else None
+                                     }
         elif isinstance(operation, ManageSellOffer) or isinstance(operation, ManageBuyOffer):
             op_json['attributes'] = {'amount': operation.amount,
                                      'price': operation.price.n / operation.price.d,
@@ -122,6 +129,12 @@ def decode_xdr_to_base64(xdr, return_json=False):
                                      'price': operation.price.n / operation.price.d,
                                      'selling': operation.selling.to_dict(),
                                      'buying': operation.buying.to_dict(),
+                                     'sourceAccount': operation.source.account_id if operation.source is not None else None
+                                     }
+        elif isinstance(operation, Clawback):
+            op_json['attributes'] = {'amount': operation.amount,
+                                     'asset': operation.asset.to_dict(),
+                                     'from': operation.from_.account_id,
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, SetOptions):
@@ -218,7 +231,11 @@ def get_account(account_id, cash):
         r = cash[account_id]
     else:
         r = requests.get('https://horizon.stellar.org/accounts/' + account_id).json()
-        cash[account_id] = r
+        if r.get('id'):
+            cash[account_id] = r
+        else:
+            cash[account_id] = {'balances': []}
+            r = cash[account_id]
     return r
 
 
@@ -231,7 +248,7 @@ def get_offers(account_id, cash):
     return r
 
 
-def decode_xdr_to_text(xdr):
+def decode_xdr_to_text(xdr, only_op_number=None):
     result = []
     cash = {}
     data_exist = False
@@ -275,6 +292,14 @@ def decode_xdr_to_text(xdr):
     result.append(f"  Всего {len(transaction.transaction.operations)} операций\n")
 
     for idx, operation in enumerate(transaction.transaction.operations):
+        if only_op_number:
+            if idx == 0:
+                result.clear()  # clear transaction info
+            if idx != only_op_number:
+                continue
+            if idx > only_op_number:
+                break
+
         result.append(f"Операция {idx} - {type(operation).__name__}")
         # print('bad xdr', idx, operation)
         if operation.source:
@@ -323,12 +348,18 @@ def decode_xdr_to_text(xdr):
             if operation.home_domain:
                 data_exist = True
                 result.append(f"Установка нового домена {operation.home_domain}")
+            if operation.master_weight is not None:
+                data_exist = True
+                result.append(f"Установка master_weight {operation.master_weight}")
 
             continue
         if type(operation).__name__ == "ChangeTrust":
             data_exist = True
             # check valid asset
             result.append(check_asset(operation.asset, cash))
+            source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
+            if operation.asset.issuer == source_id:
+                result.append(f"<div style=\"color: red;\">MELFORMET You can`t open trustline for yourself! </div>")
 
             if operation.limit == '0':
                 result.append(
@@ -351,11 +382,37 @@ def decode_xdr_to_text(xdr):
 
             result.append(
                 f"    Офер на продажу {operation.amount} {asset_to_link(operation.selling)} по цене {operation.price.n / operation.price.d} {asset_to_link(operation.buying)}")
+            # check balance тут надо проверить сумму
+            source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
+            source_account = get_account(source_id, cash)
+            selling_asset_code = operation.selling.code if hasattr(operation.selling, 'code') else 'XLM'
+            selling_sum = sum(
+                float(balance.get('balance')) for balance in source_account['balances']
+                if balance.get('asset_code') == selling_asset_code or (
+                        selling_asset_code == 'XLM' and 'asset_type' in balance and balance[
+                    'asset_type'] == 'native')
+            )
+
+            if selling_sum < float(operation.amount):
+                result.append(f"<div style=\"color: red;\">Not enough balance to sell {selling_asset_code}! </div>")
+
             continue
         if type(operation).__name__ == "CreatePassiveSellOffer":
             data_exist = True
             result.append(
                 f"    Пассивный офер на продажу {operation.amount} {asset_to_link(operation.selling)} по цене {operation.price.n / operation.price.d} {asset_to_link(operation.buying)}")
+            source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
+            source_account = get_account(source_id, cash)
+            selling_asset_code = operation.selling.code if hasattr(operation.selling, 'code') else 'XLM'
+            selling_sum = sum(
+                float(balance.get('balance')) for balance in source_account['balances']
+                if balance.get('asset_code') == selling_asset_code or (
+                        selling_asset_code == 'XLM' and 'asset_type' in balance and balance[
+                    'asset_type'] == 'native')
+            )
+
+            if selling_sum < float(operation.amount):
+                result.append(f"<div style=\"color: red;\">Not enough balance to sell {selling_asset_code}! </div>")
             continue
         if type(operation).__name__ == "ManageBuyOffer":
             data_exist = True
@@ -365,6 +422,23 @@ def decode_xdr_to_text(xdr):
 
             result.append(
                 f"    Офер на покупку {operation.amount} {asset_to_link(operation.buying)} по цене {operation.price.n / operation.price.d} {asset_to_link(operation.selling)}")
+            source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
+            source_account = get_account(source_id, cash)
+            selling_asset_code = operation.selling.code if hasattr(operation.selling,
+                                                                   'code') else 'XLM'  # Учитываем, что XLM не имеет code
+            required_amount_to_spend = float(operation.amount) * (operation.price.n / operation.price.d)
+
+            selling_sum = sum(
+                float(balance.get('balance')) for balance in source_account['balances']
+                if balance.get('asset_code') == selling_asset_code or (
+                            selling_asset_code == 'XLM' and 'asset_type' in balance and balance[
+                        'asset_type'] == 'native')
+            )
+
+            if selling_sum < required_amount_to_spend:
+                result.append(
+                    f"<div style=\"color: red;\">Not enough {selling_asset_code} to buy! Required: {required_amount_to_spend}, Available: {selling_sum}</div>")
+
             continue
         if type(operation).__name__ == "PathPaymentStrictSend":
             data_exist = True
@@ -396,6 +470,18 @@ def decode_xdr_to_text(xdr):
                 result.append(f"    Clear flags: {operation.clear_flags}")
             if operation.set_flags is not None:
                 result.append(f"    Set flags: {operation.set_flags}")
+            #  "flags": {
+            #   "auth_required": true,
+            #   "auth_revocable": true,
+            #   "auth_immutable": false,
+            #   "auth_clawback_enabled": true
+            # },
+            if get_account(operation.asset.issuer, cash).get('flags', {}).get('auth_required'):
+                pass
+            else:
+                result.append(f"    <div style=\"color: red;\">issuer {address_id_to_link(operation.asset.issuer)} "
+                              f"not need auth </div>")
+
             continue
         if type(operation).__name__ == "CreateAccount":
             data_exist = True
@@ -421,10 +507,6 @@ def decode_xdr_to_text(xdr):
             continue
         if type(operation).__name__ == "Clawback":
             data_exist = True
-            # bad xdr 14 <Clawback [
-            # asset=<Asset [code=MTLAP, issuer=GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA, type=credit_alphanum12]>,
-            # from_=<MuxedAccount [account_id=GBGGX7QD3JCPFKOJTLBRAFU3SIME3WSNDXETWI63EDCORLBB6HIP2CRR, account_muxed_id=None]>,
-            # amount=1, source=None]>
             result.append(
                 f"    Возврат {operation.amount} {asset_to_link(operation.asset)} с аккаунта {address_id_to_link(operation.from_.account_id)}")
             continue
@@ -583,8 +665,48 @@ async def stellar_copy_multi_sign(public_key_from, public_key_for):
     return updated_signers
 
 
+def decode_flags(flag_value):
+    flags = TrustLineFlags(0)  # Начальное значение - 0 (нет флагов)
+    if flag_value & TrustLineFlags.AUTHORIZED_FLAG:
+        flags |= TrustLineFlags.AUTHORIZED_FLAG
+    if flag_value & TrustLineFlags.AUTHORIZED_TO_MAINTAIN_LIABILITIES_FLAG:
+        flags |= TrustLineFlags.AUTHORIZED_TO_MAINTAIN_LIABILITIES_FLAG
+    if flag_value & TrustLineFlags.TRUSTLINE_CLAWBACK_ENABLED_FLAG:
+        flags |= TrustLineFlags.TRUSTLINE_CLAWBACK_ENABLED_FLAG
+    return flags
+
+
+async def pay_divs(asset: Asset, total_payment: float):
+    async with ServerAsync(horizon_url="https://horizon.stellar.org", client=AiohttpClient()) as server:
+        accounts = await server.accounts().for_asset(asset).limit(200).call()
+        holders = accounts['_embedded']['records']
+
+        total_assets_held = sum(
+            float(balance['balance']) for account in holders for balance in account['balances']
+            if balance['asset_type'] in ['credit_alphanum4', 'credit_alphanum12'] and
+            balance['asset_code'] == asset.code and
+            balance['asset_issuer'] == asset.issuer and
+            float(balance['balance']) > 0
+        )
+
+        payments = [
+            {'account': account['account_id'],
+             'payment': total_payment * (float(balance['balance']) / total_assets_held)}
+            for account in holders for balance in account['balances']
+            if balance['asset_type'] in ['credit_alphanum4', 'credit_alphanum12'] and
+               balance['asset_code'] == asset.code and
+               balance['asset_issuer'] == asset.issuer and
+               float(balance['balance']) > 0
+        ]
+
+    return payments
+
+
 if __name__ == '__main__':
-    # exit()
+    xdr = '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'
+    print(decode_xdr_to_text(xdr))
+    exit()
+
     # simple way to find error in editing
     l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHQlRPRjZSTEhSUEc1TlJJVTZNUTdKR01DVjdZSEw1VjMzWVlDNzZZWUc0SlVLQ0pUVVA1REVGSSIsInNlcXVlbmNlIjoiMTg2NzM2MjAxNTQ4NDMxMzc4IiwiZmVlIjoiMTAwMTAiLCJiYXNlRmVlIjoiMTAwIiwibWluRmVlIjoiNTAwMCIsIm1lbW9UeXBlIjoiTUVNT19URVhUIiwibWVtb0NvbnRlbnQiOiJsYWxhbGEifSwiZmVlQnVtcEF0dHJpYnV0ZXMiOnsibWF4RmVlIjoiMTAxMDEifSwib3BlcmF0aW9ucyI6W3siaWQiOjAsImF0dHJpYnV0ZXMiOnsiZGVzdGluYXRpb24iOiJHQUJGUUlLNjNSMk5FVEpNN1Q2NzNFQU1aTjRSSkxMR1AzT0ZVRUpVNVNaVlRHV1VLVUxaSk5MNiIsImFzc2V0Ijp7InR5cGUiOiJjcmVkaXRfYWxwaGFudW00IiwiY29kZSI6IlVTREMiLCJpc3N1ZXIiOiJHQTVaU0VKWUIzN0pSQzVBVkNJQTVNT1A0UkhUTTMzNVgyS0dYM0lIT0pBUFA1UkUzNEs0S1pWTiJ9LCJhbW91bnQiOiIzMDAwMCIsInNvdXJjZUFjY291bnQiOm51bGx9LCJuYW1lIjoicGF5bWVudCJ9XX0%3D&network=public'
     l = l.split('/')[-1].split('=')[1].split('&')[0]

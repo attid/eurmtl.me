@@ -29,3 +29,4 @@ quart_cors
 qrcode~=7.4.2
 Pillow==10.2.0
 sulguk==0.7.0
+jsonpickle~=3.0.2

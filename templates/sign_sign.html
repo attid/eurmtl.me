@@ -52,7 +52,7 @@
         </div>
 
         <div class="input-field col s12" id="signP" style="display: none;">
-            <input type="text" id="private_key" name="private_key" class="validate"
+            <input type="password" id="private_key" name="private_key" class="validate"
                    placeholder="private_key with S" value=""
                    oninput="sign_tx()" onpaste="sign_tx()" autocomplete="off">
             <label for="private_key">Private Key</label>
@@ -257,7 +257,7 @@
 <div class="row flex-container">
     <a href="/edit_xdr/{{ tx_hash }}" class="btn waves-effect waves-light flex-item">Edit xdr in Stellar Laboratory<i
             class="material-icons right">edit</i></a>
-    <a href="/edit_xdr/{{ tx_hash }}" class="btn waves-effect waves-light flex-item">Edit xdr in Eurmtl.me<i
+    <a href="/lab?import={{ tx_hash }}" class="btn waves-effect waves-light flex-item">Edit xdr in Eurmtl.me<i
             class="material-icons right">edit</i></a>
 </div>
 
