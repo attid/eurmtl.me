@@ -6,9 +6,11 @@ from quart import Blueprint, request, render_template, jsonify, session
 from stellar_sdk import Server, TransactionBuilder, Network, Asset, TrustLineFlags
 
 from config_reader import config
+from db.models import Transactions
 from db.pool import db_pool
 from db.requests import db_get_dict, EURMTLDictsType, db_save_dict
-from utils.stellar_utils import decode_data_value, float2str, stellar_copy_multi_sign, decode_xdr_to_base64
+from utils.stellar_utils import decode_data_value, float2str, stellar_copy_multi_sign, decode_xdr_to_base64, \
+    decode_flags, pay_divs
 
 blueprint = Blueprint('lab', __name__)
 
@@ -18,7 +20,20 @@ blueprint = Blueprint('lab', __name__)
 @blueprint.route('/lab/')
 async def cmd_laboratory():
     session['return_to'] = request.url
-    return await render_template('laboratory.html')
+    import_xdr = ''
+    tr_hash = request.args.get('import')
+    if tr_hash:
+        with db_pool() as db_session:
+            if len(tr_hash) == 64:
+                transaction = db_session.query(Transactions).filter(Transactions.hash == tr_hash).first()
+            else:
+                transaction = db_session.query(Transactions).filter(Transactions.uuid == tr_hash).first()
+
+        if transaction is None:
+            return 'Transaction not exist =('
+        import_xdr = transaction.body
+
+    return await render_template('laboratory.html', import_xdr=import_xdr)
 
 
 @blueprint.route('/lab/mtl_accounts', methods=['GET', 'POST'])
@@ -206,6 +221,25 @@ async def cmd_build_xdr():
                 account_id=operation['signerAccount'] if len(operation['signerAccount']) > 55 else None,
                 weight=int(operation['weight']) if len(operation['weight']) > 0 else None,
                 source=source_account)
+        if operation['type'] == 'set_trust_line_flags':
+            set_flags_decoded = decode_flags(int(operation['set_flags'])) if len(operation['set_flags']) > 0 else None
+            clear_flags_decoded = (decode_flags(int(operation['clear_flags']))
+                                   if len(operation['clear_flags']) > 0 else None)
+
+            transaction.append_set_trust_line_flags_op(
+                trustor=operation['trustor'],
+                asset=decode_asset(operation['asset']),
+                set_flags=set_flags_decoded,
+                clear_flags=clear_flags_decoded,
+                source=source_account)
+        if operation['type'] == 'pay_divs':
+            # {'account': 'GBVIX6CZ57SHXHGPA4AL7DACNNZX4I2LCKIAA3VQUOGTGWYQYVYSE5TU', 'payment': 60.0}
+            for record in await pay_divs(decode_asset(operation['holders']), float(operation['amount'])):
+                if round(record['payment'], 7) > 0:
+                    transaction.append_payment_op(destination=record['account'],
+                                                  asset=decode_asset(operation['asset']),
+                                                  amount=float2str(record['payment']),
+                                                  source=source_account)
 
     transaction = transaction.build()
     # transaction.transaction.sequence = int(data['sequence'])

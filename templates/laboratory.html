@@ -25,6 +25,8 @@
                         <option value="clawback">Clawback</option>
                         <option value="copy_multi_sign">Copy Multi Sign</option>
                         <option value="swap">Swap</option>
+                        <option value="set_trust_line_flags">Set TrustLine Flags</option>
+                        <option value="payDivs">Pay Divs</option>
                     </select>
                     <label>Operation</label>
                 </div>
@@ -58,7 +60,7 @@
         <div class="card-content">
             <div class="row">
                 <div class="input-field col s12">
-                    <textarea id="xdr-input" class="materialize-textarea"></textarea>
+                    <textarea id="xdr-input" class="materialize-textarea">{{import_xdr}}</textarea>
                     <label for="xdr-input">XDR Input</label>
                 </div>
             </div>
@@ -80,6 +82,12 @@
 {% endblock %}
 
 {% block bottom_scripts %}
-<script src="/static/main.js?1"></script>
+<script src="/static/main.js?2"></script>
+<script>
+    $(document).ready(function() {
+        initLab();
+    });
+</script>
+
 {% endblock %}
 

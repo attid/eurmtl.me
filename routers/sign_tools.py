@@ -1,9 +1,11 @@
 import asyncio
 import json
 from random import random, shuffle
-
+import jsonpickle
 import requests
 from datetime import datetime
+
+from quart import Markup
 from quart import Blueprint, request, render_template, flash, session, redirect, abort
 from sqlalchemy import func
 from stellar_sdk import DecoratedSignature
@@ -100,31 +102,7 @@ async def start_add_transaction():
         try:
             tr = TransactionEnvelope.from_xdr(tx_body, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
             tr_full = TransactionEnvelope.from_xdr(tx_body, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-            sources = {tr.transaction.source.account_id: {}}
-            for operation in tr.transaction.operations:
-                if operation.source:
-                    sources[operation.source.account_id] = {}
-            for source in sources:
-                try:
-                    rq = requests.get('https://horizon.stellar.org/accounts/' + source)
-                    threshold = rq.json()['thresholds']['high_threshold']
-                    signers = []
-                    for signer in rq.json()['signers']:
-                        signers.append([signer['key'], signer['weight'],
-                                        Keypair.from_public_key(signer['key']).signature_hint().hex()])
-                        with db_pool() as db_session:
-                            db_signer = db_session.query(Signers).filter(Signers.public_key == signer['key']).first()
-                            if db_signer is None:
-                                hint = Keypair.from_public_key(signer['key']).signature_hint().hex()
-                                db_session.add(Signers(username='FaceLess', public_key=signer['key'],
-                                                       signature_hint=hint))
-                                db_session.commit()
-                    sources[source] = {'threshold': threshold, 'signers': signers}
-                except:
-                    sources[source] = {'threshold': 0,
-                                       'signers': [[source, 1, Keypair.from_public_key(source).signature_hint().hex()]]}
-            # print(json.dumps(sources))
-
+            sources = extract_sources(tx_body)
         except:
             await flash('BAD xdr. Can`t load')
             resp = await render_template('sign_add.html', tx_description=tx_description, tx_body=tx_body)
@@ -151,6 +129,40 @@ async def start_add_transaction():
 
     resp = await render_template('sign_add.html', tx_description='', tx_body='')
     return resp
+
+
+def extract_sources(xdr):
+    tr = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+    sources = {tr.transaction.source.account_id: {}}
+    for operation in tr.transaction.operations:
+        if operation.source:
+            sources[operation.source.account_id] = {}
+    for source in sources:
+        try:
+            rq = requests.get('https://horizon.stellar.org/accounts/' + source)
+            threshold = rq.json()['thresholds']['high_threshold']
+            signers = []
+            for signer in rq.json()['signers']:
+                signers.append([signer['key'], signer['weight'],
+                                Keypair.from_public_key(signer['key']).signature_hint().hex()])
+                add_signer(signer['key'])
+            sources[source] = {'threshold': threshold, 'signers': signers}
+        except:
+            sources[source] = {'threshold': 0,
+                               'signers': [[source, 1, Keypair.from_public_key(source).signature_hint().hex()]]}
+            add_signer(source)
+    # print(json.dumps(sources))
+    return sources
+
+
+def add_signer(signer):
+    with db_pool() as db_session:
+        db_signer = db_session.query(Signers).filter(Signers.public_key == signer).first()
+        if db_signer is None:
+            hint = Keypair.from_public_key(signer).signature_hint().hex()
+            db_session.add(Signers(username='FaceLess', public_key=signer,
+                                   signature_hint=hint))
+            db_session.commit()
 
 
 @blueprint.route('/sign_tools/<tr_hash>', methods=('GET', 'POST'))
@@ -273,6 +285,19 @@ async def show_transaction(tr_hash):
                 await flash(f'Successfully sent, accepted : {transaction_resp.json()["successful"]}', 'good')
             else:
                 await flash(f'Failed to send. {transaction_resp.json()["extras"]["result_codes"]}')
+                result_codes = transaction_resp.json().get("extras", {}).get("result_codes", {})
+                operation_results = result_codes.get("operations", [])
+
+                # Находим первую операцию, которая не является 'op_success'
+                for i, result in enumerate(operation_results):
+                    if result != 'op_success':
+                        await flash(f'Error in operation {i}: {result}')
+
+                        failed_operation_dict = '<br>'.join(decode_xdr_to_text(transaction.body, only_op_number=i))
+                        await flash(Markup(f'Details of failed operation: {failed_operation_dict}'))
+
+                        break
+
         except Exception as e:
             await flash("Failed to send. The error is unclear")
             await flash(f'{e}')
@@ -443,6 +468,6 @@ def alert_singers(tr_hash, small_text, tx_description):
 
 
 if __name__ == '__main__':
-    xdr = 'AAAAAgAAAACbUeUHNfn9lIj6LioAl6J4EwlEYcu/Vw/pGS+++oBWBgAJJ8AC4KLIAAAAGQAAAAAAAAABAAAAE1VwZGF0ZSBzaWduIHdlaWdodHMAAAAABgAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAA3iAF79FElH6CPy+dqHgkEBz8YVfteor3AyWu5GmuxlAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAA2H7++0KxttAtUMy0Fgq6CCGcVPBII2TodWERXetmsPAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAA5bumZMFAUBwLkrdrnMElM8Dd8NKGwGPAncvfnh9UPaAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAB6GAqawjMe8TfXEDQhbyIy5XajtWdrRHVWlEvV8Gr60AAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAB+c655SYYUEWyLNu6HYeS+I+YiN1v2UjzO1T8D+wwTrAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAACAAAAAEAAAAIAAAAAQAAAAgAAAAAAAAAAQAAAABV7mlOMsaqtm81h/Xd3/GWM/RPm9V5bZtQgJLDCCVV4QAAAAAAAAAAAAAAAA=='
-    r = asyncio.run(parse_xdr_for_signatures(xdr))
-    print(r)
+    xdr = 'AA'
+    # r = asyncio.run(parse_xdr_for_signatures(xdr))
+    print(extract_sources(xdr))

@@ -551,7 +551,6 @@ function generateCardSetOptionSigner() {
     `;
 }
 
-
 function generateCardClawback() {
     var blockId = getBlockCounter();
     return `
@@ -568,6 +567,44 @@ function generateCardClawback() {
 </div>
     `;
 }
+
+function generatePayDivs() {
+    var blockId = getBlockCounter();
+    return `
+<div class="card">
+    <div class="card-content gather-block" data-type="pay_divs" data-index="${blockId}">
+        ${generateCardHeader("PayDivs", blockId)}
+
+        ${generateAssetSelector("holders", "Holders")}
+        ${generateAssetSelector("asset", "Asset")}
+        ${generateInput("amount", "Amount", "float")}
+
+        ${generateAccountSelector("sourceAccount")}
+    </div>
+</div>
+    `;
+}
+
+function generateCardSetTrustLineFlags() {
+    var blockId = getBlockCounter();
+    return `
+<div class="card">
+    <div class="card-content gather-block" data-type="set_trust_line_flags" data-index="${blockId}">
+        ${generateCardHeader("SetTrustLineFlags", blockId)}
+
+        ${generateAssetSelector("asset", "Asset")}
+        ${generateAccountSelector("trustor", "Trustor")}
+        ${generateInput("setFlags", "Set Flags", "int_null", "",
+            "(optional) 1 - Authorized 2 - Authorized maintain")}
+        ${generateInput("clearFlags", "Clear Flags", "int_null", "",
+            "(optional) 1 - Authorized 2 - Authorized maintain 4 - Clawback enabled")}
+
+        ${generateAccountSelector("sourceAccount")}
+    </div>
+</div>
+    `;
+}
+
 
 function generateCardCopyMultiSign() {
     var blockId = getBlockCounter();
@@ -653,11 +690,18 @@ function getCardByName(selectedOperation){
             newCardHTML = generateCardClawback();
             break;
         case 'copy_multi_sign':
-        case 'CopyMultiSign':
+        case 'copyMultiSign':
             newCardHTML = generateCardCopyMultiSign();
             break;
         case 'swap':
             newCardHTML = generateCardSwap();
+            break;
+        case 'setTrustLineFlags':
+        case 'set_trust_line_flags':
+            newCardHTML = generateCardSetTrustLineFlags();
+            break;
+        case 'payDivs':
+            newCardHTML = generatePayDivs();
             break;
 
         default:
@@ -746,6 +790,13 @@ function validateInput(value, validationType, dataType, type, index) {
         case 'int':
             if (!/^\d+$/.test(value)) {
                 throw new Error(`Не целое число для ${dataType} в блоке ${type} #${index}`);
+            }
+            break;
+        case 'int_null':
+            if (value) {
+                if (!/^\d+$/.test(value)) {
+                    throw new Error(`Не целое число для ${dataType} в блоке ${type} #${index}`);
+                }
             }
             break;
         case 'float':
@@ -851,16 +902,6 @@ function cloneBlock(element) {
     // Обновляем поля и выпадающие списки
     M.updateTextFields();
 }
-
-$(document).ready(function() {
-    var newCardHTML = generateCardFirst();
-    var $newCard = $(newCardHTML); // Преобразование HTML строки в jQuery объект
-    $('.new-operation').before($newCard);
-    $('select').formSelect();
-
-    // Теперь $newCard является jQuery объектом, и вы можете использовать .find()
-    $newCard.find('input[data-length]').characterCounter();
-});
 
 function toCamelCase(str) {
     return str.replace(/(_\w)/g, function(m) {
@@ -1009,5 +1050,22 @@ function calculateFinalCost(inputElement) {
         helperTextDiv.text(textOutput);
     } else {
         helperTextDiv.text('');
+    }
+}
+
+function initLab() {
+    var newCardHTML = generateCardFirst();
+    var $newCard = $(newCardHTML); // Преобразование HTML строки в jQuery объект
+    $('.new-operation').before($newCard);
+    $('select').formSelect();
+
+    // Теперь $newCard является jQuery объектом, и вы можете использовать .find()
+    $newCard.find('input[data-length]').characterCounter();
+
+    //auto import
+    var xdrInput = $('#xdr-input').val();
+    if (xdrInput.trim() !== '') {
+        importTransaction();
+        $('#xdr-input').val('');
     }
 }
