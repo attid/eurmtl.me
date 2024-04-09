@@ -4,7 +4,7 @@
 // @match       https://stellar.expert/explorer/public/account/*
 // @match       https://stellar.expert/explorer/public/tx/*
 // @grant       none
-// @version     0.8
+// @version     0.9
 // @description Change links at Stellar Expert
 // @author      skynet
 // @updateURL   https://eurmtl.me/static/Good_links_at_Stellar_Expert.user.js
@@ -89,89 +89,51 @@ let observer;
     }
 
 
-    function insertMagicButton() {
-        observer.disconnect();
-
-        const opContainer = document.querySelector('.op-container');
-
-        //const existingButton = opContainer.querySelector('#magicButton');
-        //if (existingButton) return;
-
-        if (opContainer) {
-            const magicButton = document.createElement('button');
-            magicButton.textContent = 'Do magic';
-            magicButton.id = 'magicButton';
-            magicButton.onclick = do_tx_magic;
-            opContainer.appendChild(magicButton);
-        }
-
-        observer.observe(document.body, { attributes: false, childList: true, subtree: true });
-    }
-
-    async function do_tx_magic() {
-        const transactionElement = document.querySelector('h2.word-break .block-select');
-        const opContainer = document.querySelector('.op-container');
-
-        if (transactionElement && opContainer) {
-            const transactionId = transactionElement.textContent.trim();
-
-            const response = await fetch(`https://horizon.stellar.org/transactions/${transactionId}/effects`);
-            if (response.ok) {
-                const data = await response.json();
-                const records = data._embedded.records;
-
-                const tradesInfo = records.filter(record => ["trade", "liquidity_pool_trade"].includes(record.type))
-                .map(record => {
-                    if (record.type === "trade") {
-                        const soldAsset = record.sold_asset_code ?
-                              `<a href="https://stellar.expert/explorer/public/asset/${record.sold_asset_code}-${record.sold_asset_issuer}">${record.sold_asset_code}</a>` :
-                        `<a href="https://stellar.expert/explorer/public/asset/XLM">XLM</a>`;
-
-                        const boughtAsset = record.bought_asset_code ?
-                              `<a href="https://stellar.expert/explorer/public/asset/${record.bought_asset_code}-${record.bought_asset_issuer}">${record.bought_asset_code}</a>` :
-                        `<a href="https://stellar.expert/explorer/public/asset/XLM">XLM</a>`;
-
-                        return `
-                            trade ${record.sold_amount} ${soldAsset}
-                            -> <a href="https://stellar.expert/explorer/public/account/${record.seller}">${record.seller.slice(0, 4)}..${record.seller.slice(-4)}</a>
-                            ${record.offer_id ? ` <a href="https://stellar.expert/explorer/public/offer/${record.offer_id}">${record.offer_id}</a>` : ""}
-                            -> ${record.bought_amount} ${boughtAsset} <br>
-                        `;
-
-                    } else if (record.type === "liquidity_pool_trade") {
-                        const soldAssetCode = record.sold.asset.split(":")[0];
-                        const soldAssetCodeLink = record.sold.asset.replace(":","-");
-                        const soldAsset = `<a href="https://stellar.expert/explorer/public/asset/${soldAssetCodeLink}">${soldAssetCode}</a>`;
-
-                        const boughtAssetCode = record.bought.asset.split(":")[0];
-                        const boughtAssetCodeLink = record.bought.asset.replace(":","-");
-                        const boughtAsset = `<a href="https://stellar.expert/explorer/public/asset/${boughtAssetCodeLink}">${boughtAssetCode}</a>`;
-
-                        return `
-                            trade ${record.sold.amount} ${soldAsset}
-                            -> <a href="https://stellar.expert/explorer/public/liquidity-pool/${record.liquidity_pool.id}">liquidity_pool</a>
-                            -> ${record.bought.amount} ${boughtAsset} <br>
-                        `;
-                    }
-                }).join("");
-
-                opContainer.innerHTML = tradesInfo;
-            } else {
-                alert("Ошибка при загрузке данных.");
-            }
-        } else {
-            alert("Не удалось найти ID транзакции или контейнер для отображения информации.");
-        }
-    }
-
-
     function processDOMChanges() {
         if (window.location.href.includes('/explorer/public/account/')) {
             modifyLinks();
             decodeBase64Text();
             removeUnwantedElements();
-        } else if (window.location.href.includes('/explorer/public/tx/')) {
-            insertMagicButton();
+        }
+    }
+
+    function addExternalLinks(accountAddress) {
+        const buttonStellarchain = document.createElement('a');
+        const buttonScopuly = document.createElement('a');
+
+        // Настройка кнопки для Stellarchain
+        buttonStellarchain.href = `https://stellarchain.io/accounts/${accountAddress}`;
+        buttonStellarchain.innerText = 'Stellarchain';
+        buttonStellarchain.target = "_blank";
+        buttonStellarchain.classList.add('button', 'small', 'text-small');
+        //buttonStellarchain.style.marginRight = '10px';
+
+        // Настройка кнопки для Scopuly
+        buttonScopuly.href = `https://scopuly.com/account/${accountAddress}`;
+        buttonScopuly.innerText = 'Scopuly';
+        buttonScopuly.target = "_blank";
+        buttonScopuly.classList.add('button', 'small', 'text-small');
+
+
+        // Поиск элемента для добавления кнопок
+        const parentElement = document.querySelector('h1, h2'); // Измените селектор в соответствии с реальным расположением на странице
+
+        // Добавление кнопок на страницу
+        if (parentElement) {
+            parentElement.appendChild(buttonStellarchain);
+            parentElement.appendChild(buttonScopuly);
+        }
+    }
+
+    function initButton() {
+        // Извлечение адреса аккаунта
+        const accountAddressElement = document.querySelector('.account-address .account-key');
+
+        if (accountAddressElement) {
+            const accountAddress = accountAddressElement.innerText.trim();
+            addExternalLinks(accountAddress);
+        } else {
+            console.error('Адрес аккаунта не найден.');
         }
     }
 
@@ -181,4 +143,7 @@ let observer;
         observer = new MutationObserver(processDOMChanges);
         observer.observe(document.body, { attributes: false, childList: true, subtree: true });
     }
+
+    setTimeout(initButton, 5000);
+
 })();
