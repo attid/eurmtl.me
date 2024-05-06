@@ -1,10 +1,9 @@
 // ==UserScript==
 // @name        Good_links_at_Stellar_Expert
 // @namespace   http://tampermonkey.net/
-// @match       https://stellar.expert/explorer/public/account/*
-// @match       https://stellar.expert/explorer/public/tx/*
+// @match       https://stellar.expert/*
 // @grant       none
-// @version     0.9
+// @version     1.05
 // @description Change links at Stellar Expert
 // @author      skynet
 // @updateURL   https://eurmtl.me/static/Good_links_at_Stellar_Expert.user.js
@@ -14,136 +13,241 @@
 
 let observer;
 
-(function() {
-    'use strict';
+async function CalcOrders(accountAddress) {
+    const url = `https://horizon.stellar.org/accounts/${accountAddress}/offers?limit=100`;
 
-    function modifyLinks() {
-        observer.disconnect();
+    try {
+        const response = await fetch(url);
+        const data = await response.json();
 
-        let links = document.querySelectorAll('.account-balance');
-        links.forEach((link) => {
-            // Извлекаем элемент с классом 'asset-link', который содержит атрибут 'aria-label'
-            let assetLink = link.querySelector('.asset-link');
-            if (assetLink) {
-                let asset = assetLink.getAttribute('aria-label');
+        if (!data._embedded || !data._embedded.records) {
+            console.error('No offers found.');
+            return;
+        }
 
-                if (asset) {
-                    let newHref;
+        const totals = {};
 
-                    // Если asset содержит "-", значит это первый формат
-                    if (asset.includes('-')) {
-                        newHref = `https://stellar.expert/explorer/public/asset/${asset}`;
-                    } else {
-                        // Иначе это второй формат
-                        newHref = `https://stellar.expert/explorer/public/liquidity-pool/${asset}`;
-                    }
+        data._embedded.records.forEach(offer => {
+            const { selling, amount } = offer;
+            let assetKey;
 
-                    link.addEventListener('click', function(e) {
-                        e.preventDefault();
-                        window.location.href = newHref;
-                    });
+            if (selling.asset_type === 'native') {
+                assetKey = 'XLM';
+            } else {
+                assetKey = `${selling.asset_code}-${selling.asset_issuer}`;
+            }
+
+            if (totals[assetKey]) {
+                totals[assetKey] += parseFloat(amount);
+            } else {
+                totals[assetKey] = parseFloat(amount);
+            }
+        });
+
+        console.log(totals);
+        document.querySelectorAll('.account-balance').forEach(balanceElement => {
+            const assetLabelElement = balanceElement.querySelector('[aria-label]');
+            if (assetLabelElement) {
+                const assetLabel = assetLabelElement.getAttribute('aria-label');
+                if (totals[assetLabel]) {
+                    const condensedText = balanceElement.querySelector('.condensed').textContent.replace(',', '').trim();
+                    const currentAmount = parseFloat(condensedText);
+                    const freeAmount = currentAmount - totals[assetLabel];
+                    const summaryText = `Orders (${totals[assetLabel].toFixed(2)}) Free (${freeAmount.toFixed(2)})`;
+                    const tinyCondensedDiv = balanceElement.querySelector('.text-tiny.condensed');
+                    tinyCondensedDiv.innerHTML = `<div style="color: black;">${summaryText}</div>`;
                 }
             }
         });
 
-        observer.observe(document.body, { attributes: false, childList: true, subtree: true });
+    } catch (error) {
+        console.error('Error fetching or processing data:', error);
+    }
+}
+
+function initButton() {
+    // Извлечение адреса аккаунта
+    const accountAddressElement = document.querySelector('.account-address .account-key');
+
+    if (accountAddressElement) {
+        const accountAddress = accountAddressElement.innerText.trim();
+        addExternalLinks(accountAddress);
+    } else {
+        console.error('Адрес аккаунта не найден.');
+    }
+}
+
+function addExternalLinks(accountAddress) {
+    const buttonStellarchain = document.createElement('a');
+    const buttonScopuly = document.createElement('a');
+    const buttonCalcOrders = document.createElement('a');
+
+    // Настройка кнопки для Stellarchain
+    buttonStellarchain.href = `https://stellarchain.io/accounts/${accountAddress}`;
+    buttonStellarchain.innerText = 'Stellarchain';
+    buttonStellarchain.target = "_blank";
+    buttonStellarchain.classList.add('button', 'small', 'text-small', 'skynet-button');
+    //buttonStellarchain.style.marginRight = '10px';
+
+    // Настройка кнопки для Scopuly
+    buttonScopuly.href = `https://scopuly.com/account/${accountAddress}`;
+    buttonScopuly.innerText = 'Scopuly';
+    buttonScopuly.target = "_blank";
+    buttonScopuly.classList.add('button', 'small', 'text-small', 'skynet-button');
+
+    // Настройка кнопки Calc Orders
+    buttonCalcOrders.href = '#';
+    buttonCalcOrders.innerText = 'Reload Scripts';
+    buttonCalcOrders.addEventListener('click', () => ReloadScripts(accountAddress));
+    buttonCalcOrders.classList.add('button', 'small', 'text-small', 'skynet-button');
+
+    // Поиск элемента для добавления кнопок
+    const parentElement = document.querySelector('h1, h2'); // Измените селектор в соответствии с реальным расположением на странице
+
+    // Добавление кнопок на страницу
+    if (parentElement) {
+        parentElement.appendChild(buttonStellarchain);
+        parentElement.appendChild(buttonScopuly);
+        parentElement.appendChild(buttonCalcOrders);
     }
 
-    function isValidBase64(str) {
-        try {
-            atob(str);
-            return true;
-        } catch (e) {
-            return false;
-        }
+}
+
+
+function removeUnwantedElements() {
+    let unwantedElements = document.querySelectorAll('.account-balance.claimable:not(:last-child)');
+    unwantedElements.forEach(element => element.remove());
+}
+
+function isValidBase64(str) {
+    try {
+        atob(str);
+        return true;
+    } catch (e) {
+        return false;
     }
+}
 
-    function decodeBase64Text() {
-        observer.disconnect();
+function isValidStellarAddress(address) {
+    return /^[G][A-Z2-7]{55}$/.test(address);
+}
 
-        let encodedListItems = document.querySelectorAll('.text-small.condensed .word-break');
-        if (encodedListItems) {
-            encodedListItems.forEach(item => {
-                let separatorIndex = item.textContent.lastIndexOf(': ');
-                if (separatorIndex > -1) {
-                    let property = item.textContent.substring(0, separatorIndex);
-                    let encodedText = item.textContent.substring(separatorIndex + 2);
+function decodeBase64Text() {
+    let encodedListItems = document.querySelectorAll('.text-small.condensed .word-break');
+    if (encodedListItems) {
+        encodedListItems.forEach(item => {
+            let separatorIndex = item.textContent.lastIndexOf(': ');
+            if (separatorIndex > -1) {
+                let property = item.textContent.substring(0, separatorIndex);
+                let encodedText = item.textContent.substring(separatorIndex + 2);
+
+                if (!item.hasAttribute('data-old')) {
+                    item.setAttribute('data-old', encodedText);
                     if (isValidBase64(encodedText) && !encodedText.startsWith('*')) {
-                        let decodedText = '*' + atob(encodedText);
-                        item.textContent = property + ': ' + decodedText;
+                        let decodedText = atob(encodedText);
+                        if (isValidStellarAddress(decodedText)) {
+                            let link = document.createElement('a');
+                            link.href = `https://stellar.expert/explorer/public/account/${decodedText}`;
+                            link.textContent = decodedText;
+                            link.target = '_blank';
+                            item.textContent = property + ': ';
+                            item.appendChild(link);
+                        } else {
+                            item.textContent = property + ': ' + decodedText;
+                        }
                     }
                 }
-            });
+            }
+        });
+    }
+}
+
+function modifyLinks() {
+    let links = document.querySelectorAll('.account-balance');
+    links.forEach((link) => {
+        let assetLink = link.querySelector('.asset-link');
+        if (assetLink) {
+            let asset = assetLink.getAttribute('aria-label');
+
+            if (!assetLink.querySelector('.skynet-helper')) {
+                let newHref;
+
+                if (asset.includes('-')) {
+                    newHref = `https://stellar.expert/explorer/public/asset/${asset}`;
+                } else {
+                    newHref = `https://stellar.expert/explorer/public/liquidity-pool/${asset}`;
+                }
+
+                let searchButton = document.createElement('span');
+                searchButton.className = 'skynet-helper'; // Установка класса для новой кнопки
+                searchButton.setAttribute('onclick', `location.href='${newHref}';`);
+                searchButton.setAttribute('style', 'background-color: black; color: white; border-radius: 50%; padding: 5px; margin-left: 10px; cursor: pointer;');
+                searchButton.innerHTML = '<span style="font-size: 16px;">🔍</span>';
+
+                assetLink.appendChild(searchButton);
+            }
         }
+    });
+}
 
-        observer.observe(document.body, { attributes: false, childList: true, subtree: true });
+
+function initOfferButton() {
+    const offerId = new URL(window.location.href).pathname.split('/').pop().split('?')[0];
+
+    if (offerId) {
+        const button = document.createElement('a');
+        button.href = `https://horizon.stellar.org/offers/${offerId}`;
+        button.target = '_blank';
+        button.className = 'button small text-small skynet-button';
+        button.textContent = 'Horizon';
+
+        const h2Elements = document.querySelectorAll('h2');
+        let found = false;
+        for (let h2 of h2Elements) {
+            const span = h2.querySelector('span.dimmed');
+            if (span && span.textContent.includes('DEX offer')) {
+                h2.appendChild(button);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            console.error('Заголовок предложения DEX не найден.');
+        }
+    } else {
+        console.error('ID предложения не найден.');
     }
-
-    function removeUnwantedElements() {
-        observer.disconnect();
-
-        let unwantedElements = document.querySelectorAll('.account-balance.claimable:not(:last-child)');
-        unwantedElements.forEach(element => element.remove());
-
-        observer.observe(document.body, { attributes: false, childList: true, subtree: true });
-    }
+}
 
 
-    function processDOMChanges() {
-        if (window.location.href.includes('/explorer/public/account/')) {
-            modifyLinks();
-            decodeBase64Text();
+function checkPage() {
+    const accountPattern = /https:\/\/stellar.expert\/explorer\/public\/account\/[^/]+$/;
+    const offerPattern = /https:\/\/stellar.expert\/explorer\/public\/offer\/[^/]+$/;
+    const currentUrl = window.location.href;
+
+    if (accountPattern.test(currentUrl)) {
+        if (!document.querySelector('.skynet-button')) {
+            //console.log("URL соответствует и кнопок нет, выполняем скрипт.");
+            initButton()
             removeUnwantedElements();
         }
+        modifyLinks();
+        decodeBase64Text();
+
     }
-
-    function addExternalLinks(accountAddress) {
-        const buttonStellarchain = document.createElement('a');
-        const buttonScopuly = document.createElement('a');
-
-        // Настройка кнопки для Stellarchain
-        buttonStellarchain.href = `https://stellarchain.io/accounts/${accountAddress}`;
-        buttonStellarchain.innerText = 'Stellarchain';
-        buttonStellarchain.target = "_blank";
-        buttonStellarchain.classList.add('button', 'small', 'text-small');
-        //buttonStellarchain.style.marginRight = '10px';
-
-        // Настройка кнопки для Scopuly
-        buttonScopuly.href = `https://scopuly.com/account/${accountAddress}`;
-        buttonScopuly.innerText = 'Scopuly';
-        buttonScopuly.target = "_blank";
-        buttonScopuly.classList.add('button', 'small', 'text-small');
-
-
-        // Поиск элемента для добавления кнопок
-        const parentElement = document.querySelector('h1, h2'); // Измените селектор в соответствии с реальным расположением на странице
-
-        // Добавление кнопок на страницу
-        if (parentElement) {
-            parentElement.appendChild(buttonStellarchain);
-            parentElement.appendChild(buttonScopuly);
+    if (offerPattern.test(currentUrl)) {
+        if (!document.querySelector('.skynet-button')) {
+            //console.log("URL соответствует и кнопок нет, выполняем скрипт.");
+            initOfferButton()
         }
     }
+}
 
-    function initButton() {
-        // Извлечение адреса аккаунта
-        const accountAddressElement = document.querySelector('.account-address .account-key');
+async function ReloadScripts(accountAddress) {
+    CalcOrders(accountAddress)
+    modifyLinks();
+    removeUnwantedElements();
+    decodeBase64Text();
+}
 
-        if (accountAddressElement) {
-            const accountAddress = accountAddressElement.innerText.trim();
-            addExternalLinks(accountAddress);
-        } else {
-            console.error('Адрес аккаунта не найден.');
-        }
-    }
-
-    const accountPattern = /https:\/\/stellar.expert\/explorer\/public\/account\/[^/]+$/;
-    const txPattern = /https:\/\/stellar.expert\/explorer\/public\/tx\/[^/]+$/;
-    if (accountPattern.test(window.location.href) || txPattern.test(window.location.href)) {
-        observer = new MutationObserver(processDOMChanges);
-        observer.observe(document.body, { attributes: false, childList: true, subtree: true });
-    }
-
-    setTimeout(initButton, 5000);
-
-})();
+setInterval(checkPage, 3000);
