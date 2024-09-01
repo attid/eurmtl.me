@@ -1,0 +1,17 @@
+{
+    "pageBSNTitle": "Blockchain Stellar Network",
+    "generatorText": "Генератор транзакций для BSN подробнее смотрите <a href='https://github.com/Montelibero/MTLA-Documents/blob/main/Internal/BlockchainizationOfRelationships/BlockchainizationOfRelationships.ru.md' target='_blank'>тут</a>. Удобно просмотреть все связи можно на <a href='https://bsn.mtla.me/html' target='_blank'>bsn.mtla.me</a>",
+    "importInputPlaceholder": "Введите публичный ключ для импорта данных",
+    "importButton": "Импортировать",
+    "addButton": "Добавить ключ",
+    "keyLabel": "Ключ (Entry name):",
+    "keyInputPlaceholder": "Начните вводить ключ или сделайте клик мышью...",
+    "valueLabel": "Значение (Entry value):",
+    "valueInputPlaceholder": "Значение",
+    "cloneButton": "Клонировать",
+    "deleteButton": "Удалить",
+    "restoreButton": "Восстановить",
+    "getXDRButton": "Получить XDR",
+    "errorMessage": "Ключ должен быть длиной 56 символов.",
+    "willBeDeleted": "Будет удалено при отправке транзакции"
+}
