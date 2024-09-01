@@ -1,7 +1,10 @@
 import logging
+from datetime import timedelta
 
 import sentry_sdk
-from quart import Quart, render_template
+from cachetools import TTLCache
+from loguru import logger
+from quart import Quart, session
 
 import routers.cup
 import routers.decision
@@ -9,18 +12,17 @@ import routers.federal
 import routers.helpers
 import routers.index
 import routers.laboratory
+import routers.mmwb
 import routers.remote
 import routers.sign_tools
 import routers.web_editor
-from config_reader import config
-from db.models import Base
-from db.pool import engine
+from config.config_reader import config, update_test_user
+from db.sql_models import Base
+from db.sql_pool import engine
 
 app = Quart(__name__)
 
-logging.basicConfig(filename='app.log', level=logging.INFO,
-                    format='%(asctime)s %(levelname)s %(name)s %(threadName)s : %(message)s')
-
+logger.add('log/app.log', level=logging.INFO)
 
 # app.config['HOME_PATH'] = ''
 # assets = Environment(app)
@@ -43,6 +45,7 @@ app.register_blueprint(routers.decision.blueprint)
 app.register_blueprint(routers.cup.blueprint)
 app.register_blueprint(routers.remote.blueprint)
 app.register_blueprint(routers.web_editor.blueprint)
+app.register_blueprint(routers.mmwb.blueprint)
 
 # @app.context_processor
 # def inject_assets():
@@ -51,10 +54,29 @@ app.register_blueprint(routers.web_editor.blueprint)
 
 # locale.setlocale(locale.LC_ALL, 'en_GB.UTF-8')
 
+# Создаем TTL кеш: максимум 100 ключей, время жизни ключа - 1 минута
+error_cache = TTLCache(maxsize=100, ttl=timedelta(hours=1).total_seconds())
+
+
+def before_send(event, hint):
+    error_type = event.get('exception', {}).get('values', [{}])[0].get('type', '')
+    error_value = event.get('exception', {}).get('values', [{}])[0].get('value', '')
+    error_key = f"{error_type}:{error_value}"
+
+    if error_key in error_cache:
+        # Если ошибка уже в кеше, не отправляем ее снова
+        return None
+
+    # Если ошибки нет в кеше, добавляем ее и отправляем событие
+    error_cache[error_key] = True
+    return event
+
+
 sentry_sdk.init(
     dsn=config.sentry_dsn,
     traces_sample_rate=1.0,
     profiles_sample_rate=1.0,
+    before_send=before_send
 )
 
 
@@ -70,10 +92,10 @@ async def update_db():
     return "OK"
 
 
-# its test
-@app.route('/mmwb')
-async def mmwb_tools():
-    return await render_template('mmwb_tools.html')
+@app.before_request
+async def before_request():
+    if 'userdata' not in session:  # Чтобы избежать перезаписи сессии на каждом запросе
+        update_test_user()
 
 
 if __name__ == '__main__':

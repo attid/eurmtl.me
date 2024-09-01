@@ -1,14 +1,15 @@
 import asyncio
-
+import json
 import uuid
+
 from quart import Blueprint, request, jsonify, abort
 
-from config_reader import config
-from db.models import Transactions, Signers, Signatures, WebEditorMessages
-from db.pool import db_pool
-from db.requests import db_get_dict, EURMTLDictsType
+from config.config_reader import config
+from db.mongo import get_all_assets
+from db.sql_models import Transactions, Signers, Signatures, WebEditorMessages, MMWBTransactions
+from db.sql_pool import db_pool
 from routers.sign_tools import parse_xdr_for_signatures
-from utils.stellar_utils import decode_xdr_to_text, is_valid_base64
+from utils.stellar_utils import decode_xdr_to_text, is_valid_base64, add_transaction
 
 blueprint = Blueprint('remote', __name__)
 
@@ -70,7 +71,7 @@ async def remote_decode_xdr():
     if not xdr or not is_valid_base64(xdr):
         return jsonify({"error": "Invalid or missing base64 data"}), 400  # Bad Request
 
-    encoded_xdr = decode_xdr_to_text(xdr)
+    encoded_xdr = await decode_xdr_to_text(xdr)
 
     encoded_xdr = ('<br>'.join(encoded_xdr)).replace('\n', '<br>').replace('  ', '&nbsp;&nbsp;')
 
@@ -112,22 +113,69 @@ async def remote_get_new_pin_id():
 
 @blueprint.route('/remote/good_assets', methods=['GET'])
 async def remote_good_assets():
-    db_data = db_get_dict(db_pool(), EURMTLDictsType.Assets)
+    # Получаем активы, у которых need_eurmtl равно True
+    assets = await get_all_assets(True)
 
-    # Переструктурирование данных
+    # Переструктурируем данные, группируя активы по issuer (это аналогично account)
     account_assets = {}
-    for asset, account in db_data.items():
-        if account not in account_assets:
-            account_assets[account] = []
-        account_assets[account].append(asset)
+    for asset in assets:
+        issuer = asset.issuer
+        if issuer not in account_assets:
+            account_assets[issuer] = []
+        account_assets[issuer].append(asset)
 
-    # Формирование ответа
+    # Формируем ответ в виде JSON
     accounts = [{
-        "account": account,
-        "assets": [{"asset": asset} for asset in assets]
-    } for account, assets in account_assets.items()]
+        "account": issuer,
+        "assets": [{"asset": asset.name} for asset in assets]
+    } for issuer, assets in account_assets.items()]
 
     return jsonify({"accounts": accounts})
+
+
+@blueprint.route('/remote/get_mmwb_transaction', methods=['POST'])
+async def remote_get_mmwb_transaction():
+    api_key = request.headers.get('Authorization')
+    if api_key != f"Bearer {config.eurmtl_key.get_secret_value()}":
+        return jsonify({"message": "Unauthorized"}), 401
+
+    data = await request.json
+    user_id = data.get('user_id')
+    message_uuid = data.get('uuid')
+
+    with db_pool() as db_session:
+        message_record = db_session.query(MMWBTransactions).filter(
+            MMWBTransactions.uuid == message_uuid,
+            MMWBTransactions.tg_id == user_id
+        ).first()
+
+    if message_record is None:
+        return jsonify({"message": "Message not found"}), 404
+
+    return jsonify(json.loads(message_record.json)), 200
+
+
+@blueprint.route('/remote/add_transaction', methods=['POST'])
+async def remote_add_transaction():
+    api_key = request.headers.get('Authorization')
+    if api_key != f"Bearer {config.eurmtl_key.get_secret_value()}":
+        return jsonify({"message": "Unauthorized"}), 401
+
+    data = await request.json
+    tx_body = data.get('tx_body')
+    tx_description = data.get('tx_description')
+
+    if not tx_body or not tx_description:
+        return jsonify({"message": "Missing tx_body or tx_description"}), 400
+
+    if len(tx_description) < 5:
+        return jsonify({"message": "Description too short"}), 400
+
+    success, result = await add_transaction(tx_body, tx_description)
+    if success:
+        return jsonify({"message": "Transaction added successfully", "hash": result}), 201
+    else:
+        return jsonify({"message": result}), 400
 
 
 if __name__ == '__main__':

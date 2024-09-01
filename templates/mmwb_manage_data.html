@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>WebEditor</title>
+    <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico"/>
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.15.4/css/all.css"/>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.4/css/bulma.min.css" integrity="sha512-HqxHUkJM0SYcbvxUw5P60SzdOTy/QVwA1JJrvaXJv4q7lmbDZCmZaqz01UPOaQveoxfYRv1tHozWGPMcuTBuvQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"  />
+    <link rel="stylesheet" href="/static/css/eurmtl.css?3"/>
+</head>
+<body>
+<div class="container mt-5">
+
+    <div class="card" id="card0">
+        <div class="card-content">
+            <p id="infoMessage" class="is-hidden">If you change the key, a new record will be created.</p>
+            <div class="field">
+                <label class="label" for="keyInput">Key</label>
+                <div class="control">
+                    <input class="input" id="keyInput" type="text" maxlength="64">
+                </div>
+            </div>
+            <div class="field">
+                <label class="label" for="valueInput">Value</label>
+                <div class="control">
+                    <input class="input" id="valueInput" type="text" maxlength="64">
+                </div>
+            </div>
+            <div class="field is-grouped is-grouped-multiline ">
+                <div class="control is-expanded">
+                    <button class="button is-primary is-fullwidth" onclick="saveData()">
+                        <span class="icon is-small">
+                              <i class="fas fa-save"></i>
+                        </span>
+                        <span>Save</span>
+                    </button>
+                </div>
+                <div class="control is-expanded">
+                    <button class="button is-primary is-fullwidth" onclick="clearData()">
+                        <span class="icon is-small">
+                              <i class="fas fa-broom"></i>
+                        </span>
+                        <span>Clear</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% for key in data.keys() %}
+    <div class="card mt-5">
+        <div class="card-content">
+            <p class="title" data-key="{{ key }}">Key: {{ key }} </p>
+            <p class="subtitle truncate" data-value="{{ data[key] }}">Value: {{ data[key] }} </p>
+            <div class="field is-grouped is-grouped-multiline ">
+                <div class="control is-expanded">
+                    <button class="button is-primary is-fullwidth" onclick="editData(event)">
+                        <span class="icon"><i class="fas fa-edit"></i></span>
+                        <span>Edit</span>
+                    </button>
+                </div>
+                <div class="control is-expanded">
+                    <button class="button is-danger is-fullwidth" onclick="removeData(event)">
+                        <span class="icon"><i class="fas fa-trash-alt"></i></span>
+                        <span>Delete</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+    const initData = Telegram.WebApp.initData;
+
+    function editData(event) {
+        event.preventDefault();
+        const card = event.target.closest('.card');
+        const key = card.querySelector('.title').dataset.key;
+        const value = card.querySelector('.subtitle').dataset.value;
+        const keyInput = document.getElementById('keyInput');
+        const valueInput = document.getElementById('valueInput');
+        document.getElementById('infoMessage').classList.remove('is-hidden');
+
+        keyInput.value = key;
+        valueInput.value = value;
+
+        keyInput.focus();
+    }
+
+    function removeData(event) {
+        editData(event);
+        document.getElementById('valueInput').value = '';
+        saveData();
+    }
+
+    function getQueryParams() {
+        const queryParams = new URLSearchParams(window.location.search);
+        const params = {};
+        queryParams.forEach((value, key) => {
+            params[key] = value;
+        });
+        return params;
+    }
+
+
+    async function saveData() {
+        const queryParams = getQueryParams();
+        const key = document.getElementById('keyInput').value;
+        const value = document.getElementById('valueInput').value;
+
+        const postData = {
+            ...queryParams,
+            key: key,
+            value: value,
+            initData: initData
+        };
+
+        const response = await fetch('/ManageDataAction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(postData)
+        });
+        const data = await response.json();
+
+        if (data.ok) {
+            displayToast('Изменения сохранены!');
+            Telegram.WebApp.close();
+        } else {
+            displayToast('Ошибка при сохранении: ' + data.error);
+        }
+    }
+
+    function clearData() {
+        document.getElementById('keyInput').value = '';
+        document.getElementById('valueInput').value = '';
+        document.getElementById('infoMessage').classList.add('is-hidden');
+    }
+
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bulma-toast/2.4.4/bulma-toast.min.js" integrity="sha512-Mblf9e5nxLeT5MxzmcT1L3Esj3sBqKxAXgq+SQUf0/eaJTBvx2RXA+VP3Qjpg2zDAYSSc/j6n1Gf6oU0CW2tqw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="/static/js/main.js?4"></script>
+</body>
+</html>

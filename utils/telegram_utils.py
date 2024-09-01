@@ -1,10 +1,14 @@
-import re
+import hashlib
+import hmac
+import urllib.parse
 
 import requests
-from config_reader import config
-import urllib.parse
-import hmac
-import hashlib
+from aiogram import Bot
+
+from config.config_reader import config
+
+skynet_bot = Bot(token=config.skynet_token.get_secret_value())
+mmwb_bot = Bot(token=config.mmwb_token.get_secret_value())
 
 
 def send_telegram_message(chat_id, text, entities=None):
@@ -32,14 +36,15 @@ def send_telegram_message(chat_id, text, entities=None):
 
     response = requests.post(url, json=data)
     if response.ok:
-        #print(f'Sending message: {data}')
-        #print(f'Message sent successfully: {response.json()}')
+        # print(f'Sending message: {data}')
+        # print(f'Message sent successfully: {response.json()}')
         return response.json()['result']['message_id']
     else:
         print(f'Failed to send message: {response.content}')
 
 
-def edit_telegram_message(chat_id, message_id, text, reply_markup=None, entities=None):
+def edit_telegram_message(chat_id, message_id, text, reply_markup=None, entities=None,
+                          config_token=config.skynet_token):
     """
     Edit a message in the Telegram chat.
 
@@ -49,11 +54,13 @@ def edit_telegram_message(chat_id, message_id, text, reply_markup=None, entities
         text (str): The new text of the message.
         reply_markup (Optional[Any]): Optional parameter. The reply markup of the message.
         entities (Optional[Any]): Optional parameter. The entities of the message.
+        config_token (Optional[Any]): Optional parameter. The config token of the bot.
 
     Returns:
         bool: True if the message was edited successfully, False otherwise.
+
     """
-    token = config.skynet_token.get_secret_value()
+    token = config_token.get_secret_value()
     url = f'https://api.telegram.org/bot{token}/editMessageText'
     data = {
         'chat_id': chat_id,
@@ -115,7 +122,10 @@ def is_user_admin(chat_id, user_id):
         return False
 
 
-def check_response(data):
+def check_response(data, token=None):
+    if token is None:
+        token = config.mmwb_token.get_secret_value()
+
     d = data.copy()
     del d['hash']
     d_list = []
@@ -124,7 +134,7 @@ def check_response(data):
             d_list.append(key + '=' + d[key])
     data_string = bytes('\n'.join(d_list), 'utf-8')
 
-    bot_secret_key = hashlib.sha256(config.bot_token.get_secret_value().encode('utf-8')).digest()
+    bot_secret_key = hashlib.sha256(token.encode('utf-8')).digest()
     hmac_string = hmac.new(bot_secret_key, data_string, hashlib.sha256).hexdigest()
     if hmac_string == data['hash']:
         return True
@@ -151,9 +161,9 @@ def is_hash_valid(hash_value, check_data_string, token):
     return calculated_hash == hash_value
 
 
-def check_response_webapp(data):
+def check_response_webapp(data, config_token=config.skynet_token):
     hash_value, check_data_string = prepare_data_check_string(data)
-    result = is_hash_valid(hash_value, check_data_string, config.skynet_token.get_secret_value())
+    result = is_hash_valid(hash_value, check_data_string, config_token.get_secret_value())
     return result
 
 

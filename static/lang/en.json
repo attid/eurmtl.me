@@ -1,0 +1,17 @@
+{
+    "pageBSNTitle": "Blockchain Stellar Network",
+    "generatorText": "Transaction generator for BSN, see more details <a href='https://github.com/Montelibero/MTLA-Documents/blob/main/Internal/BlockchainizationOfRelationships/BlockchainizationOfRelationships.ru.md' target='_blank'>here</a>. You can see all relationships in <a href='https://bsn.mtla.me/html' target='_blank'>bsn.mtla.me</a>",
+    "importInputPlaceholder": "Enter public key for data import",
+    "importButton": "Import",
+    "addButton": "Add Key",
+    "keyLabel": "Entry name (key):",
+    "keyInputPlaceholder": "Start typing a key or click...",
+    "valueLabel": "Entry value:",
+    "valueInputPlaceholder": "Value",
+    "cloneButton": "Clone",
+    "deleteButton": "Delete",
+    "restoreButton": "Restore",
+    "getXDRButton": "Get XDR",
+    "errorMessage": "The input must be 56 characters long.",
+    "willBeDeleted": "Will be deleted upon transaction submission"
+}

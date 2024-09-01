@@ -1,0 +1,268 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}Laboratory. Easy way to build transaction{% endblock %}
+
+{% block content %}
+<section id="main">
+    <div class="new-operation mb-3"></div>
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs">
+                <li class="nav-item">
+                    <a href="#payments" class="nav-link active" data-bs-toggle="tab">Платежи</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#settings" class="nav-link" data-bs-toggle="tab">Настройки</a>
+                </li>
+                <li class="nav-item">
+                    <a href="#batch-operations" class="nav-link" data-bs-toggle="tab">Пакетные операции</a>
+                </li>
+            </ul>
+        </div>
+        <div class="card-body tab-content">
+            <div class="tab-pane fade show active" id="payments">
+                <div class="mb-3">
+                    <label for="operation" class="form-label">Выберите операцию</label>
+                    <select id="operation" name="operation" class="form-select" onchange="addOperation(this)">
+                        <option value="" disabled selected>Choose operation type</option>
+                        <option value="payment">Payment</option>
+                        <option value="trust_payment">Payment with Trust</option>
+                        <option value="buy">Buy</option>
+                        <option value="sell">Sell</option>
+                        <option value="sell_passive">Sell passive</option>
+                        <option value="swap">Swap</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="settings">
+                <div class="mb-3">
+                    <label for="operation-settings" class="form-label">Выберите операцию</label>
+                    <select id="operation-settings" name="operation-settings" class="form-select"
+                            onchange="addOperation(this)">
+                        <option value="" disabled selected>Choose operation type</option>
+                        <option value="change_trust">Change Trust</option>
+                        <option value="manage_data">Manage Data</option>
+                        <option value="options">Set Option</option>
+                        <option value="options_signer">Set Option (Signer)</option>
+                        <option value="set_trust_line_flags">Set TrustLine Flags</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="batch-operations">
+                <div class="mb-3">
+                    <label for="operation-batch" class="form-label">Выберите операцию</label>
+                    <select id="operation-batch" name="operation-batch" class="form-select"
+                            onchange="addOperation(this)">
+                        <option value="" disabled selected>Choose operation type</option>
+                        <option value="create_account">Create account</option>
+                        <option value="clawback">Clawback</option>
+                        <option value="copy_multi_sign">Copy Multi Sign</option>
+                        <option value="payDivs">Pay Divs</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="btn-group mb-3 d-flex">
+                <button type="button" id="get_xdr" class="btn btn-primary me-2" onclick="handleXDR()">
+                    Get XDR<i class="ti ti-calculator ms-2"></i>
+                </button>
+            </div>
+
+            <!-- Новая карточка под кнопкой -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <p class="tx-body text-break user-select-all cursor-pointer"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="mb-3" id="signP" style="display: none;">
+        <label class="form-label" for="private_key">Private Key</label>
+        <input type="password" id="private_key" name="private_key" class="form-control" placeholder="Private key with S"
+               value="" oninput="sign_tx()" onpaste="sign_tx()" autocomplete="off">
+    </div>
+    <div class="btn-group d-flex mb-3 ">
+        <button class="btn btn-primary me-2" onclick="copy_tx()">
+            <i class="ti ti-copy me-2"></i>Copy Transaction
+        </button>
+        <button class="btn btn-info me-2" onclick="getDecode()">
+            <i class="ti ti-code me-2"></i>Decode
+        </button>
+        <button type="button" class="btn btn-info me-2" onclick="sign_tx()" style="display: none;" id="signButton">
+            <i class="ti ti-pencil me-2"></i>Sign
+        </button>
+        <button type="button" class="btn btn-warning" onclick="show_sign_div()" id="signButton0">
+            <i class="ti ti-pencil me-2"></i>Sign Here
+        </button>
+        <button type="button" class="btn btn-success" onclick="send_tx()" id="sendButton" style="display: none;">
+            <i class="ti ti-send me-2"></i>Send to Stellar Network
+        </button>
+    </div>
+    <div id="responseCard" class="card" style="display: none;">
+        <div class="card-body" id="responseDiv">
+            <!-- Content dynamically injected here -->
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="mb-3">
+                <label for="xdr-input" class="form-label">XDR Input</label>
+                <textarea id="xdr-input" class="form-control" rows="5">{{import_xdr}}</textarea>
+            </div>
+
+            <div class="d-flex btn-group mb-3">
+                <button type="button" class="btn btn-primary me-2" onclick="importTransaction()">
+                    Импортировать транзакцию
+                </button>
+                <button type="button" class="btn btn-primary" onclick="importOperations()">
+                    Импортировать операции
+                </button>
+            </div>
+        </div>
+    </div>
+
+</section>
+{% endblock %}
+
+{% block bottom_scripts %}
+<script src="/static/js/main.js?3"></script>
+<script src="/static/js/stellar-sdk.min.js"></script>
+<script>
+    $(document).ready(function() {
+        initLab();
+    });
+    const defXdrDiv = document.querySelector(".tx-body");
+    async function copy_tx() {
+        if (!navigator.clipboard) {
+            showToast('Clipboard API не доступен', 'danger');
+            return;
+        }
+        await navigator.clipboard.writeText(defXdrDiv.innerText);
+        showToast('Transaction copied to clipboard', 'success');
+    }
+    async function getDecode() {
+        try {
+            // Получаем XDR из defXdrDiv
+            const xdr = defXdrDiv.innerText;
+
+            // Делаем POST-запрос к вашему серверному эндпоинту
+            let response = await $.ajax({
+                url: '/remote/decode',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ xdr: xdr }), // Передаем XDR в JSON формате
+                dataType: 'json'
+            });
+
+            // Обрабатываем ответ от сервера
+            const responseDiv = $("#responseDiv");
+            const responseCard = $("#responseCard");
+
+            if (response.text) {
+                responseDiv.html(response.text); // Вставляем декодированный текст в responseDiv
+                responseCard.hide();
+                responseCard.fadeIn(); // Плавное появление карточки с результатом
+            } else {
+                showToast('Декодированный текст отсутствует в ответе', 'warning');
+            }
+
+        } catch (error) {
+            console.error('There was a problem fetching the response:', error);
+            showToast('Произошла ошибка при получении ответа', 'danger');
+        }
+    }
+    function show_sign_div() {
+        const signDiv = document.getElementById('signP');
+        const signButton = document.getElementById('signButton');
+        const signButton0 = document.getElementById('signButton0');
+
+        signDiv.style.display = 'block';
+        signButton.style.display = 'block';
+        signButton0.style.display = 'none';
+    }
+
+    async function sign_tx() {
+        let xdr = defXdrDiv.innerText;
+        let privateKey = document.getElementById("private_key").value;
+
+        if (!privateKey || privateKey.length < 56) {
+            console.log('Приватный ключ пуст или короче 56 символов');
+            return;
+        }
+
+        const server = new StellarSdk.Horizon.Server('https://horizon.stellar.org');
+
+        try {
+            let sourceKeys = StellarSdk.Keypair.fromSecret(privateKey);
+            let transaction = new StellarSdk.Transaction(xdr, StellarSdk.Networks.PUBLIC);
+
+            // Check if the transaction is already signed with this key
+            const alreadySigned = transaction.signatures.some(signature =>
+                signature.hint().toString('hex') === sourceKeys.signatureHint().toString('hex')
+            );
+
+            if (alreadySigned) {
+                showToast('Транзакция уже подписана этим ключом', 'warning');
+                return;
+            }
+
+            // If not signed, proceed with signing
+            transaction.sign(sourceKeys);
+
+            let signedXDR = transaction.toEnvelope().toXDR().toString('base64');
+            defXdrDiv.innerText = signedXDR;
+
+            showToast('Transaction signed successfully', 'success');
+            const sendButton = document.getElementById('sendButton');
+            sendButton.style.display = 'block';
+
+        } catch (error) {
+            console.error('Error signing transaction:', error);
+            showToast('Ошибка при подписании транзакции', 'danger');
+        }
+    }
+    async function send_tx() {
+        let xdr = defXdrDiv.innerText;
+
+        const server = new StellarSdk.Horizon.Server('https://horizon.stellar.org');
+
+        try {
+            let transaction = new StellarSdk.Transaction(xdr, StellarSdk.Networks.PUBLIC);
+
+            const transactionResult = await server.submitTransaction(transaction);
+            console.log(transactionResult);
+
+            showToast('Transaction send successfully', 'success');
+        } catch (error) {
+            if (error.response) {
+                // Сервер ответил с кодом состояния, который указывает на ошибку
+                console.error('Response data:', error.response.data);
+                console.error('Response status:', error.response.status);
+                console.error('Response headers:', error.response.headers);
+
+                // Преобразуем result_codes в строку для вывода в тосте
+                const resultCodes = JSON.stringify(error.response.data.extras.result_codes);
+
+                showToast(`Ошибка: ${resultCodes || 'Не удалось выполнить запрос'}`, 'danger');
+            } else if (error.request) {
+                // Запрос был сделан, но ответа не получено
+                console.error('Request made but no response received:', error.request);
+            } else {
+                // Что-то случилось при настройке запроса
+                console.error('Error setting up request:', error.message);
+            }
+        }
+    }
+
+
+</script>
+{% endblock %}
+

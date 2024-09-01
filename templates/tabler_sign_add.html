@@ -1,0 +1,127 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}Add XDR to multi sign{% endblock %}
+
+{% block content %}
+<form id="xdrForm" method="post"
+      onsubmit="return handleSubmit(event)">
+    <div class="mb-3">
+        <label class="form-label required">Transaction XDR</label>
+        <textarea class="form-control" name="xdr" id="xdr" rows="5" placeholder="Enter transaction XDR" required
+                  onchange="updateMemoFromXdr()">{{xdr}}</textarea>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label required">Description</label>
+        <input type="text" class="form-control" name="description" id="description"
+               placeholder="Enter description (min 3 characters)" required minlength="3" value="{{description}}">
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Memo</label>
+        <div class="input-group">
+            <input type="text" class="form-control" name="memo" id="memo" placeholder="Transaction memo"
+                   value="{{memo}}">
+            <button class="btn btn-outline-secondary" type="button" onclick="saveMemo()" data-bs-toggle="tooltip"
+                    title="This will change the memo in the transaction">
+                <i class="ti ti-device-floppy"></i> Save
+            </button>
+        </div>
+    </div>
+
+    <div class="form-footer">
+        <button type="submit" class="btn btn-primary">
+            <i class="ti ti-file-plus me-2"></i>Create
+        </button>
+    </div>
+</form>
+{% endblock %}
+
+{% block bottom_scripts %}
+<script src="/static/js/stellar-sdk.min.js"></script>
+<script>
+    function extractMemoFromXdr(xdr) {
+      try {
+        const transaction = StellarSdk.TransactionBuilder.fromXDR(xdr, StellarSdk.Networks.PUBLIC);
+        if (transaction.memo && transaction.memo.type === 'text') {
+          return transaction.memo.value;
+        } else {
+          return '';
+        }
+      } catch (error) {
+        console.error('Error extracting memo:', error);
+        return '';
+      }
+    }
+
+    function updateMemoFromXdr() {
+      const xdrInput = document.getElementById('xdr');
+      const descriptionInput = document.getElementById('description');
+      const memoInput = document.getElementById('memo');
+      const xdr = xdrInput.value;
+      if (xdr) {
+        const memo = extractMemoFromXdr(xdr);
+        if (memo) {
+          memoInput.value = memo;
+          if (!descriptionInput.value) {
+            descriptionInput.value = memo;
+          }
+        }
+      } else {
+        showToast('Сначала введите транзакцию.', 'warning');
+      }
+    }
+
+    function saveMemo() {
+      const xdrInput = document.getElementById('xdr');
+      const memoInput = document.getElementById('memo');
+      const memo = memoInput.value;
+
+      if (memo.length < 3) {
+        showToast('Memo должно содержать минимум 3 символа', 'warning');
+        return;
+      }
+      if (!/^[a-zA-Z0-9\s]{1,28}$/.test(memo)) {
+        showToast('Memo должно содержать только английские буквы, цифры и пробелы, и быть не длиннее 28 символов', 'warning');
+        return;
+      }
+
+      fetch('/lab/update_memo', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          xdr: xdrInput.value,
+          memo: memo
+        })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          xdrInput.value = data.xdr;
+          showToast('Memo успешно обновлено', 'success');
+          updateMemoFromXdr(); // Обновляем отображение мемо в интерфейсе
+        } else {
+          showToast(data.error || 'Произошла ошибка при обновлении memo', 'warning');
+        }
+      })
+      .catch(error => {
+        console.error('Ошибка:', error);
+        showToast('Произошла ошибка при отправке запроса', 'warning');
+      });
+    }
+
+    function handleSubmit(event) {
+      event.preventDefault();
+      const form = event.target;
+      if (form.checkValidity()) {
+        // Отправляем форму на сервер
+        form.submit();
+      } else {
+        form.reportValidity();
+      }
+      return false;
+    }
+</script>
+{% endblock %}

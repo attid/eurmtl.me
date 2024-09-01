@@ -1,0 +1,50 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}All my transaction{% endblock %}
+
+{% block content %}
+<div class="table-responsive">
+    <table class="table table-striped">
+        <thead>
+        <tr>
+            <th>№</th>
+            <th>Date</th>
+            <th>Link</th>
+            <th>Description</th>
+            <th>Signatures</th>
+            <th>Status</th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for transaction in transactions %}
+        <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ transaction.add_dt.strftime('%Y-%m-%d') }}</td>
+            <td><a href="/sign_tools/{{ transaction.hash }}" class="text-primary">View</a></td>
+            <td class="description">{{ transaction.description[:30] }}</td>
+            <td>{{ transaction.signature_count }}</td>
+            <td>
+                {% if transaction.state == 0 %}
+                <span class="badge bg-success"><i class="ti ti-fiber-new"></i> New</span> <!-- Зеленый для новых -->
+                {% elif transaction.state == 1 %}
+                <span class="badge bg-warning"><i class="ti ti-send"></i> Pending</span> <!-- Желтый для ожидающих отправки -->
+                {% elif transaction.state == 2 %}
+                <span class="badge bg-info"><i class="ti ti-check"></i> Sent</span> <!-- Голубой для отправленных -->
+                {% elif transaction.state == 3 %}
+                <span class="badge bg-danger"><i class="ti ti-x"></i> Cancelled</span> <!-- Красный для отменённых -->
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="mt-3">
+    {% if next_page %}
+    <a href="?next={{next_page}}" class="btn btn-info">
+        <i class="ti ti-cloud-download me-2"></i>Show next 100
+    </a>
+    {% endif %}
+</div>
+{% endblock %}

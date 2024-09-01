@@ -1,168 +1,58 @@
-import asyncio
 import json
-from random import random, shuffle
-import jsonpickle
-import requests
 from datetime import datetime
+from random import shuffle
 
-from quart import Markup
-from quart import Blueprint, request, render_template, flash, session, redirect, abort
+import requests
+from quart import Markup, jsonify, Blueprint, request, render_template, flash, session, redirect, abort, url_for
 from sqlalchemy import func
-from stellar_sdk import DecoratedSignature
-from stellar_sdk import Keypair
-from stellar_sdk import Network, TransactionEnvelope
+from stellar_sdk import DecoratedSignature, Keypair, Network, TransactionEnvelope
 from stellar_sdk.exceptions import BadSignatureError
 from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
 
-from db.models import Transactions, Signers, Signatures, Alerts
-from db.pool import db_pool
-from utils.stellar_utils import decode_xdr_to_text, decode_xdr_to_base64, check_publish_state, check_user_weight
+from db.sql_models import Transactions, Signers, Signatures, Alerts
+from db.sql_pool import db_pool
+from utils.stellar_utils import (decode_xdr_to_text, check_publish_state, check_user_in_sign,
+                                 add_transaction)
 from utils.telegram_utils import send_telegram_message
 
-blueprint = Blueprint('sign_rtools', __name__)
-
-
-@blueprint.route('/adduser', methods=('GET', 'POST'))
-@blueprint.route('/add_user', methods=('GET', 'POST'))
-async def start_adduser():
-    if request.method == 'POST':
-        form_data = await request.form
-        username = form_data['username']
-        public_key = form_data.get('public_key')
-        if len(username) < 3:
-            await flash('Need more username')
-            resp = await render_template('adduser.html', username=username, public_key=public_key)
-            return resp
-
-        if username[0] != '@':
-            await flash('Username must start with @')
-            resp = await render_template('adduser.html', username=username, public_key=public_key)
-            return resp
-
-        if len(public_key) < 56 or public_key[0] != 'G':
-            await flash('BAD public key')
-            resp = await render_template('adduser.html', username=username, public_key=public_key)
-            return resp
-
-        try:
-            key = Keypair.from_public_key(public_key)
-        except:
-            await flash('BAD public key')
-            resp = await render_template('adduser.html', username=username, public_key=public_key)
-            return resp
-
-        if (await check_user_weight()) > 0:
-            with db_pool() as db_session:
-                address = db_session.query(Signers).filter(Signers.username == username).first()
-                if address:
-                    await flash('Username already in use')
-                    resp = await render_template('adduser.html', username=username, public_key=public_key)
-                    return resp
-
-                address = db_session.query(Signers).filter(Signers.public_key == public_key).first()
-                if address:
-                    await flash(f'{address.username} was renamed to {username}')
-                    address.username = username
-                    db_session.commit()
-                    resp = await render_template('adduser.html', username=username, public_key=public_key)
-                    return resp
-
-                db_session.add(
-                    Signers(username=username, public_key=public_key, signature_hint=key.signature_hint().hex()))
-                db_session.commit()
-
-                await flash(f'{username} with key {public_key} was added')
-                resp = await render_template('adduser.html', username=username, public_key=public_key)
-                return resp
-
-    resp = await render_template('adduser.html', username='', public_key='')
-    return resp
+blueprint = Blueprint('sign_tools', __name__)
 
 
 @blueprint.route('/sign_tools', methods=('GET', 'POST'))
 @blueprint.route('/sign_tools/', methods=('GET', 'POST'))
 async def start_add_transaction():
     session['return_to'] = request.url
+
+    xdr = ''
+    description = ''
+    memo = ''
+    error_message = None
+
     if request.method == 'POST':
         form_data = await request.form
-        use_memo = 'use_memo' in form_data  # Проверка, был ли отмечен checkbox
-        tx_body = form_data.get('tx_body')
+        xdr = form_data.get('xdr', '').strip()
+        description = form_data.get('description', '').strip()
+        memo = form_data.get('memo', '').strip()
 
-        # Определение описания на основе выбора пользователя
-        if use_memo:
-            tx_description = form_data.get('tx_memo')
+        if not xdr:
+            error_message = 'Transaction XDR is required'
+        elif len(description) < 3:
+            error_message = 'Description must be at least 3 characters long'
         else:
-            tx_description = form_data.get('tx_description')
+            success, result = await add_transaction(xdr, description)
+            if success:
+                await flash('Transaction added successfully', 'good')
+                print(url_for('sign_tools.show_transaction', tr_hash=result))
+                return redirect(url_for('sign_tools.show_transaction', tr_hash=result))
+            error_message = result
 
-        # Проверка длины описания
-        if not tx_description or len(tx_description) < 5:
-            await flash('Need more description')
-            return await render_template('sign_add.html', tx_description=tx_description, tx_body=tx_body)
+    if error_message:
+        await flash(error_message)
 
-        try:
-            tr = TransactionEnvelope.from_xdr(tx_body, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-            tr_full = TransactionEnvelope.from_xdr(tx_body, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-            sources = extract_sources(tx_body)
-        except:
-            await flash('BAD xdr. Can`t load')
-            resp = await render_template('sign_add.html', tx_description=tx_description, tx_body=tx_body)
-            return resp
-        tx_hash = tr.hash_hex()
-        tr.signatures.clear()
-
-        with db_pool() as db_session:
-            if db_session.query(Transactions).filter(Transactions.hash == tx_hash).first():
-                return redirect(f'/sign_tools/{tx_hash}')
-
-            db_session.add(
-                Transactions(hash=tx_hash, body=tr.to_xdr(), description=tx_description, json=json.dumps(sources)))
-            if len(tr_full.signatures) > 0:
-                for signature in tr_full.signatures:
-                    signer = db_session.query(Signers).filter(
-                        Signers.signature_hint == signature.signature_hint.hex()).first()
-                    db_session.add(Signatures(signature_xdr=signature.to_xdr_object().to_xdr(),
-                                              signer_id=signer.id if signer else None,
-                                              transaction_hash=tx_hash))
-            db_session.commit()
-
-        return redirect(f'/sign_tools/{tx_hash}')
-
-    resp = await render_template('sign_add.html', tx_description='', tx_body='')
-    return resp
-
-
-def extract_sources(xdr):
-    tr = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-    sources = {tr.transaction.source.account_id: {}}
-    for operation in tr.transaction.operations:
-        if operation.source:
-            sources[operation.source.account_id] = {}
-    for source in sources:
-        try:
-            rq = requests.get('https://horizon.stellar.org/accounts/' + source)
-            threshold = rq.json()['thresholds']['high_threshold']
-            signers = []
-            for signer in rq.json()['signers']:
-                signers.append([signer['key'], signer['weight'],
-                                Keypair.from_public_key(signer['key']).signature_hint().hex()])
-                add_signer(signer['key'])
-            sources[source] = {'threshold': threshold, 'signers': signers}
-        except:
-            sources[source] = {'threshold': 0,
-                               'signers': [[source, 1, Keypair.from_public_key(source).signature_hint().hex()]]}
-            add_signer(source)
-    # print(json.dumps(sources))
-    return sources
-
-
-def add_signer(signer):
-    with db_pool() as db_session:
-        db_signer = db_session.query(Signers).filter(Signers.public_key == signer).first()
-        if db_signer is None:
-            hint = Keypair.from_public_key(signer).signature_hint().hex()
-            db_session.add(Signers(username='FaceLess', public_key=signer,
-                                   signature_hint=hint))
-            db_session.commit()
+    return await render_template('tabler_sign_add.html',
+                                 xdr=xdr,
+                                 description=description,
+                                 memo=memo)
 
 
 @blueprint.route('/sign_tools/<tr_hash>', methods=('GET', 'POST'))
@@ -183,38 +73,54 @@ async def show_transaction(tr_hash):
     transaction_env = TransactionEnvelope.from_xdr(transaction.body,
                                                    network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
 
-    admin_weight = await check_user_weight(need_flash=False)
-    if admin_weight > 0:
-        tg_id = session['userdata']['id']
-
+    admin_weight = 2 if await check_user_in_sign(tr_hash) else 0
+    if 'userdata' in session and 'username' in session['userdata']:
+        user_id = int(session['userdata']['id'])
         with db_pool() as db_session:
             alert = db_session.query(Alerts).filter(Alerts.transaction_hash == tr_hash,
-                                                    Alerts.tg_id == tg_id).first()
+                                                    Alerts.tg_id == user_id).first()
     else:
-        alert = None
+        user_id = 0
+        alert = False
 
     try:
         json_transaction = json.loads(transaction.json)
     except:
         await flash('BAD xdr. Can`t load')
-        resp = await render_template('sign_add.html', tx_description='', tx_body='')
+        resp = await render_template('tabler_sign_add.html', tx_description='', tx_body='')
         return resp
 
     if request.method == 'POST':
         form_data = await request.form
         tx_body = form_data.get('tx_body') or form_data.get('xdr')
-        # Вызов функции parse_xdr_for_signatures и ожидание её результата
-        result = await parse_xdr_for_signatures(tx_body)
+        signature_id = form_data.get('signature_id')
+        hide_action = form_data.get('hide')
 
-        # Обработка результатов
-        if result["SUCCESS"]:
-            # Если SUCCESS == True, обработать каждое сообщение как 'good'
-            for msg in result["MESSAGES"]:
-                await flash(msg, 'good')
-        else:
-            # Если SUCCESS == False, обработать каждое сообщение без указания категории
-            for msg in result["MESSAGES"]:
-                await flash(msg)
+        if signature_id and hide_action is not None:
+            # Проверяем, является ли пользователь администратором
+            if admin_weight > 0:
+                hide = 1 if hide_action == 'true' else 0
+                with db_pool() as db_session:
+                    signature_to_update = db_session.query(Signatures).filter(Signatures.id == signature_id).first()
+                    if signature_to_update:
+                        signature_to_update.hidden = hide
+                        db_session.commit()
+            else:
+                await flash('You do not have permission to perform this action.')
+
+        # дальше уже только если есть tx_body
+        if tx_body is not None:
+            result = await parse_xdr_for_signatures(tx_body)
+
+            # Обработка результатов
+            if result["SUCCESS"]:
+                # Если SUCCESS == True, обработать каждое сообщение как 'good'
+                for msg in result["MESSAGES"]:
+                    await flash(msg, 'good')
+            else:
+                # Если SUCCESS == False, обработать каждое сообщение без указания категории
+                for msg in result["MESSAGES"]:
+                    await flash(msg)
 
     signers_table = []
     bad_signers = []
@@ -227,7 +133,10 @@ async def show_transaction(tr_hash):
         for signer in sorted_signers:
             with db_pool() as db_session:
                 signature = db_session.query(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
-                    Signatures.transaction_hash == transaction.hash, Signers.public_key == signer[0]).first()
+                    Signatures.transaction_hash == transaction.hash,
+                    Signers.public_key == signer[0],
+                    Signatures.hidden != 1
+                ).first()
                 db_signer = db_session.query(Signers).filter(Signers.public_key == signer[0]).first()
                 signature_dt = db_session.query(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
                     Signers.public_key == signer[0]).order_by(Signatures.add_dt.desc()).first()
@@ -264,7 +173,7 @@ async def show_transaction(tr_hash):
             signer = db_session.query(Signers).filter(
                 Signers.id == signature.signer_id).first()
             username = signer.username if signer else None
-            signatures.append([signature.id, signature.add_dt, username, signature.signature_xdr])
+            signatures.append([signature.id, signature.add_dt, username, signature.signature_xdr, signature.hidden])
     #    from stellar_sdk import DecoratedSignature
     #    from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
     #    transaction_env.signatures.append(
@@ -293,7 +202,7 @@ async def show_transaction(tr_hash):
                     if result != 'op_success':
                         await flash(f'Error in operation {i}: {result}')
 
-                        failed_operation_dict = '<br>'.join(decode_xdr_to_text(transaction.body, only_op_number=i))
+                        failed_operation_dict = '<br>'.join(await decode_xdr_to_text(transaction.body, only_op_number=i))
                         await flash(Markup(f'Details of failed operation: {failed_operation_dict}'))
 
                         break
@@ -302,8 +211,8 @@ async def show_transaction(tr_hash):
             await flash("Failed to send. The error is unclear")
             await flash(f'{e}')
 
-    resp = await render_template('sign_sign.html', tx_description=transaction.description,
-                                 tx_body=transaction.body, tx_hash=transaction.hash,
+    resp = await render_template('tabler_sign_sign.html', tx_description=transaction.description,
+                                 tx_body=transaction.body, tx_hash=transaction.hash, user_id=user_id,
                                  bad_signers=set(bad_signers), signatures=signatures,
                                  signers_table=signers_table, uuid=transaction.uuid, alert=alert,
                                  tx_full=transaction_env.to_xdr(), admin_weight=admin_weight,
@@ -389,29 +298,7 @@ async def start_show_all_transactions():
         transactions = transactions_query.offset(offset).limit(limit).all()
         next_page = next_page + 1 if len(transactions) == limit else None
 
-        return await render_template('sign_all.html', transactions=transactions, next_page=next_page)
-
-
-@blueprint.route('/edit_xdr/<tr_hash>', methods=('GET', 'POST'))
-async def edit_xdr(tr_hash):
-    session['return_to'] = request.url
-    if len(tr_hash) != 64 and len(tr_hash) != 32:
-        abort(404)
-
-    with db_pool() as db_session:
-        if len(tr_hash) == 64:
-            transaction = db_session.query(Transactions).filter(Transactions.hash == tr_hash).first()
-        else:
-            transaction = db_session.query(Transactions).filter(Transactions.uuid == tr_hash).first()
-
-    if transaction is None:
-        return 'Transaction not exist =('
-
-    encoded_xdr = decode_xdr_to_base64(transaction.body)
-    link = f'https://laboratory.stellar.org/#txbuilder?params={encoded_xdr}&network=public'
-
-    resp = await render_template('edit_xdr.html', tx_body=link)
-    return resp
+        return await render_template('tabler_sign_all.html', transactions=transactions, next_page=next_page)
 
 
 @blueprint.route('/decode/<tr_hash>', methods=('GET', 'POST'))
@@ -428,34 +315,50 @@ async def decode_xdr(tr_hash):
     if transaction is None:
         return 'Transaction not exist =('
 
-    encoded_xdr = decode_xdr_to_text(transaction.body)
+    encoded_xdr = await decode_xdr_to_text(transaction.body)
 
-    # resp = await make_response(render_template('edit_xdr.html', tx_body=link))
     return ('<br>'.join(encoded_xdr) + '<br><br><br>').replace('\n', '<br>').replace('  ', '&nbsp;&nbsp;')
 
 
 @blueprint.route('/add_alert/<tr_hash>', methods=('GET', 'POST'))
 async def add_alert(tr_hash):
     if len(tr_hash) != 64 and len(tr_hash) != 32:
-        abort(404)
+        return jsonify({'success': False, 'message': 'Invalid transaction hash'})
 
-    if (await check_user_weight()) == 0:
-        abort(404)
+    if 'userdata' in session and 'username' in session['userdata']:
+        tg_id = session['userdata']['id']
+    else:
+        return jsonify({'success': False, 'message': 'Not authorized'})
 
-    tg_id = session['userdata']['id']
+    # if not await check_user_in_sign(tr_hash):
+    #     return jsonify({'success': False, 'message': 'User not found in signers'})
 
-    with db_pool() as db_session:
-        alert = db_session.query(Alerts).filter(Alerts.transaction_hash == tr_hash,
-                                                Alerts.tg_id == tg_id).first()
-        if alert is None:
-            alert = Alerts(tg_id=tg_id, transaction_hash=tr_hash)
-            db_session.add(alert)
-            db_session.commit()
-            return '[+] Alert me'
-        else:
-            db_session.delete(alert)
-            db_session.commit()
-            return '[ ] Alert me'
+    try:
+        with db_pool() as db_session:
+            alert = db_session.query(Alerts).filter(Alerts.transaction_hash == tr_hash,
+                                                    Alerts.tg_id == tg_id).first()
+            if alert is None:
+                alert = Alerts(tg_id=tg_id, transaction_hash=tr_hash)
+                db_session.add(alert)
+                db_session.commit()
+                return jsonify({
+                    'success': True,
+                    'icon': 'ti-bell-ringing',
+                    'message': 'Alert added successfully'
+                })
+            else:
+                db_session.delete(alert)
+                db_session.commit()
+                return jsonify({
+                    'success': True,
+                    'icon': 'ti-bell-off',
+                    'message': 'Alert removed successfully'
+                })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'An error occurred: {str(e)}'
+        })
 
 
 def alert_singers(tr_hash, small_text, tx_description):
@@ -468,6 +371,5 @@ def alert_singers(tr_hash, small_text, tx_description):
 
 
 if __name__ == '__main__':
-    xdr = 'AA'
+    x9dr = 'AA'
     # r = asyncio.run(parse_xdr_for_signatures(xdr))
-    print(extract_sources(xdr))

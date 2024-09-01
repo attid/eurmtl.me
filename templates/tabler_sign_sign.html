@@ -1,0 +1,398 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}{{ tx_description }}{% endblock %}
+
+{% block content %}
+
+<div class="page-body">
+    <div class="container-xl">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title">{{ tx_description }}</h3>
+
+                <div class="btn-group d-flex flex-wrap mb-3 ">
+                    <button class="btn btn-primary me-2 mt-2" onclick="copy_url()">Copy URL <i class="ti ti-copy"></i></button>
+                    <a href="https://laboratory.stellar.org/#txsigner?network=public" class="btn btn-primary me-2 mt-2"
+                       target="_blank">Open Laboratory <i class="ti ti-external-link"></i></a>
+                    <a href="https://t.me/MyMTLWalletBot?start=sign_{{ uuid }}" class="btn btn-primary me-2 mt-2" target="_blank">Open
+                        at MyMTLWalletBot <i class="ti ti-send"></i></a>
+                    <a href="?send" class="btn btn-primary me-2 mt-2">Send to Stellar <i class="ti ti-send"></i></a>
+                </div>
+            </div>
+        </div>
+
+        {% if publish_state[0] == 1 %}
+        <div class="alert alert-success mt-3" role="alert">
+            <h4 class="alert-title">Transaction Published</h4>
+            <p><a href="https://stellar.expert/explorer/public/tx/{{ tx_hash }}" class="alert-link">Transaction is
+                published at {{ publish_state[1] }}</a></p>
+        </div>
+        {% endif %}
+
+        {% if publish_state[0] == 10 %}
+        <div class="alert alert-danger mt-3" role="alert">
+            <h4 class="alert-title">Transaction Error</h4>
+            <p><a href="https://stellar.expert/explorer/public/tx/{{ tx_hash }}" class="alert-link text-danger">Transaction
+                is published with error at {{ publish_state[1] }}</a></p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<form action="" method="post" id="txForm">
+    <div class="mb-3">
+        <label class="form-label" for="tx_body">Transaction body</label>
+        <textarea id="tx_body" name="tx_body" class="form-control"
+                  placeholder="Transaction body with new signatures"></textarea>
+    </div>
+
+    <div class="mb-3" id="signP" style="display: none;">
+        <label class="form-label" for="private_key">Private Key</label>
+        <input type="password" id="private_key" name="private_key" class="form-control" placeholder="Private key with S"
+               value="" oninput="sign_tx()" onpaste="sign_tx()" autocomplete="off">
+    </div>
+
+    <div class="btn-group d-flex flex-wrap mb-3 ">
+        <button type="button" class="btn btn-primary me-2" onclick="paste_tx()">
+            <i class="ti ti-clipboard me-2 mt-2"></i>Paste Transaction
+        </button>
+        <button type="submit" class="btn btn-primary me-2">
+            <i class="ti ti-reload me-2 mt-2"></i>Update
+        </button>
+        <button type="button" class="btn btn-info me-2" onclick="sign_tx()" style="display: none;" id="signButton">
+            <i class="ti ti-pencil me-2 mt-2"></i>Sign
+        </button>
+        <button type="button" class="btn btn-warning" onclick="show_sign_div()" id="signButton0">
+            <i class="ti ti-pencil me-2 mt-2"></i>Sign Here
+        </button>
+    </div>
+</form>
+
+
+{% if publish_state[0] == 1 %}
+<div class="alert alert-success">
+    <h4 class="alert-title">
+        <a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}" class="alert-link">Transaction is published at
+            {{publish_state[1]}}</a>
+    </h4>
+    <p>You don't need to sign it. But you can if you want. ^_^</p>
+</div>
+{% endif %}
+{% if publish_state[0] == 10 %}
+<div class="alert alert-danger">
+    <h4 class="alert-title">
+        <a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}" class="alert-link text-danger">Transaction is
+            published with error at {{publish_state[1]}}</a>
+    </h4>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-body">
+        <p id="defXdrDiv" class="tx-body text-break user-select-all cursor-pointer">{{ tx_body }}</p>
+    </div>
+</div>
+
+<div class="btn-group d-flex flex-wrap mb-3 ">
+    <button class="btn btn-primary me-2 mt-2" onclick="copy_tx()">
+        <i class="ti ti-copy me-2"></i>Copy Transaction
+    </button>
+    <button class="btn btn-info me-2 mt-2" onclick="getDecode()">
+        <i class="ti ti-code me-2"></i>Decode
+    </button>
+    {% if user_id > 0 %}
+    <button class="btn btn-warning mt-2" onclick="add_alert()" id="alert-btn">
+        <i class="ti {{ 'ti-bell-ringing' if alert else 'ti-bell-off' }} me-2" id="alert-icon"></i>
+        Alert me
+    </button>
+    {% endif %}
+</div>
+
+<div id="responseCard" class="card" style="display: none;">
+    <div class="card-body" id="responseDiv">
+        <!-- Content dynamically injected here -->
+    </div>
+</div>
+
+
+{% for record in signers_table %}
+<div class="card mt-3">
+    <div class="card-header">
+        <h3 class="card-title">Collected {{ record['has_votes'] }} from {{ record['threshold'] }} for
+            <span class="badge bg-info" title="{{ record['sources'] }}">{{ record['sources'][:4] }}..{{ record['sources'][-4:] }}</span>
+        </h3>
+    </div>
+    <div class="card-body">
+        <h4 class="card-title">Signatures</h4>
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                <tr>
+                    <th>Public key</th>
+                    <th>Telegram</th>
+                    <th>Signs days ago</th>
+                    <th>Weight</th>
+                    <th>Did sign?</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for signer in record['signers'] %}
+                <tr>
+                    <td><a href="https://stellar.expert/explorer/public/account/{{ signer[0] }}">{{ signer[0][:4] }}..{{
+                        signer[0][-8:-4] }}..{{ signer[0][-4:] }}</a></td>
+                    <td>
+                        {% if admin_weight == 0 %}
+                        FaceLess
+                        {% elif signer[1] and signer[1][0] == '@' %}
+                        <a href="https://t.me/{{ signer[1][1:] }}">{{ signer[1] }}</a>
+                        {% else %}
+                        {{ signer[1] }}
+                        {% endif %}
+                    </td>
+                    <td>{{ signer[2] }}</td>
+                    <td>{{ signer[3] }}</td>
+                    <td>
+                        {% if signer[4] %}
+                        <i class="ti ti-clock-filled icon text-success"></i>
+                        {% else %}
+                        {% if publish_state[0] > 0 %}
+                        <i class="ti ti-clock-filled icon text-danger"></i>
+                        {% else %}
+                        <i class="ti ti-clock-filled icon text-warning"></i>
+                        {% endif %}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+
+{% if admin_weight > 0 %}
+<h5 class="card-title">Those who have not yet signed:</h5>
+<div class="row">
+    <div class="col-md-2">
+        <button class="btn btn-info" onclick="copy_ignorants()">
+            <i class="ti ti-copy me-2"></i>Copy them
+        </button>
+    </div>
+    <div class="col-md-10" id="ignorants-nicks">
+        {% for signer in bad_signers %}
+        {% if signer %}
+        {% if signer[0] == '@' %}
+        <a class="badge bg-link" href="https://t.me/{{ signer[1:] }}">{{ signer }}</a>
+        {% endif %}
+        {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+
+<h4 class="card-title">Transaction Signatures</h4>
+<div class="row">
+    <div class="col-md-2">
+        <span class="fw-semibold">Number</span>
+    </div>
+    <div class="col-md-2">
+        <span class="fw-semibold">Time</span>
+    </div>
+    <div class="col-md-2">
+        <span class="fw-semibold">User</span>
+    </div>
+    <div class="col-md-4">
+        <span class="fw-semibold">Signatures</span>
+    </div>
+    <div class="col-md-2">
+        <span class="fw-semibold">Hide</span>
+    </div>
+</div>
+
+
+{% for signature in signatures %}
+<div class="row">
+    <div class="col-md-2">{{ signature[0] }}</div>
+    <div class="col-md-2">{{ signature[1] }}</div>
+    <div class="col-md-2">
+        {% if admin_weight == 0 %}
+        FaceLess
+        {% else %}
+        {{ signature[2] }}
+        {% endif %}
+    </div>
+    <div class="col-md-4">
+        <span class="tx-body">{{ signature[3] }}</span>
+    </div>
+    <div class="col-md-2">
+        {% if admin_weight > 0 %}
+        <form action="" method="post">
+            <input type="hidden" name="signature_id" value="{{ signature[0] }}">
+            <input type="hidden" name="hide" value="{{ 'false' if signature[4] == 1 else 'true' }}">
+            <button class="btn btn-icon" type="submit" name="action">
+                <i class="ti ti-{{ 'eye-off' if signature[4] == 1 else 'eye' }}"></i>
+            </button>
+        </form>
+        {% else %}
+        <i class="ti ti-{{ 'eye-off' if signature[4] == 1 else 'eye' }}"></i>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+
+{% if qr_text %}
+<div class="card mt-3">
+    <div class="card-body text-center">
+        <img src="{{ qr_img }}" alt="QR Code" class="img-fluid mb-3">
+        <br>
+        <a href="{{ qr_text }}" class="btn btn-primary">
+            <i class="ti ti-qr-code me-2"></i>Link to open QR
+        </a>
+    </div>
+</div>
+{% endif %}
+
+<h4 class="card-title">Full Transaction</h4>
+<div class="card">
+    <div class="card-body">
+        <p class="tx-body text-break user-select-all cursor-pointer">{{ tx_full }}</p>
+    </div>
+</div>
+
+<div class="btn-group d-flex flex-wrap mb-3 ">
+    <a href="/lab?import={{ tx_hash }}" class="btn btn-info  mt-2">
+        <i class="ti ti-pencil me-2"></i>Edit XDR in Eurmtl.me
+    </a>
+</div>
+
+{% endblock %}
+
+{% block bottom_scripts %}
+<script src="/static/js/stellar-sdk.min.js"></script>
+<script>
+    // Элементы DOM, к которым часто обращаемся
+    const txBodyTextarea = document.querySelector("#tx_body");
+    const defXdrDiv = document.querySelector("#defXdrDiv");
+
+    function reload_page() {
+        location.reload();
+    }
+
+    function paste_tx() {
+        if (!navigator.clipboard) {
+            showToast('Clipboard API не доступен', 'danger');
+            return;
+        }
+        navigator.clipboard.readText().then(clipText => txBodyTextarea.innerText = clipText);
+    }
+
+    async function copy_tx() {
+        if (!navigator.clipboard) {
+            showToast('Clipboard API не доступен', 'danger');
+            return;
+        }
+        await navigator.clipboard.writeText(defXdrDiv.innerText);
+        showToast('Transaction copied to clipboard', 'success');
+    }
+
+    async function copy_url() {
+        if (!navigator.clipboard) {
+            showToast('Clipboard API не доступен', 'danger');
+            return;
+        }
+        await navigator.clipboard.writeText(window.location.href);
+        showToast('URL copied to clipboard', 'success');
+    }
+
+    async function copy_ignorants() {
+        const ignorantsNicks = document.querySelector("#ignorants-nicks");
+        if (!navigator.clipboard) {
+            showToast('Clipboard API не доступен', 'danger');
+            return;
+        }
+        await navigator.clipboard.writeText(ignorantsNicks.innerText);
+        showToast('Ignorants copied to clipboard', 'success');
+    }
+
+    async function getDecode() {
+        try {
+            let response = await $.ajax({
+                url: '/decode/{{tx_hash}}',
+                method: 'GET',
+                dataType: 'html'
+            });
+            const responseDiv = $("#responseDiv");
+            const responseCard = $("#responseCard");
+            responseDiv.html(response);
+            responseCard.hide();
+            responseCard.fadeIn();
+        } catch (error) {
+            console.error('There was a problem fetching the response:', error);
+            showToast('Произошла ошибка при получении ответа', 'danger');
+        }
+    }
+
+    function show_sign_div() {
+        const signDiv = document.getElementById('signP');
+        const signButton = document.getElementById('signButton');
+        const signButton0 = document.getElementById('signButton0');
+
+        signDiv.style.display = 'block';
+        signButton.style.display = 'block';
+        signButton0.style.display = 'none';
+    }
+
+    async function sign_tx() {
+        let xdr = defXdrDiv.innerText;
+        let privateKey = document.getElementById("private_key").value;
+
+        if (!privateKey || privateKey.length < 56) {
+            showToast('Приватный ключ пуст или короче 56 символов', 'danger');
+            return;
+        }
+
+        const server = new StellarSdk.Horizon.Server('https://horizon.stellar.org');
+
+        try {
+            let sourceKeys = StellarSdk.Keypair.fromSecret(privateKey);
+            let transaction = new StellarSdk.Transaction(xdr, StellarSdk.Networks.PUBLIC);
+
+            transaction.sign(sourceKeys);
+
+            let signedXDR = transaction.toEnvelope().toXDR().toString('base64');
+            txBodyTextarea.value = signedXDR;
+
+            showToast('Transaction signed successfully', 'success');
+        } catch (error) {
+            console.error('Error signing transaction:', error);
+            showToast('Ошибка при подписании транзакции', 'danger');
+        }
+    }
+
+    async function add_alert() {
+        const alertIcon = document.getElementById("alert-icon");
+        try {
+            let response = await fetch('/add_alert/{{tx_hash}}');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            let data = await response.json();
+
+            if (data.success) {
+                // Удаляем все предыдущие классы и добавляем новый
+                alertIcon.className = `ti ${data.icon} me-2`;
+                showToast(data.message, 'success');
+            } else {
+                throw new Error(data.message);
+            }
+        } catch (error) {
+            console.error('There was a problem:', error);
+            showToast(`Ошибка: ${error.message}`, 'danger');
+        }
+    }
+</script>
+{% endblock %}

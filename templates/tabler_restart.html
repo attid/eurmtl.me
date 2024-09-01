@@ -1,0 +1,70 @@
+{% extends 'tabler_base.html' %}
+{% block page_title %}Проверка статуса сервера{% endblock %}
+{% block content %}
+<h2 class="mb-4">Проверка статуса сервера</h2>
+
+<div class="d-flex mb-4">
+    <button class="btn btn-primary me-2" onclick="checkServerMultiple()">Проверить</button>
+    <button class="btn btn-danger" onclick="restartServer()">Перезагрузить</button>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Результаты проверки</h3>
+    </div>
+    <div class="card-body">
+        <div id="status"></div>
+    </div>
+</div>
+
+<script>
+    function checkServer() {
+        return fetch('/uuid')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.text();
+            })
+            .then(data => data)
+            .catch(error => {
+                console.error('Error:', error);
+                return 'Сервер не доступен';
+            });
+    }
+
+    function checkServerMultiple() {
+        const statusDiv = document.getElementById('status');
+        statusDiv.innerHTML = ''; // Очищаем предыдущие результаты
+        let count = 0;
+
+        function singleCheck() {
+            if (count < 5) {
+                checkServer().then(result => {
+                    const statusClass = result === 'Сервер не доступен' ? 'text-danger' : 'text-success';
+                    statusDiv.innerHTML += `<div class="mb-2 ${statusClass}">Попытка ${count + 1}: ${result}</div>`;
+                    count++;
+                    setTimeout(singleCheck, 1000); // Ждем 1 секунду перед следующим запросом
+                });
+            }
+        }
+
+        singleCheck();
+    }
+
+    function restartServer() {
+        fetch('/restart', { method: 'POST' })
+            .then(response => {
+                if (response.ok) {
+                    showToast('Сервер перезагружается...', 'success');
+                } else {
+                    showToast('Нет доступа к перезагрузке сервера', 'warning');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('Ошибка при перезагрузке сервера', 'danger');
+            });
+    }
+</script>
+{% endblock %}

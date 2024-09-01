@@ -1,38 +1,33 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="row">
-    <form class="col s12 m7" method="post" action="/add_user">
-        <div class="row">
-            <div class="input-field col s12">
-                <input id="username" name="username" type="text" data-length="20" value="{{ username }}">
-                <label for="username">Username with @</label>
+<div class="columns">
+    <form class="column" method="post" action="/add_user">
+        <div class="field">
+            <label class="label" for="username">Username with @</label>
+            <div class="control">
+                <input class="input" id="username" name="username" type="text" value="{{ username }}" maxlength="20">
             </div>
         </div>
-        <div class="row">
-            <div class="input-field col s12">
-                <input id="public_key" name="public_key" type="text" data-length="56">
-                <label for="public_key">Public key starting with G</label>
+        <div class="field">
+            <label class="label" for="public_key">Public key starting with G</label>
+            <div class="control">
+                <input class="input" id="public_key" name="public_key" type="text" maxlength="56">
             </div>
         </div>
-        <button class="btn waves-effect waves-light col s4 offset-s1" type="submit" name="action">Send
-            <i class="material-icons right">send</i>
-        </button>
+        <div class="field is-grouped">
+            <div class="control is-expanded">
+                <button class="button is-primary is-fullwidth" onclick="clearData()">
+                    <span class="icon is-small">
+                        <i class="material-icons right">send</i>
+                    </span>
+                    <span>Send</span>
+                </button>
+            </div>
+        </div>
     </form>
-    <!-- Card Panel -->
-    <div class="col s12 m5">
-        <h4 class="header">New User</h4>
-        <div class="card-panel teal"><span class="white-text">А тут можно написать условия как оно работает</span>
-        </div>
-    </div>
-
 </div>
 {% endblock %}
 
 {% block bottom_scripts %}
-<script>
-    $(document).ready(function() {
-        $('input#username, input#public_key').characterCounter();
-    });
-</script>
 {% endblock %}

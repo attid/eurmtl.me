@@ -1,0 +1,157 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}Add decision{% endblock %}
+
+{% block head_scripts %}
+<script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+<link rel="stylesheet" href="https://cdn.quilljs.com/1.3.6/quill.snow.css">
+<link rel="stylesheet" href="/static/css/quill-emoji.css">
+{% endblock %}
+
+{% block content %}
+
+{% set disable_fields = user_weight < 1 %}
+
+{% if links_url %}
+<div class="list-group list-group-transparent">
+    {% if links_url[0] %}
+    <a href="{{ links_url[0][0] }}" class="list-group-item list-group-item-action">Первое чтение</a>
+    {% endif %}
+    {% if links_url[1] %}
+    <a href="{{ links_url[1][0] }}" class="list-group-item list-group-item-action">Второе чтение</a>
+    {% endif %}
+    {% if links_url[2] %}
+    <a href="{{ links_url[2][0] }}" class="list-group-item list-group-item-action">Третье чтение</a>
+    {% endif %}
+</div>
+{% endif %}
+
+<form action="" method="post">
+    <div class="row">
+        <div class="col-12 mb-3">
+            <label for="short_subject" class="form-label">Тема (В реестр)</label>
+            <input type="text" id="short_subject" name="short_subject" class="form-control" required
+                   value="{{ short_subject }}" {% if disable_fields %}disabled{% endif %}>
+        </div>
+
+        <div class="col-10 mb-3">
+            <label for="question_number" class="form-label">Номер вопроса</label>
+            <input type="text" id="question_number" name="question_number" class="form-control" required
+                   value="{{ question_number }}" {% if links_url or disable_fields %}disabled{% endif %}>
+        </div>
+        <div class="col-2 mb-3 d-flex align-items-end">
+            <button type="button" id="loadsDecisionNum" class="btn btn-sm btn-outline-primary"
+                    {% if links_url or disable_fields %}disabled{% endif %}>
+                🔍
+            </button>
+        </div>
+
+        <!-- Новый выпадающий список со статусами -->
+        <div class="col-12 mb-3">
+            <label for="status" class="form-label">Статус вопроса</label>
+            <select id="status" name="status" class="form-select" {% if disable_fields %}disabled{% endif %}>
+                <option value="" disabled>Выберите статус</option>
+                {% for value, selected in statuses %}
+                <option value="{{ value }}" {{ selected }}>{{ value }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="card col-12 mb-3 h-auto overflow-hidden">
+            <div class="card-body">
+                <input type="hidden" name="inquiry" id="inquiry">
+                <div>
+                    <h5 class="card-title">Вопрос (Идет в канал без темы как написано ниже)</h5>
+                </div>
+                <div id="editor-container" {% if disable_fields %}data-disabled="true"{% endif %}>
+                    {{ inquiry|safe }}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 mb-3">
+            <label class="form-label">Чтение</label>
+            <div class="form-check">
+                <input type="radio" id="reading1" name="reading" value="1" class="form-check-input" {{ 'checked' if
+                reading == 1 else '' }}>
+                <label for="reading1" class="form-check-label">Первое чтение</label>
+            </div>
+            <div class="form-check">
+                <input type="radio" id="reading2" name="reading" value="2" class="form-check-input" {{ 'checked' if
+                reading == 2 else '' }}>
+                <label for="reading2" class="form-check-label">Второе чтение</label>
+            </div>
+            <div class="form-check">
+                <input type="radio" id="reading3" name="reading" value="3" class="form-check-input" {{ 'checked' if
+                reading == 3 else '' }}>
+                <label for="reading3" class="form-check-label">Третье чтение</label>
+            </div>
+        </div>
+
+        <div class="col-12">
+            <button type="submit" class="btn btn-primary w-100" {% if disable_fields %}disabled{% endif %}>
+                Опубликовать<i class="ti ti-send ms-2"></i>
+            </button>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block bottom_scripts %}
+<script src="/static/js/quill-emoji.js"></script>
+
+<script>
+    var form = document.querySelector('form');
+    form.onsubmit = function() {
+        var html = quill.root.innerHTML;
+        document.getElementById('inquiry').value = html;
+    };
+
+    var toolbarOptions = {
+        container: [
+            ['bold', 'italic', 'underline', 'strike', 'code'],
+            ['link'],
+            ['clean'],
+            ['emoji']
+        ],
+        handlers: {
+            'emoji': function () {}
+        }
+    }
+
+    var quill = new Quill('#editor-container', {
+        modules: {
+            "toolbar": toolbarOptions,
+            "emoji-toolbar": true,
+            "emoji-shortname": true
+        },
+        theme: 'snow',
+    });
+
+    async function getNumber() {
+        if (document.querySelector("#question_number").disabled) {
+            return; // Exit the function if disabled
+        }
+
+        fetch(`/decision/number`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error("Network response was not ok");
+            }
+            return response.json();
+        })
+        .then(data => {
+            document.querySelector("#question_number").value = data.number;
+            var currentText = quill.root.innerHTML; // Fetch current content from Quill editor
+            var shortSubject = document.querySelector("#short_subject").value;
+            quill.root.innerHTML = "<b>Вопрос " + data.number + ": "+ shortSubject +"</b><br> " + currentText; // Update content in Quill editor
+            M.updateTextFields(); // Обновляем текстовые поля
+        })
+        .catch(error => {
+            console.log("There was a problem with the fetch operation:", error.message);
+        });
+    }
+    document.getElementById('loadsDecisionNum').addEventListener('click', getNumber);
+
+</script>
+{% endblock %}

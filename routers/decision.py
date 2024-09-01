@@ -1,22 +1,23 @@
-import asyncio
 import uuid
+
 from quart import Blueprint, request, render_template, flash, jsonify, session, redirect, abort
 from sulguk import transform_html
 
-from config_reader import config
-from db.models import Decisions
-from db.pool import db_pool
+from config.config_reader import config
+from db.sql_models import Decisions
+from db.sql_pool import db_pool
 from utils.gspread_utils import gs_update_decision, gs_get_last_id, gs_save_new_decision
 from utils.stellar_utils import check_user_weight
 from utils.telegram_utils import send_telegram_message, edit_telegram_message
 
 blueprint = Blueprint('decision', __name__)
 
-chat_ids = (0, 1863399780, 1652080456, 1649743884)  # -100
 statuses = ("❗️ #active", "☑️ #next", "✅ #done", "🔂 #resign", "🔇 #canceled")
 
-
-#chat_ids = (0, 1837984392, 1837984392, 1837984392)  # -100 test
+if config.test_mode:
+    chat_ids = (0, 1837984392, 1837984392, 1837984392)  # -100 test
+else:
+    chat_ids = (0, 1863399780, 1652080456, 1649743884)  # -100
 
 
 def get_full_text(status, start_text, links_url, uuid_url, username):
@@ -42,6 +43,8 @@ async def cmd_add_decision():
     session['return_to'] = request.url
     inquiry = '<br><b>Предложение:</b> <br><br><b>Обоснование:</b> <br>'
 
+    user_weight = await check_user_weight(False)
+
     if request.method == 'POST':
         form_data = await request.form
         question_number = form_data['question_number']
@@ -51,10 +54,6 @@ async def cmd_add_decision():
         reading = int(form_data['reading'])
 
         user_weight = await check_user_weight()
-        # for testing
-        # user_weight = 5
-        # session['userdata'] = {'username': 'iTolstov'}
-        # end for
         if user_weight > 0:
 
             d_uuid = uuid.uuid4().hex
@@ -87,8 +86,9 @@ async def cmd_add_decision():
                 return redirect(f'/d/{d_uuid}')
     # resp = await make_response()
     statuses_list = [(status, "") for status in statuses]
-    return await render_template('decision.html', question_number=question_number,
-                                 short_subject=short_subject, inquiry=inquiry, reading=reading, statuses=statuses_list)
+    return await render_template('tabler_decision.html', question_number=question_number,
+                                 short_subject=short_subject, inquiry=inquiry, reading=reading, statuses=statuses_list,
+                                 user_weight=user_weight)
 
 
 @blueprint.route('/d/<decision_id>', methods=('GET', 'POST'))
@@ -111,13 +111,9 @@ async def cmd_show_decision(decision_id):
                  db_session.query(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 2).first(),
                  db_session.query(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 3).first())
 
+    user_weight = await check_user_weight(False)
     if request.method == 'POST':
         user_weight = await check_user_weight()
-        # for testing
-        # user_weight = 5
-        # session['userdata'] = {'username': 'iTolstov'}
-        # end for
-
         if user_weight > 0:
             form_data = await request.form
             question_number = decision.num
@@ -135,7 +131,8 @@ async def cmd_show_decision(decision_id):
                     decision.full_text = inquiry
                     decision.status = status
                     db_session.commit()
-                    tg_inquiry = transform_html(get_full_text(status, inquiry, links_url, decision.uuid, decision.username))
+                    tg_inquiry = transform_html(
+                        get_full_text(status, inquiry, links_url, decision.uuid, decision.username))
                     edit_telegram_message(chat_id=int(f'-100{chat_ids[reading]}'),
                                           text=tg_inquiry.text, entities=tg_inquiry.entities,
                                           message_id=decision.url.split('/')[-1])
@@ -180,8 +177,8 @@ async def cmd_show_decision(decision_id):
 
     statuses_list = [(status_, "selected" if status_ == status else "") for status_ in statuses]
 
-    return await render_template('decision.html', question_number=question_number,
-                                 statuses=statuses_list,
+    return await render_template('tabler_decision.html', question_number=question_number,
+                                 statuses=statuses_list, user_weight=user_weight,
                                  short_subject=short_subject, inquiry=inquiry, reading=reading, links_url=links_url)
 
 
