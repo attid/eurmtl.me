@@ -3,9 +3,9 @@ from stellar_sdk import Network
 from stellar_sdk.exceptions import BadRequestError
 from stellar_sdk.sep.stellar_web_authentication import build_challenge_transaction
 
-from config_reader import config
-from db.models import Addresses
-from db.pool import db_pool
+from config.config_reader import config
+from db.sql_models import Addresses
+from db.sql_pool import db_pool
 from quart_cors import cors
 
 blueprint = Blueprint('federal', __name__)

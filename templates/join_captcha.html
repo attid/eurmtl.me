@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Captcha Test</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/1.0.0/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    {% if v2 %}
+    <script src="https://smartcaptcha.yandexcloud.net/captcha.js" defer></script>
+    {% else %}
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+    {% endif %}
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+<section class="section">
+    <div class="container">
+        <h1 class="title">Captcha Test</h1>
+        <input type="hidden" id="chat_id" value="{{chat_id}}">
+        {% if v2 %}
+        <input type="hidden" id="v2" value="true">
+        <div class="field">
+            <div style="height: 100px" id="captcha-container" class="smart-captcha"
+                 data-sitekey="ysc1_6A7zX3FlcPZ5UZFQNx1Ez1wcdmfiUEcuzf17hLRI9988d016"></div>
+        </div>
+        {% else %}
+        <input type="hidden" id="v2" value="false">
+        <div class="field">
+            <div class="cf-turnstile" data-sitekey="0x4AAAAAAAeiGy002XtQOLt3"></div>
+        </div>
+        {% endif %}
+        <div class="field">
+            <div class="columns is-mobile is-centered">
+                <div class="column is-half">
+                    <button class="button is-primary is-fullwidth" onclick="submitCaptcha()">Войти</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<script>
+    async function submitCaptcha() {
+        const chatId = document.getElementById('chat_id').value;
+        const v2 = document.getElementById('v2').value;
+        {% if v2 %}
+            const token = window.smartCaptcha.getResponse();
+        {% else %}
+            const token = document.querySelector('[name="cf-turnstile-response"]').value;
+        {% endif %}
+        const initData = Telegram.WebApp.initData;
+
+        const response = await fetch('/JoinCaptcha', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                initData: initData,
+                chatId: chatId,
+                v2: v2,
+                token: token
+            }),
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+            Telegram.WebApp.showAlert('Все получилось!',closeCaptcha);
+        } else {
+            console.error(result);
+        }
+    }
+    async function closeCaptcha() {
+        Telegram.WebApp.close();
+    }
+
+</script>
+</body>
+</html>

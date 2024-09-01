@@ -2,12 +2,15 @@ import os
 import signal
 import subprocess
 import uuid
+
 from quart import Blueprint, send_file, request, session, redirect, render_template
 
-from db.models import Signers
-from db.pool import db_pool
+from config.config_reader import config
+from db.sql_models import Signers
+from db.sql_pool import db_pool
 from utils.stellar_utils import check_user_weight
 from utils.telegram_utils import check_response
+from utils.www_utils import get_ip
 
 blueprint = Blueprint('index', __name__)
 
@@ -19,26 +22,7 @@ async def cmd_index():
 
 @blueprint.route('/mytest', methods=('GET', 'POST'))
 async def cmd_mytest():
-    # data = {
-    #     'id': 25,
-    #     'first_name': 'i',
-    #     'last_name': 'l',
-    #     'username': 'itolstov',
-    #     'photo_url': 'ya.ru',
-    #     'auth_date': '010101',
-    #     'hash': '321321'
-    # }
-    # session['userdata'] = data
-    return '''
-    <body>
-        <script async src="https://telegram.org/js/telegram-widget.js?21" 
-            data-telegram-login="MyMTLWalletBot" 
-            data-size="small" 
-            data-auth-url="https://eurmtl.me/login" 
-            data-request-access="write">
-        </script>
-    </body>    
-    '''
+    return '***'
 
 
 @blueprint.route('/uuid', methods=('GET', 'POST'))
@@ -64,21 +48,26 @@ async def cmd_send_err():
 
 @blueprint.route('/restart', methods=('GET', 'POST'))
 async def restart():
-    if (await check_user_weight()) > 0:
-        username = '@' + session['userdata']['username']
-        if username.lower() == '@itolstov':
-            cmd = f"/usr/bin/ps -o ppid= -p {os.getpid()}"
-            result = subprocess.run(cmd.split(), stdout=subprocess.PIPE)
-            parent_pid = int(result.stdout.decode('utf-8').strip())
+    if request.method == 'POST':
+        if (await check_user_weight()) > 0:
+            username = '@' + session['userdata']['username']
+            if username.lower() == '@itolstov':
+                cmd = f"/usr/bin/ps -o ppid= -p {os.getpid()}"
+                result = subprocess.run(cmd.split(), stdout=subprocess.PIPE)
+                parent_pid = int(result.stdout.decode('utf-8').strip())
 
-            # Отправить сигнал SIGTERM родительскому процессу
-            os.kill(parent_pid, signal.SIGTERM)
+                # Отправить сигнал SIGTERM родительскому процессу
+                os.kill(parent_pid, signal.SIGTERM)
 
-            return "Restarting..."
+                return "Restarting..."
+        else:
+            return "need authority", 403
+    else:
+        return await render_template('tabler_restart.html')
 
 
-@blueprint.route('/login')
-async def login_telegram():
+@blueprint.route('/authorize')
+async def authorize():
     data = {
         'id': request.args.get('id', None),
         'first_name': request.args.get('first_name', None),
@@ -88,9 +77,11 @@ async def login_telegram():
         'auth_date': request.args.get('auth_date', None),
         'hash': request.args.get('hash', None)
     }
-    if check_response(data) and data['username']:
+    if check_response(data, config.skynet_token.get_secret_value()) and data['username']:
         # Authorize user
         session['userdata'] = data
+        session["user_id"] = data["id"]
+
         with db_pool() as db_session:
             user = db_session.query(Signers).filter(Signers.username == data['username']).first()
             if user and user.tg_id != data['id']:
@@ -105,7 +96,24 @@ async def login_telegram():
         return 'Authorization failed'
 
 
+@blueprint.route('/login')
+async def login():
+    return await render_template('tabler_login.html')
+
+
 @blueprint.route('/logout')
 async def logout():
     session.pop('userdata', None)
+    session.pop('user_id', None)
     return redirect('/lab')
+
+
+@blueprint.route('/bor', methods=('GET', 'POST'))
+@blueprint.route('/bsn', methods=('GET', 'POST'))
+async def get_bsn():
+    return await render_template('bsn.html')
+
+
+@blueprint.route('/myip')
+async def myip():
+    return await get_ip()

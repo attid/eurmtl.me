@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import String, Integer, Column, Text, DateTime, create_engine, ForeignKey, BigInteger
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from config_reader import config
+from config.config_reader import config
 
 Base = declarative_base()
 metadata = Base.metadata
@@ -49,15 +49,16 @@ class Signatures(Base):
     transaction_hash = Column('transaction_hash', String(64), ForeignKey('t_transactions.hash'))
     signer_id = Column('signer_id', Integer(), ForeignKey('t_signers.id'))
     add_dt = Column('add_dt', DateTime(), default=datetime.now)
-    Column('updated_dt', DateTime(), default=datetime.now, onupdate=datetime.now)
+    hidden = Column('hidden', Integer(), default=0)
+    # Column('updated_dt', DateTime(), default=datetime.now, onupdate=datetime.now)
 
 
-class EurmtlDicts(Base):
-    __tablename__ = 'eurmtl_dicts'
-    id = Column(Integer, primary_key=True)
-    dict_key = Column(String(64), nullable=False)
-    dict_value = Column(String(64), nullable=False)
-    dict_type = Column(Integer, nullable=False)
+# class EurmtlDicts(Base):
+#     __tablename__ = 'eurmtl_dicts'
+#     id = Column(Integer, primary_key=True)
+#     dict_key = Column(String(64), nullable=False)
+#     dict_value = Column(String(64), nullable=False)
+#     dict_type = Column(Integer, nullable=False)
 
 
 class Decisions(Base):
@@ -97,6 +98,14 @@ class WebEditorLogs(Base):
     dt = Column(DateTime(), default=datetime.now)
 
 
+class MMWBTransactions(Base):
+    __tablename__ = 't_mmwb_transactions'
+    uuid = Column('uuid', String(32), primary_key=True, default=lambda: uuid.uuid4().hex)
+    tg_id = Column('tg_id', BigInteger(), nullable=True)
+    json = Column('json', Text(), nullable=True)
+    dt = Column(DateTime(), default=datetime.now)
+
+
 class Sep6Transactions(Base):
     __tablename__ = 't_sep6_transactions'
     uuid = Column('uuid', String(32), default=lambda: uuid.uuid4().hex, primary_key=True)
@@ -113,6 +122,6 @@ class Sep6Transactions(Base):
 
 if __name__ == '__main__':
     pass
-    engine = create_engine(config.db_dns, pool_pre_ping=True)
+    engine = create_engine(config.db_dsn, pool_pre_ping=True)
     db_pool = sessionmaker(bind=engine)
     Base.metadata.create_all(engine)

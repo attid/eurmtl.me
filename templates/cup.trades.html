@@ -2,7 +2,7 @@
 
 {% block content %}
 
-<table class="highlight">
+<table class="table is-striped is-narrow is-hoverable is-fullwidth">
     <thead>
     <tr>
         <th>Price ({{assets[1].code}})</th>
@@ -14,9 +14,9 @@
     {% for trade in trades %}
     <tr>
         {% if trade['up'] %}
-        <td class="green-text">⬆ {{trade['price']}}</td>
+        <td class="has-text-success">⬆ {{trade['price']}}</td>
         {% else %}
-        <td class="red-text">⬇ {{trade['price']}}</td>
+        <td class="has-text-danger">⬇ {{trade['price']}}</td>
         {% endif %}
         <td>{{trade['amount']}}</td>
         <td>{{trade['minutes_ago']}}m</td>

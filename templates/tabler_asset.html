@@ -1,0 +1,59 @@
+{% extends 'tabler_base.html' %}
+
+{% block nav %}
+{% endblock %}
+
+{% block page_title %}Add Trustline{% endblock %}
+
+{% block content %}
+{% if qr_text %}
+<div class="card">
+    <div class="card-body">
+        <h2 class="card-title text-center">Opening trustline for token {{ asset_code }}</h2>
+        <p class="text-center mb-3">from issuer</p>
+        <p class="text-center mb-4">
+            <span id="text-to-copy" class="font-weight-bold">{{ asset_issuer }}</span>
+        </p>
+
+        <div class="btn-group d-flex mb-3 flex-wrap">
+            <a href="https://stellar.expert/explorer/public/asset/{{ asset_code }}-{{ asset_issuer }}" target="_blank"
+               class="btn btn-primary me-2 mt-2">
+                View on stellar.expert
+            </a>
+            <a href="{{ qr_text }}" target="_blank" class="btn btn-info me-2 mt-2">
+                Add to Lobstr
+            </a>
+            <a href="https://t.me/MyMTLWalletBot?start=asset_{{ asset_code }}-0" target="_blank"
+               class="btn btn-success me-2 mt-2">
+                Add to MMWB
+            </a>
+        </div>
+
+        <div class="text-center">
+            <img src="{{ qr_img }}" alt="{{ asset_code }}-{{ asset_issuer }}" class="img-fluid"/>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-warning" role="alert">
+    No QR code information available.
+</div>
+{% endif %}
+{% endblock %}
+
+{% block bottom_scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var textToCopy = document.getElementById('text-to-copy');
+      if (textToCopy) {
+        textToCopy.addEventListener('click', function() {
+          navigator.clipboard.writeText(this.textContent).then(function() {
+            alert('Issuer address copied to clipboard!');
+          }).catch(function(err) {
+            console.error('Could not copy text: ', err);
+          });
+        });
+      }
+    });
+</script>
+{% endblock %}

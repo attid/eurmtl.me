@@ -1,16 +1,15 @@
 import os
 import uuid
-import pyqrcode
 from datetime import datetime, timedelta
 from urllib.parse import quote_plus
-from PIL import ImageDraw, Image, ImageFont
 
+import pyqrcode
 import qrcode
+from PIL import ImageDraw, Image, ImageFont
 from quart import Blueprint, request, render_template, flash
-from config_reader import start_path
-from db.pool import db_pool
-from db.requests import db_get_dict, EURMTLDictsType, db_save_dict
-from utils.gspread_utils import gs_get_asset
+
+from config.config_reader import start_path
+from db.mongo import get_asset_by_code
 from utils.stellar_utils import add_trust_line_uri, float2str, xdr_to_uri
 
 blueprint = Blueprint('sellers', __name__)
@@ -66,33 +65,22 @@ async def cmd_asset(asset_code):
         await flash('BAD asset code')
 
     global last_update_time
-    assets = db_get_dict(db_pool(), EURMTLDictsType.Assets)
-
-    if asset_code not in assets:
-        if datetime.now() - last_update_time > timedelta(minutes=15):
-            issuer = await gs_get_asset(asset_code)
-            if issuer:
-                assets[asset_code] = issuer
-                db_save_dict(db_pool(), EURMTLDictsType.Assets, assets)
-            last_update_time = datetime.now()
-
-    if asset_code in assets:
-        qr_text = add_trust_line_uri(assets[asset_code], asset_code, assets[asset_code])
+    asset = await get_asset_by_code(asset_code, True)
+    if asset:
+        qr_text = add_trust_line_uri(asset.issuer, asset.code, asset.issuer)
         qr_img = f'/static/qr/{asset_code}.png'
         # если файл не существует, то создаем его
         if not os.path.exists(start_path + qr_img):
             create_beautiful_code(qr_img, asset_code, qr_text)
-        # qr = pyqrcode.create(qr_text)
-        # qr.svg(start_path + qr_img, scale=4)
 
-        resp = await render_template('asset.html', asset_code=asset_code, asset_issuer=assets[asset_code],
-                                     qr_text=qr_text, qr_img=qr_img)
+        resp = await render_template('tabler_asset.html', asset_code=asset_code,
+                                     asset_issuer=asset.issuer, qr_text=qr_text, qr_img=qr_img)
         return resp
 
     else:
         await flash('BAD asset code')
 
-    resp = await render_template('asset.html')
+    resp = await render_template('tabler_asset.html')
     return resp
 
 

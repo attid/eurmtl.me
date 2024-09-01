@@ -3,7 +3,7 @@
 // @namespace   http://tampermonkey.net/
 // @match       https://stellar.expert/*
 // @grant       none
-// @version     1.05
+// @version     1.07
 // @description Change links at Stellar Expert
 // @author      skynet
 // @updateURL   https://eurmtl.me/static/Good_links_at_Stellar_Expert.user.js
@@ -81,6 +81,8 @@ function addExternalLinks(accountAddress) {
     const buttonStellarchain = document.createElement('a');
     const buttonScopuly = document.createElement('a');
     const buttonCalcOrders = document.createElement('a');
+    const buttonWhereSigner = document.createElement('a');
+    const buttonBSN = document.createElement('a');
 
     // Настройка кнопки для Stellarchain
     buttonStellarchain.href = `https://stellarchain.io/accounts/${accountAddress}`;
@@ -98,8 +100,20 @@ function addExternalLinks(accountAddress) {
     // Настройка кнопки Calc Orders
     buttonCalcOrders.href = '#';
     buttonCalcOrders.innerText = 'Reload Scripts';
-    buttonCalcOrders.addEventListener('click', () => ReloadScripts(accountAddress));
+    buttonCalcOrders.addEventListener('click', () => reloadScripts(accountAddress));
     buttonCalcOrders.classList.add('button', 'small', 'text-small', 'skynet-button');
+
+    // Настройка кнопки Calc Orders
+    buttonWhereSigner.href = '#';
+    buttonWhereSigner.innerText = '🔑';
+    buttonWhereSigner.addEventListener('click', () => loadWhereSigner(accountAddress));
+    buttonWhereSigner.classList.add('button', 'small', 'text-small', 'skynet-button');
+
+    // Настройка кнопки Calc Orders
+    buttonBSN.href = '#';
+    buttonBSN.innerText = 'BSN';
+    buttonBSN.addEventListener('click', () => loadBSN(accountAddress));
+    buttonBSN.classList.add('button', 'small', 'text-small', 'skynet-button');
 
     // Поиск элемента для добавления кнопок
     const parentElement = document.querySelector('h1, h2'); // Измените селектор в соответствии с реальным расположением на странице
@@ -109,6 +123,8 @@ function addExternalLinks(accountAddress) {
         parentElement.appendChild(buttonStellarchain);
         parentElement.appendChild(buttonScopuly);
         parentElement.appendChild(buttonCalcOrders);
+        parentElement.appendChild(buttonWhereSigner);
+        parentElement.appendChild(buttonBSN);
     }
 
 }
@@ -243,7 +259,62 @@ function checkPage() {
     }
 }
 
-async function ReloadScripts(accountAddress) {
+
+function loadWhereSigner(accountAddress) {
+    var myHtmlContent = '<h4 style="margin-bottom: 0px;">Where Account Signer</h4>'
+    myHtmlContent += '<ul class="text-small condensed">';
+    var url = 'https://horizon.stellar.org/accounts/?signer=' + accountAddress + '&limit=200';
+
+    fetch(url).then(response => response.json()).then(data => {
+        data._embedded.records.forEach(record => {
+            var accountId = record.id;
+            myHtmlContent += '<li><a title="' + accountId + '" aria-label="' + accountId + '" class="account-address word-break" href="/explorer/public/account/' + accountId + '"><span class="account-key">' + accountId.slice(0, 4) + '…' + accountId.slice(-4) + '</span></a></li>';
+        });
+        myHtmlContent += '</ul>';
+        var allAccountBalancesDiv = document.querySelector('.all-account-balances');
+        if (allAccountBalancesDiv) {
+            allAccountBalancesDiv.parentNode.innerHTML = myHtmlContent;
+        } else {
+            console.error('Element with class all-account-balances not found.');
+        }
+    }).catch(error => console.error('Error:', error));
+}
+
+function loadBSN(accountAddress) {
+    var myHtmlContent = '<h4 style="margin-bottom: 0px;">BSN Income Tags</h4>';
+    myHtmlContent += '<ul class="text-small condensed">';
+    var url = 'https://bsn.mtla.me/json';
+
+    fetch(url).then(response => response.json()).then(data => {
+        var accounts = data.accounts;
+
+        for (var accountId in accounts) {
+            if (accounts.hasOwnProperty(accountId)) {
+                var account = accounts[accountId];
+                var tags = account.tags;
+
+                for (var tag in tags) {
+                    if (tags.hasOwnProperty(tag) && tag !== 'Signer') {
+                        if (tags[tag].includes(accountAddress)) {
+                            myHtmlContent += '<li><b>' + tag + '</b> from ';
+                            myHtmlContent += '<a title="' + accountId + '" aria-label="' + accountId + '" class="account-address word-break" href="/explorer/public/account/' + accountId + '"><span class="account-key">' + accountId.slice(0, 4) + '…' + accountId.slice(-4) + '</span></a></li>';
+                        }
+                    }
+                }
+            }
+        }
+
+        myHtmlContent += '</ul>';
+        var allAccountBalancesDiv = document.querySelector('.all-account-balances');
+        if (allAccountBalancesDiv) {
+            allAccountBalancesDiv.parentNode.innerHTML = myHtmlContent;
+        } else {
+            console.error('Element with class all-account-balances not found.');
+        }
+    }).catch(error => console.error('Error:', error));
+}
+
+async function reloadScripts(accountAddress) {
     CalcOrders(accountAddress)
     modifyLinks();
     removeUnwantedElements();

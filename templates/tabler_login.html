@@ -1,0 +1,40 @@
+{% extends 'tabler_base.html' %}
+{% block page_title %}Вход через Telegram{% endblock %}
+{% block content %}
+<h2 class="mb-4">Вход через Telegram</h2>
+
+<div class="mb-4">
+  <h3>Вариант 1: Вход через Telegram бота</h3>
+  <p>
+    Этот метод требует взаимодействия с нашим Telegram ботом:
+  </p>
+  <ol>
+    <li>Нажмите на кнопку ниже, чтобы открыть нашего Telegram бота.</li>
+    <li>Если вы используете бота впервые, возможно, потребуется нажать 'Старт'.</li>
+    <li>Бот предоставит вам кнопку для входа.</li>
+    <li>Нажмите на эту кнопку, чтобы завершить процесс входа.</li>
+  </ol>
+  <a href="https://t.me/myMTLBot?start=eurmtl" class="btn btn-primary">
+    Войти через Telegram бота
+  </a>
+</div>
+
+<div class="mb-4">
+  <h3>Вариант 2: Вход через виджет Telegram</h3>
+  <p>
+    Этот метод использует виджет Telegram для быстрого входа:
+  </p>
+  <ol>
+    <li>Нажмите на кнопку входа через Telegram ниже.</li>
+    <li>Откроется виджет Telegram, запрашивающий ваш номер телефона.</li>
+    <li>Введите номер телефона, привязанный к вашему аккаунту Telegram.</li>
+    <li>Следуйте инструкциям для завершения процесса аутентификации.</li>
+  </ol>
+  <script async src="https://telegram.org/js/telegram-widget.js?22"
+          data-telegram-login="myMTLBot"
+          data-size="large"
+          data-auth-url="https://eurmtl.me/authorize"
+          data-request-access="write">
+  </script>
+</div>
+{% endblock %}

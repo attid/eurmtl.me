@@ -2,8 +2,8 @@ import asyncio
 import base64
 import json
 from datetime import datetime
-from random import shuffle
 
+import aiohttp
 import requests
 from quart import session, flash
 from stellar_sdk import (
@@ -15,14 +15,15 @@ from stellar_sdk import (
     TransactionEnvelope,
     PathPaymentStrictSend,
     ManageSellOffer, Transaction, Keypair, Server, Asset, TransactionBuilder, ServerAsync, AiohttpClient,
-    ManageData, CreatePassiveSellOffer, ManageBuyOffer, SetOptions, ChangeTrust, AllowTrust, AccountMerge,
-    Clawback, SetTrustLineFlags, TrustLineFlags
+    CreatePassiveSellOffer, ManageBuyOffer, Clawback, SetTrustLineFlags, TrustLineFlags
 )
-from stellar_sdk.sep import stellar_uri, stellar_web_authentication
-import config_reader
-from db.models import Signers, Transactions
-from db.requests import EURMTLDictsType, db_get_dict
-from db.pool import db_pool
+from stellar_sdk.sep import stellar_uri
+
+from config import config_reader
+from db import mongo
+from db.mongo import get_asset_by_code
+from db.sql_models import Signers, Transactions, Signatures
+from db.sql_pool import db_pool
 
 main_fund_address = 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'
 
@@ -100,8 +101,8 @@ def decode_xdr_to_base64(xdr, return_json=False):
         elif isinstance(operation, ManageData):
             op_json['attributes'] = {'name': operation.data_name,
                                      'dataName': operation.data_name,
-                                     'value': operation.data_value.decode(),
-                                     'dataValue': operation.data_value.decode(),
+                                     'value': operation.data_value.decode() if operation.data_value is not None else "",
+                                     'dataValue': operation.data_value.decode() if operation.data_value is not None else "",
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, CreateAccount):
@@ -199,14 +200,19 @@ def address_id_to_link(key) -> str:
     return f'<a href="{start_url}/{key}" target="_blank">{key[:4] + ".." + key[-4:]}</a>'
 
 
-def asset_to_link(operation_asset) -> str:
+def pool_id_to_link(key) -> str:
+    start_url = "https://stellar.expert/explorer/public/liquidity-pool"
+    return f'<a href="{start_url}/{key}" target="_blank">{key[:4] + ".." + key[-4:]}</a>'
+
+
+async def asset_to_link(operation_asset) -> str:
     start_url = "https://stellar.expert/explorer/public/asset"
     if operation_asset.code == 'XLM':
         return f'<a href="{start_url}/{operation_asset.code}" target="_blank">{operation_asset.code}⭐</a>'
     else:
         # add * if we have asset in DB
-        db_data = db_get_dict(db_pool(), EURMTLDictsType.Assets)
-        if db_data.get(operation_asset.code, '--') == operation_asset.issuer:
+        asset = await get_asset_by_code(operation_asset.code, False)
+        if asset and asset.issuer == operation_asset.issuer:
             return f'<a href="{start_url}/{operation_asset.code}-{operation_asset.issuer}" target="_blank">{operation_asset.code}⭐</a>'
         return f'<a href="{start_url}/{operation_asset.code}-{operation_asset.issuer}" target="_blank">{operation_asset.code}</a>'
 
@@ -248,7 +254,7 @@ def get_offers(account_id, cash):
     return r
 
 
-def decode_xdr_to_text(xdr, only_op_number=None):
+async def decode_xdr_to_text(xdr, only_op_number=None):
     result = []
     cash = {}
     data_exist = False
@@ -307,7 +313,7 @@ def decode_xdr_to_text(xdr, only_op_number=None):
         if type(operation).__name__ == "Payment":
             data_exist = True
             result.append(
-                f"    Перевод {operation.amount} {asset_to_link(operation.asset)} на аккаунт {address_id_to_link(operation.destination.account_id)}")
+                f"    Перевод {operation.amount} {await asset_to_link(operation.asset)} на аккаунт {address_id_to_link(operation.destination.account_id)}")
             if operation.asset.code != 'XLM':
                 # check valid asset
                 result.append(check_asset(operation.asset, cash))
@@ -355,18 +361,26 @@ def decode_xdr_to_text(xdr, only_op_number=None):
             continue
         if type(operation).__name__ == "ChangeTrust":
             data_exist = True
-            # check valid asset
-            result.append(check_asset(operation.asset, cash))
             source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
-            if operation.asset.issuer == source_id:
-                result.append(f"<div style=\"color: red;\">MELFORMET You can`t open trustline for yourself! </div>")
-
-            if operation.limit == '0':
-                result.append(
-                    f"    Закрываем линию доверия к токену {asset_to_link(operation.asset)} от аккаунта {address_id_to_link(operation.asset.issuer)}")
+            if operation.asset.type == 'liquidity_pool_shares':
+                if operation.limit == '0':
+                    result.append(
+                        f"    Закрываем линию доверия к пулу {pool_id_to_link(operation.asset.liquidity_pool_id)} {await asset_to_link(operation.asset.asset_a)}/{await asset_to_link(operation.asset.asset_b)}")
+                else:
+                    result.append(
+                        f"    Открываем линию доверия к пулу {pool_id_to_link(operation.asset.liquidity_pool_id)} {await asset_to_link(operation.asset.asset_a)}/{await asset_to_link(operation.asset.asset_b)}")
             else:
-                result.append(
-                    f"    Открываем линию доверия к токену {asset_to_link(operation.asset)} от аккаунта {address_id_to_link(operation.asset.issuer)}")
+                # check valid asset
+                result.append(check_asset(operation.asset, cash))
+                if operation.asset.issuer == source_id:
+                    result.append(f"<div style=\"color: red;\">MELFORMET You can`t open trustline for yourself! </div>")
+
+                if operation.limit == '0':
+                    result.append(
+                        f"    Закрываем линию доверия к токену {await asset_to_link(operation.asset)} от аккаунта {address_id_to_link(operation.asset.issuer)}")
+                else:
+                    result.append(
+                        f"    Открываем линию доверия к токену {await asset_to_link(operation.asset)} от аккаунта {address_id_to_link(operation.asset.issuer)}")
 
             continue
         if type(operation).__name__ == "CreateClaimableBalance":
@@ -381,7 +395,10 @@ def decode_xdr_to_text(xdr, only_op_number=None):
             result.append(check_asset(operation.buying, cash))
 
             result.append(
-                f"    Офер на продажу {operation.amount} {asset_to_link(operation.selling)} по цене {operation.price.n / operation.price.d} {asset_to_link(operation.buying)}")
+                f"    Офер на продажу {operation.amount} {await asset_to_link(operation.selling)} по цене {operation.price.n / operation.price.d} {await asset_to_link(operation.buying)}")
+            if operation.offer_id != 0:
+                result.append(
+                    f"    Номер офера <a href=\"https://stellar.expert/explorer/public/offer/{operation.offer_id}\">{operation.offer_id}</a>")
             # check balance тут надо проверить сумму
             source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
             source_account = get_account(source_id, cash)
@@ -400,7 +417,7 @@ def decode_xdr_to_text(xdr, only_op_number=None):
         if type(operation).__name__ == "CreatePassiveSellOffer":
             data_exist = True
             result.append(
-                f"    Пассивный офер на продажу {operation.amount} {asset_to_link(operation.selling)} по цене {operation.price.n / operation.price.d} {asset_to_link(operation.buying)}")
+                f"    Пассивный офер на продажу {operation.amount} {await asset_to_link(operation.selling)} по цене {operation.price.n / operation.price.d} {await asset_to_link(operation.buying)}")
             source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
             source_account = get_account(source_id, cash)
             selling_asset_code = operation.selling.code if hasattr(operation.selling, 'code') else 'XLM'
@@ -421,7 +438,11 @@ def decode_xdr_to_text(xdr, only_op_number=None):
             result.append(check_asset(operation.buying, cash))
 
             result.append(
-                f"    Офер на покупку {operation.amount} {asset_to_link(operation.buying)} по цене {operation.price.n / operation.price.d} {asset_to_link(operation.selling)}")
+                f"    Офер на покупку {operation.amount} {await asset_to_link(operation.buying)} по цене {operation.price.n / operation.price.d} {await asset_to_link(operation.selling)}")
+            if operation.offer_id != 0:
+                result.append(
+                    f"    Номер офера <a href=\"https://stellar.expert/explorer/public/offer/{operation.offer_id}\">{operation.offer_id}</a>")
+
             source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
             source_account = get_account(source_id, cash)
             selling_asset_code = operation.selling.code if hasattr(operation.selling,
@@ -431,8 +452,8 @@ def decode_xdr_to_text(xdr, only_op_number=None):
             selling_sum = sum(
                 float(balance.get('balance')) for balance in source_account['balances']
                 if balance.get('asset_code') == selling_asset_code or (
-                            selling_asset_code == 'XLM' and 'asset_type' in balance and balance[
-                        'asset_type'] == 'native')
+                        selling_asset_code == 'XLM' and 'asset_type' in balance and balance[
+                    'asset_type'] == 'native')
             )
 
             if selling_sum < required_amount_to_spend:
@@ -447,7 +468,7 @@ def decode_xdr_to_text(xdr, only_op_number=None):
             result.append(check_asset(operation.dest_asset, cash))
 
             result.append(
-                f"    Покупка {address_id_to_link(operation.destination.account_id)}, шлем {asset_to_link(operation.send_asset)} {operation.send_amount} в обмен на {asset_to_link(operation.dest_asset)} min {operation.dest_min} ")
+                f"    Покупка {address_id_to_link(operation.destination.account_id)}, шлем {await asset_to_link(operation.send_asset)} {operation.send_amount} в обмен на {await asset_to_link(operation.dest_asset)} min {operation.dest_min} ")
             continue
         if type(operation).__name__ == "PathPaymentStrictReceive":
             data_exist = True
@@ -455,7 +476,7 @@ def decode_xdr_to_text(xdr, only_op_number=None):
             result.append(check_asset(operation.send_asset, cash))
             result.append(check_asset(operation.dest_asset, cash))
             result.append(
-                f"    Продажа {address_id_to_link(operation.destination.account_id)}, Получаем {asset_to_link(operation.send_asset)} max {operation.send_max} в обмен на {asset_to_link(operation.dest_asset)} {operation.dest_amount} ")
+                f"    Продажа {address_id_to_link(operation.destination.account_id)}, Получаем {await asset_to_link(operation.send_asset)} max {operation.send_max} в обмен на {await asset_to_link(operation.dest_asset)} {operation.dest_amount} ")
             continue
         if type(operation).__name__ == "ManageData":
             data_exist = True
@@ -465,7 +486,7 @@ def decode_xdr_to_text(xdr, only_op_number=None):
         if type(operation).__name__ == "SetTrustLineFlags":
             data_exist = True
             result.append(
-                f"    Trustor {address_id_to_link(operation.trustor)} for asset {asset_to_link(operation.asset)}")
+                f"    Trustor {address_id_to_link(operation.trustor)} for asset {await asset_to_link(operation.asset)}")
             if operation.clear_flags is not None:
                 result.append(f"    Clear flags: {operation.clear_flags}")
             if operation.set_flags is not None:
@@ -508,7 +529,19 @@ def decode_xdr_to_text(xdr, only_op_number=None):
         if type(operation).__name__ == "Clawback":
             data_exist = True
             result.append(
-                f"    Возврат {operation.amount} {asset_to_link(operation.asset)} с аккаунта {address_id_to_link(operation.from_.account_id)}")
+                f"    Возврат {operation.amount} {await asset_to_link(operation.asset)} с аккаунта {address_id_to_link(operation.from_.account_id)}")
+            continue
+        if type(operation).__name__ == "LiquidityPoolDeposit":
+            data_exist = True
+            min_price = operation.min_price.n / operation.min_price.d
+            max_price = operation.max_price.n / operation.max_price.d
+            result.append(
+                f"    LiquidityPoolDeposit {pool_id_to_link(operation.liquidity_pool_id)} пополнение {operation.max_amount_a}/{operation.max_amount_b} ограничения цены {min_price}/{max_price}")
+            continue
+        if type(operation).__name__ == "LiquidityPoolWithdraw":
+            data_exist = True
+            result.append(
+                f"    LiquidityPoolWithdraw {pool_id_to_link(operation.liquidity_pool_id)} вывод {operation.amount} минимум {operation.min_amount_a}/{operation.min_amount_b} ")
             continue
         if type(operation).__name__ in ["PathPaymentStrictSend", "ManageBuyOffer", "ManageSellOffer", "AccountMerge",
                                         "PathPaymentStrictReceive", "ClaimClaimableBalance", "CreateAccount",
@@ -597,26 +630,55 @@ def xdr_to_uri(xdr):
 
 async def check_user_weight(need_flash=True):
     weight = 0
-    if 'userdata' in session and 'username' in session['userdata']:
-        username = '@' + session['userdata']['username']
-        with db_pool() as db_session:
-            address = db_session.query(Signers).filter(Signers.username == username).first()
-            if address is None:
-                if need_flash:
-                    await flash('No such user')
-            else:
-                public_key = address.public_key
+    if 'user_id' in session:
+        user_id = session['user_id']
+        user = await mongo.User.find_by_telegram_id(user_id)
+        if user is None:
+            if need_flash:
+                await flash('No such user')
+        else:
+            public_keys = user.stellar
 
-                rq = requests.get('https://horizon.stellar.org/accounts/' + main_fund_address)
-                weight = 0
-                for signer in rq.json()['signers']:
-                    if signer['key'] == public_key:
-                        weight = signer['weight']
-    if weight == 0:
-        if need_flash:
-            await flash('User is not a signer')
+            url = f'https://horizon.stellar.org/accounts/{main_fund_address}'
 
+            async with aiohttp.ClientSession() as web_session:
+                async with web_session.get(url) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        signers = [signer['key'] for signer in result.get('signers', [])]
+
+                        if any(key in signers for key in public_keys):  # Тут список 20 адресов
+                            for signer in result.get('signers', []):
+                                if signer['key'] in public_keys:  # Найти первое совпадение
+                                    weight = signer['weight']
+                                    break
+                        else:
+                            if need_flash:
+                                await flash('User is not a signer')
+                    else:
+                        if need_flash:
+                            await flash('Failed to retrieve account information from Stellar Horizon')
     return weight
+
+
+async def check_user_in_sign(tr_hash):
+    if 'user_id' in session:
+        user_id = session['user_id']
+        with db_pool() as db_session:
+            address = db_session.query(Signers).filter(Signers.tg_id == user_id).first()
+            if address is None:
+                return False
+
+            # Check if the user has signed this transaction
+            signature = db_session.query(Signatures).filter(
+                Signatures.transaction_hash == tr_hash,
+                Signatures.signer_id == address.id
+            ).first()
+
+            if signature:
+                return True
+
+    return False
 
 
 def is_valid_base64(s):
@@ -676,43 +738,344 @@ def decode_flags(flag_value):
     return flags
 
 
-async def pay_divs(asset: Asset, total_payment: float):
+async def pay_divs(asset_hold: Asset, total_payment: float):
     async with ServerAsync(horizon_url="https://horizon.stellar.org", client=AiohttpClient()) as server:
-        accounts = await server.accounts().for_asset(asset).limit(200).call()
+        accounts = await server.accounts().for_asset(asset_hold).limit(200).call()
         holders = accounts['_embedded']['records']
+        pools = await get_liquidity_pools_for_asset(asset_hold)
 
-        total_assets_held = sum(
-            float(balance['balance']) for account in holders for balance in account['balances']
-            if balance['asset_type'] in ['credit_alphanum4', 'credit_alphanum12'] and
-            balance['asset_code'] == asset.code and
-            balance['asset_issuer'] == asset.issuer and
-            float(balance['balance']) > 0
-        )
+        total_assets_hold = 0
+        account_assets = {}  # Словарь для хранения суммарных активов по каждому аккаунту
 
-        payments = [
-            {'account': account['account_id'],
-             'payment': total_payment * (float(balance['balance']) / total_assets_held)}
-            for account in holders for balance in account['balances']
-            if balance['asset_type'] in ['credit_alphanum4', 'credit_alphanum12'] and
-               balance['asset_code'] == asset.code and
-               balance['asset_issuer'] == asset.issuer and
-               float(balance['balance']) > 0
-        ]
+        # Расчет общего количества активов и активов каждого аккаунта, включая доли в пулах ликвидности
+        for account in holders:
+            account_total_asset = 0  # Суммарное количество активов аккаунта
+
+            for balance in account['balances']:
+                # Обработка прямых балансов актива
+                if balance['asset_type'] in ['credit_alphanum4', 'credit_alphanum12'] and \
+                        balance['asset_code'] == asset_hold.code and \
+                        balance['asset_issuer'] == asset_hold.issuer:
+                    asset_amount = float(balance['balance'])
+                    account_total_asset += asset_amount
+                # Обработка долей в пулах ликвидности
+                elif balance['asset_type'] == "liquidity_pool_shares":
+                    pool_id = balance["liquidity_pool_id"]
+                    pool_share = float(balance["balance"])
+                    for pool in pools:
+                        if pool['id'] == pool_id:
+                            asset_amount = float(pool['reserves_dict'].get(f"{asset_hold.code}:{asset_hold.issuer}", 0))
+                            total_shares = float(pool['total_shares'])
+                            if total_shares > 0 and pool_share > 0:
+                                account_total_asset += (pool_share / total_shares) * asset_amount
+
+            # Сохраняем суммарное количество активов аккаунта и обновляем общий счетчик
+            account_assets[account['account_id']] = account_total_asset
+            total_assets_hold += account_total_asset
+
+        # Расчет выплат, учитывая обновленные балансы
+        payments = [{
+            'account': account_id,
+            'payment': total_payment * (amount / total_assets_hold) if total_assets_hold > 0 else 0
+        } for account_id, amount in account_assets.items() if amount > 0]
 
     return payments
 
 
-if __name__ == '__main__':
-    xdr = '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'
-    print(decode_xdr_to_text(xdr))
-    exit()
+async def get_liquidity_pools_for_asset(asset):
+    client = AiohttpClient(request_timeout=3 * 60)
 
+    async with ServerAsync(
+            horizon_url="https://horizon.stellar.org", client=client
+    ) as server:
+        pools = []
+        pools_call_builder = server.liquidity_pools().for_reserves([asset]).limit(200)
+
+        page_records = await pools_call_builder.call()
+        while page_records["_embedded"]["records"]:
+            for pool in page_records["_embedded"]["records"]:
+                # Удаление _links из результатов
+                pool.pop('_links', None)
+
+                # Преобразование списка reserves в словарь reserves_dict
+                reserves_dict = {reserve['asset']: reserve['amount'] for reserve in pool['reserves']}
+                pool['reserves_dict'] = reserves_dict
+
+                # Удаление исходного списка reserves
+                pool.pop('reserves', None)
+
+                pools.append(pool)
+
+            page_records = await pools_call_builder.next()
+        return pools
+
+
+async def stellar_manage_data(account_id, data_name, data_value):
+    async with ServerAsync(
+            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+    ) as server:
+        source_account = await server.load_account(account_id=account_id)
+        if data_value == '':
+            data_value = None
+
+        transaction = (
+            TransactionBuilder(
+                source_account=source_account,
+                network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+                base_fee=101010
+            )
+            .append_manage_data_op(data_name=data_name, data_value=data_value)
+            .set_timeout(10 * 60)
+            .build()
+        )
+        return transaction.to_xdr()
+
+
+def decode_asset(asset):
+    arr = asset.split('-')
+    if arr[0] == 'XLM':
+        return Asset(arr[0])
+    else:
+        return Asset(arr[0], arr[1])
+
+
+async def stellar_build_xdr(data):
+    root_account = Server(horizon_url="https://horizon.stellar.org").load_account(data['publicKey'])
+    transaction = TransactionBuilder(source_account=root_account, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+                                     base_fee=10101)
+    transaction.set_timeout(60 * 60 * 24 * 7)
+    if data['memo_type'] == 'memo_text':
+        transaction.add_text_memo(data['memo'])
+    if data['memo_type'] == 'memo_hash':
+        transaction.add_hash_memo(data['memo'])
+    for operation in data['operations']:
+        source_account = operation['sourceAccount'] if len(operation['sourceAccount']) == 56 else None
+        if operation['type'] == 'payment':
+            transaction.append_payment_op(destination=operation['destination'],
+                                          asset=decode_asset(operation['asset']),
+                                          amount=float2str(operation['amount']),
+                                          source=source_account)
+        if operation['type'] == 'clawback':
+            transaction.append_clawback_op(from_=operation['from'],
+                                           asset=decode_asset(operation['asset']),
+                                           amount=float2str(operation['amount']),
+                                           source=source_account)
+        if operation['type'] == 'copy_multi_sign':
+            public_key = source_account if source_account else data['publicKey']
+            updated_signers = await stellar_copy_multi_sign(public_key_from=operation['from'],
+                                                            public_key_for=public_key)
+            for signer in updated_signers:
+                if signer['key'] == public_key:
+                    transaction.append_set_options_op(master_weight=signer['weight'],
+                                                      source=source_account)
+                elif signer['key'] == 'threshold':
+                    transaction.append_set_options_op(med_threshold=signer['med_threshold'],
+                                                      low_threshold=signer['low_threshold'],
+                                                      high_threshold=signer['high_threshold'],
+                                                      source=source_account)
+                else:
+                    transaction.append_ed25519_public_key_signer(account_id=signer['key'],
+                                                                 weight=signer['weight'],
+                                                                 source=source_account)
+        if operation['type'] == 'trust_payment':
+            transaction.append_set_trust_line_flags_op(trustor=operation['destination'],
+                                                       asset=decode_asset(operation['asset']),
+                                                       set_flags=TrustLineFlags.AUTHORIZED_FLAG,
+                                                       source=source_account)
+            transaction.append_payment_op(destination=operation['destination'],
+                                          asset=decode_asset(operation['asset']),
+                                          amount=float2str(operation['amount']),
+                                          source=source_account)
+            transaction.append_set_trust_line_flags_op(trustor=operation['destination'],
+                                                       asset=decode_asset(operation['asset']),
+                                                       clear_flags=TrustLineFlags.AUTHORIZED_FLAG,
+                                                       source=source_account)
+        if operation['type'] == 'change_trust':
+            transaction.append_change_trust_op(asset=decode_asset(operation['asset']),
+                                               limit=operation['limit'] if len(operation['limit']) > 0 else None,
+                                               source=source_account)
+        if operation['type'] == 'create_account':
+            transaction.append_create_account_op(destination=operation['destination'],
+                                                 starting_balance=operation['startingBalance'],
+                                                 source=source_account)
+        if operation['type'] == 'sell':
+            transaction.append_manage_sell_offer_op(selling=decode_asset(operation['selling']),
+                                                    buying=decode_asset(operation['buying']),
+                                                    amount=float2str(operation['amount']),
+                                                    price=float2str(operation['price']),
+                                                    offer_id=int(operation['offer_id']),
+                                                    source=source_account)
+        if operation['type'] == 'swap':
+            asset_path = []
+            for asset in json.loads(operation['path']):
+                asset_path.append(decode_asset(f'{asset["asset_code"]}-{asset["asset_issuer"]}'))
+            transaction.append_path_payment_strict_send_op(path=asset_path,
+                                                           destination=source_account if source_account else data[
+                                                               'publicKey'],
+                                                           send_asset=decode_asset(operation['selling']),
+                                                           dest_asset=decode_asset(operation['buying']),
+                                                           send_amount=float2str(operation['amount']),
+                                                           dest_min=float2str(operation['destination']),
+
+                                                           source=source_account)
+        if operation['type'] == 'sell_passive':
+            transaction.append_create_passive_sell_offer_op(selling=decode_asset(operation['selling']),
+                                                            buying=decode_asset(operation['buying']),
+                                                            amount=float2str(operation['amount']),
+                                                            price=float2str(operation['price']),
+                                                            source=source_account)
+        if operation['type'] == 'buy':
+            transaction.append_manage_buy_offer_op(selling=decode_asset(operation['selling']),
+                                                   buying=decode_asset(operation['buying']),
+                                                   amount=float2str(operation['amount']),
+                                                   price=float2str(operation['price']),
+                                                   offer_id=int(operation['offer_id']),
+                                                   source=source_account)
+        if operation['type'] == 'manage_data':
+            transaction.append_manage_data_op(data_name=operation['data_name'],
+                                              data_value=operation['data_value'] if len(
+                                                  operation['data_value']) > 0 else None,
+                                              source=source_account)
+        if operation['type'] == 'set_options':
+            transaction.append_set_options_op(
+                master_weight=int(operation['master']) if len(operation['master']) > 0 else None,
+                med_threshold=int(operation['threshold']) if len(operation['threshold']) > 0 else None,
+                high_threshold=int(operation['threshold']) if len(operation['threshold']) > 0 else None,
+                low_threshold=int(operation['threshold']) if len(operation['threshold']) > 0 else None,
+                home_domain=operation['home'] if len(operation['home']) > 0 else None,
+                source=source_account)
+        if operation['type'] == 'set_options_signer':
+            transaction.append_ed25519_public_key_signer(
+                account_id=operation['signerAccount'] if len(operation['signerAccount']) > 55 else None,
+                weight=int(operation['weight']) if len(operation['weight']) > 0 else None,
+                source=source_account)
+        if operation['type'] == 'set_trust_line_flags':
+            set_flags_decoded = decode_flags(int(operation['set_flags'])) if len(operation['set_flags']) > 0 else None
+            clear_flags_decoded = (decode_flags(int(operation['clear_flags']))
+                                   if len(operation['clear_flags']) > 0 else None)
+
+            transaction.append_set_trust_line_flags_op(
+                trustor=operation['trustor'],
+                asset=decode_asset(operation['asset']),
+                set_flags=set_flags_decoded,
+                clear_flags=clear_flags_decoded,
+                source=source_account)
+        if operation['type'] == 'pay_divs':
+            # {'account': 'GBVIX6CZ57SHXHGPA4AL7DACNNZX4I2LCKIAA3VQUOGTGWYQYVYSE5TU', 'payment': 60.0}
+            for record in await pay_divs(decode_asset(operation['holders']), float(operation['amount'])):
+                if round(record['payment'], 7) > 0:
+                    transaction.append_payment_op(destination=record['account'],
+                                                  asset=decode_asset(operation['asset']),
+                                                  amount=float2str(record['payment']),
+                                                  source=source_account)
+    transaction = transaction.build()
+    # transaction.transaction.sequence = int(data['sequence'])
+    xdr = transaction.to_xdr()
+    return xdr
+
+
+def add_signer(signer_key, username='FaceLess', user_id=None):
+    if username != "FaceLess" and username[0] != '@':
+        username = '@' + username
+
+    with db_pool() as db_session:
+        db_signer = db_session.query(Signers).filter(Signers.public_key == signer_key).first()
+        if db_signer is None:
+            hint = Keypair.from_public_key(signer_key).signature_hint().hex()
+            db_session.add(Signers(username='FaceLess', public_key=signer_key, tg_id=user_id,
+                                   signature_hint=hint))
+            db_session.commit()
+        else:
+            # if user_id and username != 'FaceLess':
+            if user_id != db_signer.tg_id or username != db_signer.username:
+                db_signer.tg_id = user_id
+                db_signer.username = username
+                db_session.commit()
+
+
+async def extract_sources(xdr):
+    tr = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+    sources = {tr.transaction.source.account_id: {}}
+    for operation in tr.transaction.operations:
+        if operation.source:
+            sources[operation.source.account_id] = {}
+    for source in sources:
+        try:
+            rq = requests.get('https://horizon.stellar.org/accounts/' + source)
+            threshold = rq.json()['thresholds']['high_threshold']
+            signers = []
+            for signer in rq.json()['signers']:
+                signers.append([signer['key'], signer['weight'],
+                                Keypair.from_public_key(signer['key']).signature_hint().hex()])
+                mongo_user = await mongo.User.find_by_stellar_id(signer['key'])
+                if mongo_user:
+                    add_signer(signer['key'], mongo_user.username, mongo_user.telegram_id)
+                else:
+                    add_signer(signer['key'])
+            sources[source] = {'threshold': threshold, 'signers': signers}
+        except:
+            sources[source] = {'threshold': 0,
+                               'signers': [[source, 1, Keypair.from_public_key(source).signature_hint().hex()]]}
+            mongo_user = await mongo.User.find_by_stellar_id(source)
+            if mongo_user:
+                add_signer(source, mongo_user.username, mongo_user.telegram_id)
+            else:
+                add_signer(source)
+    # print(json.dumps(sources))
+    return sources
+
+
+async def add_transaction(tx_body, tx_description):
+    try:
+        tr = TransactionEnvelope.from_xdr(tx_body, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+        tr_full = TransactionEnvelope.from_xdr(tx_body, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+        sources = await extract_sources(tx_body)
+    except:
+        return False, 'BAD xdr. Can`t load'
+
+    tx_hash = tr.hash_hex()
+    tr.signatures.clear()
+
+    with db_pool() as db_session:
+        existing_transaction = db_session.query(Transactions).filter(Transactions.hash == tx_hash).first()
+        if existing_transaction:
+            return False, f'Transaction already exists: /sign_tools/{tx_hash}'
+
+        new_transaction = Transactions(hash=tx_hash, body=tr.to_xdr(), description=tx_description,
+                                       json=json.dumps(sources))
+        db_session.add(new_transaction)
+
+        if len(tr_full.signatures) > 0:
+            for signature in tr_full.signatures:
+                signer = db_session.query(Signers).filter(
+                    Signers.signature_hint == signature.signature_hint.hex()).first()
+                db_session.add(Signatures(signature_xdr=signature.to_xdr_object().to_xdr(),
+                                          signer_id=signer.id if signer else None,
+                                          transaction_hash=tx_hash))
+        db_session.commit()
+
+    return True, tx_hash
+
+
+def update_memo_in_xdr(xdr: str, new_memo: str) -> str:
+    try:
+        transaction = TransactionEnvelope.from_xdr(xdr, Network.PUBLIC_NETWORK_PASSPHRASE)
+        transaction.transaction.memo = TextMemo(new_memo)
+        return transaction.to_xdr()
+    except Exception as e:
+        raise Exception(f"Error updating memo: {str(e)}")
+
+
+if __name__ == '__main__':
+    xdr = "AAAAAgAAAAAJk92FjbTLLsK8gty2kiek3bh5GNzHlPtL2Ju3g1BewQAAJ3UCwvFDAAAAHAAAAAEAAAAAAAAAAAAAAABmzaa8AAAAAQAAABBRMzE2IENyZWF0ZSBMQUJSAAAAAQAAAAAAAAAAAAAAAD6PSNQ8NeBFoh7/6169tIn6pjfziFaURDRWU2bQRX+1AAAAAF/2poAAAAAAAAAAAA=="
+    print(asyncio.run(add_transaction(xdr, 'True')))
+    exit()
     # simple way to find error in editing
-    l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHQlRPRjZSTEhSUEc1TlJJVTZNUTdKR01DVjdZSEw1VjMzWVlDNzZZWUc0SlVLQ0pUVVA1REVGSSIsInNlcXVlbmNlIjoiMTg2NzM2MjAxNTQ4NDMxMzc4IiwiZmVlIjoiMTAwMTAiLCJiYXNlRmVlIjoiMTAwIiwibWluRmVlIjoiNTAwMCIsIm1lbW9UeXBlIjoiTUVNT19URVhUIiwibWVtb0NvbnRlbnQiOiJsYWxhbGEifSwiZmVlQnVtcEF0dHJpYnV0ZXMiOnsibWF4RmVlIjoiMTAxMDEifSwib3BlcmF0aW9ucyI6W3siaWQiOjAsImF0dHJpYnV0ZXMiOnsiZGVzdGluYXRpb24iOiJHQUJGUUlLNjNSMk5FVEpNN1Q2NzNFQU1aTjRSSkxMR1AzT0ZVRUpVNVNaVlRHV1VLVUxaSk5MNiIsImFzc2V0Ijp7InR5cGUiOiJjcmVkaXRfYWxwaGFudW00IiwiY29kZSI6IlVTREMiLCJpc3N1ZXIiOiJHQTVaU0VKWUIzN0pSQzVBVkNJQTVNT1A0UkhUTTMzNVgyS0dYM0lIT0pBUFA1UkUzNEs0S1pWTiJ9LCJhbW91bnQiOiIzMDAwMCIsInNvdXJjZUFjY291bnQiOm51bGx9LCJuYW1lIjoicGF5bWVudCJ9XX0%3D&network=public'
-    l = l.split('/')[-1].split('=')[1].split('&')[0]
-    decode_xdr_from_base64(l)
-    e = decode_xdr_to_base64(
-        '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')
-    decode_xdr_from_base64(e)
-    print(f'https://laboratory.stellar.org/#txbuilder?params={e}&network=public')
-    pass
+    # l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHQlRPRjZSTEhSUEc1TlJJVTZNUTdKR01DVjdZSEw1VjMzWVlDNzZZWUc0SlVLQ0pUVVA1REVGSSIsInNlcXVlbmNlIjoiMTg2NzM2MjAxNTQ4NDMxMzc4IiwiZmVlIjoiMTAwMTAiLCJiYXNlRmVlIjoiMTAwIiwibWluRmVlIjoiNTAwMCIsIm1lbW9UeXBlIjoiTUVNT19URVhUIiwibWVtb0NvbnRlbnQiOiJsYWxhbGEifSwiZmVlQnVtcEF0dHJpYnV0ZXMiOnsibWF4RmVlIjoiMTAxMDEifSwib3BlcmF0aW9ucyI6W3siaWQiOjAsImF0dHJpYnV0ZXMiOnsiZGVzdGluYXRpb24iOiJHQUJGUUlLNjNSMk5FVEpNN1Q2NzNFQU1aTjRSSkxMR1AzT0ZVRUpVNVNaVlRHV1VLVUxaSk5MNiIsImFzc2V0Ijp7InR5cGUiOiJjcmVkaXRfYWxwaGFudW00IiwiY29kZSI6IlVTREMiLCJpc3N1ZXIiOiJHQTVaU0VKWUIzN0pSQzVBVkNJQTVNT1A0UkhUTTMzNVgyS0dYM0lIT0pBUFA1UkUzNEs0S1pWTiJ9LCJhbW91bnQiOiIzMDAwMCIsInNvdXJjZUFjY291bnQiOm51bGx9LCJuYW1lIjoicGF5bWVudCJ9XX0%3D&network=public'
+    # l = l.split('/')[-1].split('=')[1].split('&')[0]
+    # decode_xdr_from_base64(l)
+    # e = decode_xdr_to_base64(
+    #     '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')
+    # decode_xdr_from_base64(e)
+    # print(f'https://laboratory.stellar.org/#txbuilder?params={e}&network=public')
+    # pass

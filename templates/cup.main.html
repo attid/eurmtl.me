@@ -4,37 +4,38 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orderbook Page</title>
-    <!-- Materialize CSS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+    <!-- Bulma CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.4/css/bulma.min.css" integrity="sha512-HqxHUkJM0SYcbvxUw5P60SzdOTy/QVwA1JJrvaXJv4q7lmbDZCmZaqz01UPOaQveoxfYRv1tHozWGPMcuTBuvQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico"/>
 </head>
-
 
 <body>
 <div class="container" style="max-width: 900px;">
     <div class="card">
         <div class="card-content">
             <!-- Кнопки для навигации -->
-            <div class="row">
-                <a class="btn grey lighten-1 col s12"
-                   href="/cup/{{ active_page }}/{{assets[1].code}}-{{assets[1].issuer}}/{{assets[0].code}}-{{assets[0].issuer}}"><span>{{assets[0].code}} ↔ {{assets[1].code}}</span></a>
+            <div class="buttons">
+                <a class="button is-light is-fullwidth"
+                   href="/cup/{{ active_page }}/{{assets[1].code}}-{{assets[1].issuer}}/{{assets[0].code}}-{{assets[0].issuer}}">{{assets[0].code}} ↔ {{assets[1].code}}</a>
             </div>
-            <div class="row">
-                <a class="btn col s4 {% if active_page == 'swap' %}teal darken-2{% endif %}"
-                   href="/cup/swap/{{ asset_url }}">Swap Cup</a>
-                <a class="btn col s4 {% if active_page == 'orderbook' %}teal darken-2{% endif %}"
-                   href="/cup/orderbook/{{ asset_url }}">Orderbook</a>
-                <a class="btn col s4 {% if active_page == 'trades' %}teal darken-2{% endif %}"
-                   href="/cup/trades/{{ asset_url }}">Last Trades</a>
+            <!-- Кнопки для навигации в одну линию -->
+            <div class="columns is-mobile">
+                <div class="column">
+                    <a class="button is-fullwidth {% if active_page == 'swap' %}is-primary{% else %}is-light{% endif %}"
+                       href="/cup/swap/{{ asset_url }}">Swap Cup</a>
+                </div>
+                <div class="column">
+                    <a class="button is-fullwidth {% if active_page == 'orderbook' %}is-primary{% else %}is-light{% endif %}"
+                       href="/cup/orderbook/{{ asset_url }}">Orderbook</a>
+                </div>
+                <div class="column">
+                    <a class="button is-fullwidth {% if active_page == 'trades' %}is-primary{% else %}is-light{% endif %}"
+                       href="/cup/trades/{{ asset_url }}">Last Trades</a>
+                </div>
             </div>
             {% block content %} {% endblock %}
         </div>
     </div>
 </div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
 </body>
 </html>
-
-
-

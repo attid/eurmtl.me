@@ -2,7 +2,7 @@
 
 {% block content %}
 
-<table class="highlight">
+<table class="table is-striped is-narrow is-hoverable is-fullwidth">
     <thead>
     <tr>
         <th>Amount ({{assets[0].code}})</th>
@@ -14,28 +14,34 @@
     {% for order in orders['sellers'] %}
     <tr>
         <td>{{order['amount']}}</td>
-        <td class="red-text">{{order['price']}}</td>
+        <td class="has-text-danger">{{order['price']}}</td>
         <td>{{order['total']}}</td>
     </tr>
     {% endfor %}
 
     <!-- Spread -->
-    <tr class="grey lighten-2">
-        <td colspan="3" class="center-align">Spread: {{spread_amount}} ({{spread_percentage}}%)</td>
+    <tr>
+        <td colspan="3" class="has-text-centered">Spread: {{spread_amount}} ({{spread_percentage}}%)</td>
     </tr>
     <!-- Дополнительные строки после Spread -->
     {% for order in orders['buyers'] %}
     <tr>
         <td>{{order['amount']}}</td>
-        <td class="green-text">{{order['price']}}</td>
+        <td class="has-text-success">{{order['price']}}</td>
         <td>{{order['total']}}</td>
     </tr>
     {% endfor %}
     </tbody>
 </table>
-<div class="row">
-    <a href="https://stellar.expert/explorer/public/market/{{asset_url}}" class="btn col s6">Stellar.Expert</a>
-    <a href="{{scopuly_url}}" class="btn col s6">Scopuly.com</a>
+
+<div class="columns">
+    <div class="column">
+        <a href="https://stellar.expert/explorer/public/market/{{asset_url}}" class="button is-fullwidth">Stellar.Expert</a>
+    </div>
+    <div class="column">
+        <a href="{{scopuly_url}}" class="button is-fullwidth">Scopuly.com</a>
+    </div>
 </div>
+
 
 {% endblock %}

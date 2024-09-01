@@ -1,18 +1,24 @@
 import json
 import urllib.parse
 import uuid
+
+import aiohttp
+from loguru import logger
 from quart import Blueprint, request, render_template, jsonify, session, abort
 from sulguk import transform_html
 
-from db.models import WebEditorMessages, WebEditorLogs
-from db.pool import db_pool
-from utils.telegram_utils import edit_telegram_message, is_bot_admin, is_user_admin, check_response_webapp
+from config.config_reader import config
+from db.sql_models import WebEditorMessages, WebEditorLogs
+from db.sql_pool import db_pool
+from utils.telegram_utils import edit_telegram_message, is_bot_admin, is_user_admin, check_response_webapp, skynet_bot
+from utils.www_utils import get_ip
 
 blueprint = Blueprint('web_editor', __name__)
 
 
 @blueprint.route('/WebEditor')
 async def web_editor():
+    # https://eurmtl.me/WebEditor?tgWebAppStartParam=1971356387_245
     # Получаем параметры запроса
     tg_web_app_start_param = request.args.get('tgWebAppStartParam')
     if tg_web_app_start_param:
@@ -144,7 +150,7 @@ async def web_editor_action():
     return jsonify({'ok': True}), 200
 
 
-def user_has_edit_permissions(init_data_str, chat_id):
+def user_has_edit_permissions(init_data_str, chat_id, return_user=False):
     # Декодируем URL-кодированную строку
     decoded_str = urllib.parse.unquote(init_data_str)
 
@@ -166,9 +172,77 @@ def user_has_edit_permissions(init_data_str, chat_id):
     # Извлекаем user_id из initData
     user_id = init_data.get('user', {}).get('id', None)
 
-    # Проверяем, является ли пользователь администратором в чате
-    return is_user_admin(chat_id, user_id)
+    if return_user:
+        return user_id
+    else:
+        # Проверяем, является ли пользователь администратором в чате
+        return is_user_admin(chat_id, user_id)
+
+
+async def check_response_captcha(token, v2):
+    logger.info(v2)
+    if v2:
+        url = "https://smartcaptcha.yandexcloud.net/validate"
+        params = {
+            "secret": config.yandex_secret_key.get_secret_value(),
+            "token": token,
+            "ip": await get_ip()
+        }
+
+        async with aiohttp.ClientSession() as web_session:
+            async with web_session.get(url, params=params) as response:
+                result = await response.json()
+                print(result)
+
+        return result["status"] == "ok"
+
+    else:
+        url = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+        params = {
+            'secret': config.cloudflare_secret_key.get_secret_value(),
+            'response': token
+        }
+
+        async with aiohttp.ClientSession() as web_session:
+            async with web_session.post(url, data=params) as response:
+                result = await response.json()
+
+        return result.get('success')
+
+
+@blueprint.route('/JoinCaptcha', methods=['GET', 'POST'])
+async def join_captcha():
+    # https://eurmtl.me/JoinCaptcha?tgWebAppStartParam=1971356387
+    # https://core.telegram.org/bots/webapps#initializing-mini-apps
+
+    if request.method == 'POST':
+        data = await request.get_json()  # Changed from request.json to request.get_json()
+        init_data_str = data.get('initData')
+        chat_id = int(data.get('chatId'))
+        token = data.get('token')
+        v2 = data.get('v2') == 'true'
+
+        user_id = user_has_edit_permissions(init_data_str, 0, True)
+        logger.info(f'JoinCaptcha: {user_id} {token} {init_data_str} {v2}')
+
+        if user_id and token and await check_response_captcha(token, v2=v2):
+            await skynet_bot.approve_chat_join_request(chat_id=chat_id, user_id=user_id)
+            return jsonify({'ok': True}), 200
+        else:
+            return jsonify({'ok': False, 'error': 'No user or token'}), 403
+
+    else:
+        # Получаем параметры запроса
+        tg_web_app_start_param = request.args.get('tgWebAppStartParam')
+        if tg_web_app_start_param and len(tg_web_app_start_param.split('_')) > 1:
+            chat_id, captcha_type = tg_web_app_start_param.split('_')
+            chat_id = int(chat_id)
+            v2 = captcha_type == '2'
+            return await render_template('join_captcha.html', chat_id=chat_id, v2=v2)
+        else:
+            return 'Параметры не найдены', 400
 
 
 if __name__ == '__main__':
     pass
+    # asyncio.run(test())

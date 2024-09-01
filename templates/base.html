@@ -3,7 +3,9 @@
 <head>
     <meta http-equiv="content-type" content="text/html; charset=UTF-8">
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+    <!-- Bulma CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"  />
     <link rel="stylesheet" href="/static/css/eurmtl.css?1">
     <title>MTL Stellar Transaction Laboratory</title>
     <link rel="shortcut icon" type="image/x-icon" href="/static/favicon.ico"/>
@@ -11,57 +13,43 @@
 </head>
 <body>
 
-{% macro nav_menu() %}
 {% block nav %}
-<li class="{{ 'active' if request.path == '/lab' else '' }}"><a href="/lab">Build transaction</a></li>
-<li class="{{ 'active' if request.path == '/sign_tools' else '' }}"><a href="/sign_tools">Add to MultiSign</a></li>
-
-<!-- Проверка, есть ли 'username' в сессии -->
-{% if session['userdata'] %}
-<li class="{{ 'active' if request.path == '/decision' else '' }}"><a href="/decision">Add decision</a></li>
-<li class="{{ 'active' if request.path == '/sign_all' else '' }}"><a href="/sign_all">All transaction</a></li>
-<li><a href="/logout">Logout @{{ session['userdata']['username'] }}</a></li>
-{% else %}
-<script async src="https://telegram.org/js/telegram-widget.js?21"
-        data-telegram-login="MyMTLWalletBot"
-        data-size="small"
-        data-auth-url="https://eurmtl.me/login"
-        data-request-access="write">
-</script>
-{% endif %}
-{% endblock %}
-{% endmacro %}
-
-
-<nav>
-    <div class="nav-wrapper orange accent-4">
-        <a href="" class="brand-logo hide-on-med-and-down">MTL Transaction Laboratory</a>
-        <a href="" class="brand-logo hide-on-large-only" >MTL TL</a>
-        <a href="#" data-target="mobile-demo" class="sidenav-trigger"><i class="material-icons">menu</i></a>
-
-        <ul id="nav-mobile" class="right hide-on-med-and-down">
-            {{ nav_menu() }}
-        </ul>
+<nav class="navbar has-background-warning" role="navigation" aria-label="main navigation">
+    <div class="navbar-brand">
+        <a class="navbar-item" href="#">MTL Transaction Laboratory</a>
+        <a role="button" class="navbar-burger" aria-label="menu" aria-expanded="false" data-target="navbarBasicExample">
+            <span aria-hidden="true"></span>
+            <span aria-hidden="true"></span>
+            <span aria-hidden="true"></span>
+        </a>
+    </div>
+    <div id="navbarBasicExample" class="navbar-menu">
+        <div class="navbar-end">
+            <a class="navbar-item {{ 'active' if request.path == '/lab' else '' }}" href="/lab">Build transaction</a>
+            <a class="navbar-item {{ 'active' if request.path == '/sign_tools' else '' }}" href="/sign_tools">Add to MultiSign</a>
+            <!-- Проверка, есть ли 'username' в сессии -->
+            {% if session['user_id'] %}
+            <a class="navbar-item {{ 'active' if request.path == '/decision' else '' }}" href="/decision">Add decision</a>
+            <a class="navbar-item {{ 'active' if request.path == '/sign_all' else '' }}" href="/sign_all">All transaction</a>
+            <a class="navbar-item" href="/logout">Logout @{{ session['userdata']['username'] }}</a>
+            {% else %}
+            <a class="navbar-item" href="/login">Login</a>
+            {% endif %}
+        </div>
     </div>
 </nav>
-
-<ul class="sidenav" id="mobile-demo">
-    {{ nav_menu() }}
-</ul>
-
+{% endblock %}
 
 <div class="container" style="max-width: 900px;">
-
     <!-- Место для flash-сообщений -->
-    <div class="container">
+    <div>
         {% for message in get_flashed_messages(category_filter=['message']) %}
-        <div class="card-panel red lighten-4"><span class="red-text text-darken-4">{{ message }}</span></div>
+        <div class="notification is-danger">{{ message }}</div>
         {% endfor %}
         {% for message in get_flashed_messages(category_filter=['good']) %}
-        <div class="card-panel green lighten-4"><span class="green-text text-darken-4">{{ message }}</span></div>
+        <div class="notification is-success">{{ message }}</div>
         {% endfor %}
     </div>
-
 
     <div class="card">
         <div class="card-content">
@@ -70,13 +58,23 @@
     </div>
 </div>
 
-<script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+{% block bottom_scripts %}{% endblock %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      M.AutoInit();
+    document.addEventListener('DOMContentLoaded', () => {
+        const $navbarBurgers = Array.prototype.slice.call(document.querySelectorAll('.navbar-burger'), 0);
+        if ($navbarBurgers.length > 0) {
+            $navbarBurgers.forEach(el => {
+                el.addEventListener('click', () => {
+                    const target = el.dataset.target;
+                    const $target = document.getElementById(target);
+                    el.classList.toggle('is-active');
+                    $target.classList.toggle('is-active');
+                });
+            });
+        }
     });
 </script>
-{% block bottom_scripts %}{% endblock %}
+
 </body>
 </html>

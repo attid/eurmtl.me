@@ -30,7 +30,18 @@ td.description {
     word-wrap: break-word;
     overflow-wrap: break-word;
 }
-
+.width-100 {
+    width: 100%;
+}
+.width-50 {
+    width: 50%;
+}
+.width-40 {
+    width: 40%;
+}
+.width-45 {
+    width: 45%;
+}
 
 @media (prefers-color-scheme: dark) {
     body{

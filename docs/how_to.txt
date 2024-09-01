@@ -10,3 +10,11 @@
 4 - добавляем в laboratory.html в <select id="operation" name="operation" onchange="addOperation()">
 
 5 - добавляем в cmd_build_xdr
+
+
+
+### Js
+
+https://github.com/stellar/js-stellar-sdk/blob/master/docs/reference/readme.md
+https://stellar.github.io/js-stellar-sdk/
+https://developers.stellar.org/docs/build/guides/basics
