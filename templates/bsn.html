@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-translate="pageBSNTitle">Импорт данных</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/1.0.0/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16x16.png">
+    <link rel="manifest" href="/static/icons/site.webmanifest">
+    <style>
+        .button:not(:last-child) {
+            margin-right: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <section class="section">
+        <div class="container">
+            <!-- Языковые переключатели -->
+            <div class="field is-grouped" style="justify-content: flex-end;">
+                <div class="control">
+                    <button id="lang-en" class="button" onclick="setLanguage('en')">EN</button>
+                </div>
+                <div class="control">
+                    <button id="lang-ru" class="button" onclick="setLanguage('ru')">RU</button>
+                </div>
+            </div>
+
+            <!-- Первый блок в боксе -->
+            <div class="box">
+                <div class="field">
+                    <div class="control">
+                        <p data-translate="generatorText">Генератор транзакций для BSN</p>
+                    </div>
+                </div>
+                <div class="field has-addons">
+                    <div class="control is-expanded">
+                        <input class="input" id="importInput" type="text" placeholder="Введите публичный ключ для импорта данных" value="" data-translate-placeholder="importInputPlaceholder">
+                    </div>
+                    <div class="control">
+                        <button class="button is-info" id="importButton" onclick="importData()" data-translate="importButton">Импортировать</button>
+                    </div>
+                </div>
+                <!-- Новая кнопка под полем ввода -->
+                <div class="field">
+                    <div class="control">
+                        <button class="button is-info is-fullwidth is-hidden add-button" onclick="addKey()" data-translate="addButton">Добавить ключ</button>
+                    </div>
+                </div>
+            </div>
+            <!-- Второй блок в боксе -->
+            <div class="box key-box-hidden is-hidden">
+                <div class="field">
+                    <label class="label" data-translate="keyLabel">Ключ:</label>
+                    <div class="control">
+                        <input class="input bor-key" list="key-options" type="text" placeholder="Начните вводить ключ или сделайте клик мышью..." data-translate-placeholder="keyInputPlaceholder">
+                        <datalist id="key-options">
+                            <option value="Name">Name</option>
+                            <option value="About">About</option>
+                            <option value="Website">Website</option>
+                            <option value="----------">----------</option>
+                            <option value="OneFamily">OneFamily</option>
+                            <option value="Spouse">Spouse</option>
+                            <option value="Guardian">Guardian</option>
+                            <option value="Ward">Ward</option>
+                            <option value="Sympathy">Sympathy</option>
+                            <option value="Love">Love</option>
+                            <option value="Divorce">Divorce</option>
+                            <option value="----------">----------</option>
+                            <option value="A">A</option>
+                            <option value="B">B</option>
+                            <option value="C">C</option>
+                            <option value="D">D</option>
+                            <option value="----------">----------</option>
+                            <option value="Employer">Employer</option>
+                            <option value="Employee">Employee</option>
+                            <option value="Contractor">Contractor</option>
+                            <option value="Client">Client</option>
+                            <option value="Partnership">Partnership</option>
+                            <option value="Collaboration">Collaboration</option>
+                            <option value="----------">----------</option>
+                            <option value="OwnerMinority">OwnerMinority</option>
+                            <option value="OwnerMajority">OwnerMajority</option>
+                            <option value="Owner">Owner</option>
+                            <option value="OwnershipFull">OwnershipFull</option>
+                            <option value="OwnershipMajority">OwnershipMajority</option>
+                            <option value="----------">----------</option>
+                            <option value="WelcomeGuest">WelcomeGuest</option>
+                            <option value="FactionMember">FactionMember</option>
+                        </datalist>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label class="label" data-translate="valueLabel">Значение:</label>
+                    <div class="control">
+                        <input class="input bor-value" type="text" placeholder="Значение" data-translate-placeholder="valueInputPlaceholder">
+                    </div>
+                </div>
+                <!-- Добавлен класс "mt-4" для отступа между полями ввода и кнопками -->
+                <div class="field is-grouped is-grouped-multiline ">
+                    <div class="control is-expanded">
+                        <button class="button is-primary is-fullwidth" onclick="cloneElement(this)" data-translate="cloneButton">Клонировать</button>
+                    </div>
+                    <div class="control is-expanded">
+                        <button class="button is-danger delete-button is-fullwidth" onclick="deleteElement(this)" data-translate="deleteButton">Удалить</button>
+                    </div>
+                    <div class="control is-expanded">
+                        <button class="button is-link is-fullwidth" onclick="moveUp(this)">
+                            <span class="icon">
+                                <i class="fas fa-arrow-up"></i>
+                            </span>
+                        </button>
+                    </div>
+                    <div class="control is-expanded">
+                        <button class="button is-link is-fullwidth" onclick="moveDown(this)">
+                            <span class="icon">
+                                <i class="fas fa-arrow-down"></i>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="box is-hidden end-box">
+                <div class="field">
+                    <div class="control">
+                        <button class="button is-info is-fullwidth" onclick="getXDR()" data-translate="getXDRButton">Получить XDR</button>
+                    </div>
+                </div>
+                <div class="field">
+                    <div class="control">
+                        <textarea class="textarea" id="xdr" readonly></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/10.4.1/stellar-sdk.min.js"></script>
+    <script src="/static/js/i18.js?1"></script>
+    <script src="/static/js/bsn.js?1"></script>
+</body>
+</html>
