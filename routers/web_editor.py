@@ -3,14 +3,17 @@ import urllib.parse
 import uuid
 
 import aiohttp
+from aiogram.enums import ParseMode
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from loguru import logger
 from quart import Blueprint, request, render_template, jsonify, session, abort
-from sulguk import transform_html
+from sulguk import transform_html, SULGUK_PARSE_MODE
 
 from config.config_reader import config
 from db.sql_models import WebEditorMessages, WebEditorLogs
 from db.sql_pool import db_pool
-from utils.telegram_utils import edit_telegram_message, is_bot_admin, is_user_admin, check_response_webapp, skynet_bot
+from utils.telegram_utils import is_bot_admin, is_user_admin, check_response_webapp, skynet_bot, prepare_html_text
 from utils.www_utils import get_ip
 
 blueprint = Blueprint('web_editor', __name__)
@@ -44,21 +47,27 @@ async def web_editor():
 
         if message_record:
             # Если текст найден, отображаем его в редакторе
-            return await render_template('web_editor.html', message_text=message_record.message_text)
+            return await render_template('tabler_web_editor.html', message_text=message_record.message_text)
         else:
             if chat_id == 0:
                 abort(404)
 
             # Если текста нет, пробуем отредактировать сообщение в Telegram
             random_hash = uuid.uuid4().hex
-            reply_markup_json = await get_reply_markup(chat_id, message_id)
+            reply_markup = await get_reply_markup_aiogram(chat_id, int(message_id))
 
             # Вызываем функцию редактирования сообщения с клавиатурой
-            edit_success = edit_telegram_message(int(f'-100{chat_id}'), message_id, f"Start edit {random_hash}",
-                                                 reply_markup=reply_markup_json)
-            if edit_success:
-                return await render_template('web_editor.html', message_text='Your text here...')
-            else:
+            # edit_success = edit_telegram_message(int(f'-100{chat_id}'), message_id, f"Start edit {random_hash}",
+            #                                      reply_markup=reply_markup_json)
+            try:
+                await skynet_bot.edit_message_text(chat_id=int(f'-100{chat_id}'),
+                                                   message_id=message_id,
+                                                   text=f"Start edit {random_hash}",
+                                                   reply_markup=reply_markup,
+                                                   disable_web_page_preview=True)
+                return await render_template('tabler_web_editor.html', message_text='Your text here...')
+            except Exception as e:
+                logger.error(e)
                 return 'Не удалось отредактировать сообщение', 500
 
     else:
@@ -66,19 +75,34 @@ async def web_editor():
         return 'Параметры не найдены', 400
 
 
-async def get_reply_markup(chat_id, message_id):
+# async def get_reply_markup(chat_id, message_id):
+#     edit_button_url = f'https://t.me/myMTLbot/WebEditor?startapp={chat_id}_{message_id}'
+#     # Формируем JSON для клавиатуры
+#     reply_markup = {
+#         "inline_keyboard": [
+#             [
+#                 {"text": "Edit", "url": edit_button_url},
+#                 {"text": "Edit", "url": edit_button_url}
+#             ]
+#         ]
+#     }
+#     reply_markup_json = json.dumps(reply_markup)
+#     return reply_markup_json
+
+async def get_reply_markup_aiogram(chat_id: int, message_id: int) -> InlineKeyboardMarkup:
     edit_button_url = f'https://t.me/myMTLbot/WebEditor?startapp={chat_id}_{message_id}'
-    # Формируем JSON для клавиатуры
-    reply_markup = {
-        "inline_keyboard": [
-            [
-                {"text": "Edit", "url": edit_button_url},
-                {"text": "Edit", "url": edit_button_url}
-            ]
-        ]
-    }
-    reply_markup_json = json.dumps(reply_markup)
-    return reply_markup_json
+
+    # Create an InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+
+    # Add two "Edit" buttons with the same URL
+    builder.row(
+        InlineKeyboardButton(text="Edit", url=edit_button_url),
+        InlineKeyboardButton(text="Edit", url=edit_button_url)
+    )
+
+    # Build and return the InlineKeyboardMarkup
+    return builder.as_markup()
 
 
 @blueprint.route('/WebEditorAction', methods=['POST'])
@@ -134,16 +158,25 @@ async def web_editor_action():
             db_session.commit()
             if chat_id == 0:
                 return jsonify({'ok': True}), 200
-            tg_inquiry = transform_html(data['text'])
+            # tg_inquiry = transform_html(data['text'])
 
             # Выполняем редактирование сообщения в Telegram
-            reply_markup_json = await get_reply_markup(chat_id, message_id)
-            edit_success = edit_telegram_message(int(f'-100{chat_id}'), int(message_id),
-                                                 tg_inquiry.text, entities=tg_inquiry.entities,
-                                                 reply_markup=reply_markup_json)
-            if edit_success:
+            reply_markup = await get_reply_markup_aiogram(chat_id, message_id)
+            # edit_success = edit_telegram_message(int(f'-100{chat_id}'), int(message_id),
+            #                                      tg_inquiry.text, entities=tg_inquiry.entities,
+            #                                      reply_markup=reply_markup_json)
+            try:
+                await skynet_bot.edit_message_text(chat_id=int(f'-100{chat_id}'),
+                                                   message_id=int(message_id),
+                                                   text=prepare_html_text(data['text']),
+                                                   reply_markup=reply_markup,
+                                                   parse_mode=SULGUK_PARSE_MODE,
+                                                   disable_web_page_preview=True
+                                                   )
+
                 return jsonify({'ok': True}), 200
-            else:
+            except Exception as e:
+                logger.info(f"Error editing message: {e}")
                 return jsonify({'ok': False, 'error': 'Ошибка при редактировании сообщения'}), 500
 
     # Если текста нет, это просто запрос на проверку прав

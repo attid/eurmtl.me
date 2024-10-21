@@ -1,0 +1,125 @@
+{% extends 'tabler_base.html' %}
+
+{% block nav %}
+{% endblock %}
+
+{% block page_title %}WebEditor{% endblock %}
+
+{% block head_scripts %}
+<script src="/static/js/tinymce/tinymce.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Message</label>
+                    <div id="editor-container">
+                        {{ message_text|safe }}
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12 d-flex justify-content-end">
+                        <button class="btn btn-primary w-100" id="saveButton">
+                            Save<i class="ti ti-device-floppy ms-2"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<a href="?theme=dark" class="nav-link px-0 hide-theme-dark text-dark" title="Enable dark mode"
+   data-bs-toggle="tooltip" data-bs-placement="bottom">
+    <i class="ti ti-moon text-dark"></i> Enable dark mode
+</a>
+<a href="?theme=light" class="nav-link px-0 hide-theme-light" title="Enable light mode"
+   data-bs-toggle="tooltip" data-bs-placement="bottom">
+    <i class="ti ti-sun"></i> Enable light mode
+</a>
+
+{% endblock %}
+
+{% block bottom_scripts %}
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script>
+    {% if disable_fields %}
+    let disable_fields = true;
+    {% else %}
+    let disable_fields = false;
+    {% endif %}
+
+    document.addEventListener("DOMContentLoaded", function() {
+        let options = {
+          selector: '#editor-container',
+          forced_root_block: 'div',
+          readonly: disable_fields,
+          height: 300,
+          menubar: false,
+          statusbar: true,
+          plugins: [
+            'advlist autolink lists link image charmap print preview anchor',
+            'searchreplace visualblocks code fullscreen',
+            'insertdatetime media table paste code help wordcount'
+          ],
+          toolbar: 'undo redo | formatselect | ' +
+            'bold italic underline strikethrough | link code | ' +
+            'removeformat',
+          content_style: 'body { font-family: -apple-system, BlinkMacSystemFont, San Francisco, Segoe UI, Roboto, Helvetica Neue, sans-serif; font-size: 14px; -webkit-font-smoothing: antialiased; }'
+        }
+        if (localStorage.getItem("tablerTheme") === 'dark') {
+          options.skin = 'oxide-dark';
+          options.content_css = 'dark';
+        }
+        tinyMCE.init(options);
+
+    })
+
+
+    // Получаем initData
+    const initData = Telegram.WebApp.initData;
+
+    // Отправляем запрос на проверку прав на редактирование
+    async function checkEditPermissions() {
+        const response = await fetch('/WebEditorAction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ initData: initData })
+        });
+        const data = await response.json();
+
+        if (!data.ok) {
+            showToast('У вас нет прав на редактирование!');
+            showToast(data.error);
+            document.getElementById('saveButton').disabled = true;
+            tinyMCE.set("readonly");
+        }
+    }
+
+    // Отправляем изменения на сервер
+    async function saveChanges() {
+        const editedText = tinyMCE.activeEditor.getContent();
+        const response = await fetch('/WebEditorAction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ initData: initData, text: editedText })
+        });
+        const data = await response.json();
+
+        if (data.ok) {
+            showToast('Изменения сохранены!');
+        } else {
+            showToast('Ошибка при сохранении: ' + data.error);
+        }
+    }
+
+    // Назначаем обработчик для кнопки сохранения
+    document.getElementById('saveButton').addEventListener('click', saveChanges);
+
+    // Выполняем проверку прав при загрузке
+    checkEditPermissions();
+</script>
+{% endblock %}

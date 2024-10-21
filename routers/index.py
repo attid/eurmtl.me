@@ -101,6 +101,11 @@ async def login():
     return await render_template('tabler_login.html')
 
 
+@blueprint.route('/addr')
+async def lab_addr():
+    return await render_template('tabler_addr.html')
+
+
 @blueprint.route('/logout')
 async def logout():
     session.pop('userdata', None)

@@ -63,7 +63,7 @@ async def gs_update_decision(decision_id, col_id, value):
     ss = await agc.open("MTL_decisions")
     ws = await ss.worksheet("MTLFUND")
     # 155	Обновление голосов  https://t.me/c/1649743884/243	@SomeoneAny
-    cell = await ws.find(str(decision_id), in_column=0)
+    cell = await ws.find(str(decision_id), in_column=1)
     await ws.update_cell(row=cell.row, col=col_id, value=value)
 
 
@@ -81,4 +81,5 @@ async def gs_get_asset(asset_code):
         # code	name	descr	status	stellar	issuer	domain	MTL-fund	e-rate	b-rate	chat	contract	person	eurmtl.me
 
 if __name__ == "__main__":
-    print(asyncio.run(gs_get_asset('EURMT')))
+    #     await gs_update_decision(decision.num, 6, url)
+    print(asyncio.run(gs_update_decision(353, 6, 'https://t.me/c/1649743884/243')))

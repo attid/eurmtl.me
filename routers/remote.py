@@ -178,5 +178,31 @@ async def remote_add_transaction():
         return jsonify({"message": result}), 400
 
 
+@blueprint.route('/remote/add_uri', methods=['POST'])
+async def remote_add_uri():
+    api_key = request.headers.get('Authorization')
+    if api_key != f"Bearer {config.eurmtl_key.get_secret_value()}":
+        return jsonify({"message": "Unauthorized"}), 401
+
+    data = await request.json
+    uri = data.get('URI')
+
+    if not uri:
+        return jsonify({"message": "Missing URI"}), 400
+
+    # Print the received URI
+    print(f"Received URI: {uri}")
+
+    # TODO: Add code to save the URI
+
+    # Generate a random URL (this is a placeholder)
+    random_url = f"https://example.com/{uuid.uuid4().hex}"
+
+    return jsonify({
+        "SUCCESS": True,
+        "url": random_url
+    }), 200
+
+
 if __name__ == '__main__':
     print(asyncio.run(remote_need_sign('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI')))

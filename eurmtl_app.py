@@ -34,6 +34,8 @@ logger.add('log/app.log', level=logging.INFO)
 app.config['SECRET_KEY'] = config.secret_key.get_secret_value()
 app.config["EXPLAIN_TEMPLATE_LOADING"] = False
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+
 
 app.register_blueprint(routers.index.blueprint)
 app.register_blueprint(routers.laboratory.blueprint)
@@ -94,6 +96,7 @@ async def update_db():
 
 @app.before_request
 async def before_request():
+    session.permanent = True
     if 'userdata' not in session:  # Чтобы избежать перезаписи сессии на каждом запросе
         update_test_user()
 

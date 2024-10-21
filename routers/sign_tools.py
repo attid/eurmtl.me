@@ -13,7 +13,7 @@ from db.sql_models import Transactions, Signers, Signatures, Alerts
 from db.sql_pool import db_pool
 from utils.stellar_utils import (decode_xdr_to_text, check_publish_state, check_user_in_sign,
                                  add_transaction)
-from utils.telegram_utils import send_telegram_message
+from utils.telegram_utils import skynet_bot
 
 blueprint = Blueprint('sign_tools', __name__)
 
@@ -202,7 +202,8 @@ async def show_transaction(tr_hash):
                     if result != 'op_success':
                         await flash(f'Error in operation {i}: {result}')
 
-                        failed_operation_dict = '<br>'.join(await decode_xdr_to_text(transaction.body, only_op_number=i))
+                        failed_operation_dict = '<br>'.join(
+                            await decode_xdr_to_text(transaction.body, only_op_number=i))
                         await flash(Markup(f'Details of failed operation: {failed_operation_dict}'))
 
                         break
@@ -367,7 +368,7 @@ def alert_singers(tr_hash, small_text, tx_description):
     with db_pool() as db_session:
         alert_query = db_session.query(Alerts).filter(Alerts.transaction_hash == tr_hash).all()
         for alert in alert_query:
-            send_telegram_message(alert.tg_id, text)
+            skynet_bot.send_message(chat_id=alert.tg_id, text=text, disable_web_page_preview=True, parse_mode='HTML')
 
 
 if __name__ == '__main__':

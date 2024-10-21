@@ -1,14 +1,15 @@
 import uuid
 
+from loguru import logger
 from quart import Blueprint, request, render_template, flash, jsonify, session, redirect, abort
-from sulguk import transform_html
+from sulguk import transform_html, SULGUK_PARSE_MODE
 
 from config.config_reader import config
 from db.sql_models import Decisions
 from db.sql_pool import db_pool
 from utils.gspread_utils import gs_update_decision, gs_get_last_id, gs_save_new_decision
 from utils.stellar_utils import check_user_weight
-from utils.telegram_utils import send_telegram_message, edit_telegram_message
+from utils.telegram_utils import skynet_bot
 
 blueprint = Blueprint('decision', __name__)
 
@@ -55,36 +56,51 @@ async def cmd_add_decision():
 
         user_weight = await check_user_weight()
         if user_weight > 0:
+            with db_pool() as db_session:
+                existing_decision = db_session.query(Decisions).filter(Decisions.num == question_number).first()
+                if existing_decision:
+                    await flash(f'Вопрос с номером {question_number} уже существует. '
+                                f'<a href="/d/{existing_decision.uuid}">Редактировать существующий вопрос</a> '
+                                f'или создайте новый с другим номером.')
+                else:
+                    d_uuid = uuid.uuid4().hex
 
-            d_uuid = uuid.uuid4().hex
+                    username = '@' + session['userdata']['username']
 
-            username = '@' + session['userdata']['username']
+                    text = get_full_text(status, inquiry, [[], [], []], d_uuid, username)
+                    try:
+                        msg = await skynet_bot.send_message(chat_id=int(f'-100{chat_ids[reading]}'),
+                                                            text=text,
+                                                            parse_mode=SULGUK_PARSE_MODE,
+                                                            disable_web_page_preview=True)
+                        message_id = msg.message_id
+                    except Exception as e:
+                        logger.info(f"Error with telegram publishing: {e}")
+                        message_id = None
 
-            tg_inquiry = transform_html(get_full_text(status, inquiry, [[], [], []], d_uuid, username))
-            message_id = send_telegram_message(int(f'-100{chat_ids[reading]}'),
-                                               tg_inquiry.text, entities=tg_inquiry.entities)
-            if message_id is None:
-                await flash('Error with telegram publishing')
-            else:
-                url = f'https://t.me/c/{chat_ids[reading]}/{message_id}'
+                    if message_id is None:
+                        await flash('Error with telegram publishing')
+                    else:
+                        url = f'https://t.me/c/{chat_ids[reading]}/{message_id}'
 
-                await gs_save_new_decision(decision_id=question_number, url=url, username=username,
-                                           short_name=short_subject)
+                        await gs_save_new_decision(decision_id=question_number, url=url, username=username,
+                                                   short_name=short_subject)
 
-                with db_pool() as db_session:
-                    des = Decisions()
-                    des.uuid = d_uuid
-                    des.num = question_number
-                    des.description = short_subject
-                    des.reading = reading
-                    des.full_text = inquiry
-                    des.url = url
-                    des.username = username
-                    des.status = status
-                    db_session.add(des)
-                    db_session.commit()
-                return redirect(f'/d/{d_uuid}')
-    # resp = await make_response()
+                        with db_pool() as db_session:
+                            des = Decisions()
+                            des.uuid = d_uuid
+                            des.num = question_number
+                            des.description = short_subject
+                            des.reading = reading
+                            des.full_text = inquiry
+                            des.url = url
+                            des.username = username
+                            des.status = status
+                            db_session.add(des)
+                            db_session.commit()
+                        await flash('Вопрос успешно добавлен.', 'good')
+                        return redirect(f'/d/{d_uuid}')
+
     statuses_list = [(status, "") for status in statuses]
     return await render_template('tabler_decision.html', question_number=question_number,
                                  short_subject=short_subject, inquiry=inquiry, reading=reading, statuses=statuses_list,
@@ -131,11 +147,12 @@ async def cmd_show_decision(decision_id):
                     decision.full_text = inquiry
                     decision.status = status
                     db_session.commit()
-                    tg_inquiry = transform_html(
-                        get_full_text(status, inquiry, links_url, decision.uuid, decision.username))
-                    edit_telegram_message(chat_id=int(f'-100{chat_ids[reading]}'),
-                                          text=tg_inquiry.text, entities=tg_inquiry.entities,
-                                          message_id=decision.url.split('/')[-1])
+                    text = get_full_text(status, inquiry, links_url, decision.uuid, decision.username)
+                    await skynet_bot.edit_message_text(chat_id=int(f'-100{chat_ids[reading]}'),
+                                                       text=text,
+                                                       parse_mode=SULGUK_PARSE_MODE,
+                                                       disable_web_page_preview=True,
+                                                       message_id=decision.url.split('/')[-1])
 
             # если сменили чтение,
             if reading != decision.reading:
@@ -145,9 +162,17 @@ async def cmd_show_decision(decision_id):
                 else:
                     new_uuid = uuid.uuid4().hex
 
-                    tg_inquiry = transform_html(get_full_text(status, inquiry, links_url, new_uuid, username))
-                    message_id = send_telegram_message(int(f'-100{chat_ids[reading]}'),
-                                                       tg_inquiry.text, entities=tg_inquiry.entities)
+                    text = get_full_text(status, inquiry, links_url, new_uuid, username)
+                    try:
+                        msg = await skynet_bot.send_message(chat_id=int(f'-100{chat_ids[reading]}'),
+                                                            text=text,
+                                                            parse_mode=SULGUK_PARSE_MODE,
+                                                            disable_web_page_preview=True)
+                        message_id = msg.message_id
+                    except Exception as e:
+                        logger.info(f"Error with telegram publishing: {e}")
+                        message_id = None
+
                     if message_id is None:
                         await flash('Error with telegram publishing')
                     else:

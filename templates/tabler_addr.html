@@ -1,0 +1,129 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}Address Generator{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title">Generate Stellar Address</h3>
+                <div class="row">
+                    <div class="col-a auto">
+                        <label class="form-label" for="suffix">Address Suffix</label>
+                    </div>
+                    <div class="col-2">
+                        <input type="text" id="suffix" name="suffix" class="form-control" placeholder="Enter desired suffix">
+                    </div>
+
+                </div>
+                <div class="row">
+                    <div class="col-a auto">
+                        <label class="form-label" for="processCount">Number of Processes</label>
+                    </div>
+                    <div class="col-2">
+                        <div class="input-group">
+                            <button class="btn btn-outline-secondary" type="button" onclick="decrementProcessCount()">-</button>
+                            <input type="text" class="form-control text-center" id="processCount" value="1" readonly>
+                            <button class="btn btn-outline-secondary" type="button" onclick="incrementProcessCount()">+</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12">
+                        <small class="form-hint">For faster generation, you can increase the number of processes. However, it's recommended not to exceed the number of CPU cores on your device.</small>
+                    </div>
+                </div>
+                <button class="btn btn-primary" id="generateBtn" onclick="startGenerateAddress()">Generate Address</button>
+                <button class="btn btn-danger" id="stopBtn" onclick="stopGenerateAddress()" style="display: none;">Stop</button>
+                <p class="mt-3">Here you can generate an address. 3 letters generate quickly, 4 letters take about half an hour, 5 letters can take 2 hours or more.</p>
+                <p>Using multiple processes can significantly speed up the generation.</p>
+                <p>In my tests, the best speed was achieved in the Firefox browser.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title">Generated Keys</h3>
+                <div class="mb-3">
+                    <label class="form-label" for="publicKey">Public Key</label>
+                    <input type="text" id="publicKey" class="form-control" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="privateKey">Private Key</label>
+                    <input type="text" id="privateKey" class="form-control" readonly>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block bottom_scripts %}
+<script src="/static/js/stellar-sdk.min.js"></script>
+<script>
+let workers = [];
+let isGenerating = false;
+
+function incrementProcessCount() {
+    let count = parseInt(document.getElementById('processCount').value);
+    if (count < 16) {
+        document.getElementById('processCount').value = count + 1;
+    }
+}
+
+function decrementProcessCount() {
+    let count = parseInt(document.getElementById('processCount').value);
+    if (count > 1) {
+        document.getElementById('processCount').value = count - 1;
+    }
+}
+
+function startGenerateAddress() {
+    const suffix = document.getElementById('suffix').value.toUpperCase();
+    const processCount = parseInt(document.getElementById('processCount').value);
+    const validChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+    if (!suffix.split('').every(char => validChars.includes(char))) {
+        showToast('Invalid characters in suffix. Use only A-Z and 2-7.', 'danger');
+        return;
+    }
+
+    isGenerating = true;
+    document.getElementById('generateBtn').style.display = 'none';
+    document.getElementById('stopBtn').style.display = 'inline-block';
+    showToast('Generating address...', 'info');
+
+    for (let i = 0; i < processCount; i++) {
+        let worker = new Worker('/static/js/address-generator-worker.js');
+        workers.push(worker);
+
+        worker.onmessage = function(e) {
+            if (e.data.type === 'progress') {
+                showToast(`Worker ${i+1}: Tried ${e.data.count} variations`, 'info');
+            } else if (e.data.type === 'result') {
+                document.getElementById('publicKey').value = e.data.publicKey;
+                document.getElementById('privateKey').value = e.data.privateKey;
+                showToast('Address generated successfully!', 'success');
+                stopGenerateAddress();
+            }
+        };
+
+        worker.postMessage({ suffix: suffix, workerId: i });
+    }
+}
+
+function stopGenerateAddress() {
+    workers.forEach(worker => worker.terminate());
+    workers = [];
+    isGenerating = false;
+    document.getElementById('generateBtn').style.display = 'inline-block';
+    document.getElementById('stopBtn').style.display = 'none';
+    showToast('Address generation stopped', 'warning');
+}
+</script>
+{% endblock %}
