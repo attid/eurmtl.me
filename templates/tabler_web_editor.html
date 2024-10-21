@@ -1,0 +1,114 @@
+{% extends 'tabler_base.html' %}
+
+{% block nav %}
+{% endblock %}
+
+{% block page_title %}WebEditor{% endblock %}
+
+{% block head_scripts %}
+<script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+<link rel="stylesheet" href="https://cdn.quilljs.com/1.3.6/quill.snow.css">
+<link rel="stylesheet" href="/static/css/quill-emoji.css">
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">Message</label>
+                    <div id="editor-container" {% if disable_fields %}data-disabled="true" {% endif %}>
+                        {{ message_text|safe }}
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12 d-flex justify-content-end">
+                        <button class="btn btn-primary w-100" id="saveButton">
+                            Save<i class="ti ti-device-floppy ms-2"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block bottom_scripts %}
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+<script src="/static/js/quill-emoji.js"></script>
+<script>
+    var toolbarOptions = {
+        container: [
+            ['bold', 'italic', 'underline', 'strike', 'code'],
+            ['link'],
+            ['clean'],
+            ['emoji']
+        ],
+        handlers: {
+            'emoji': function () {}
+        }
+    };
+
+    var quill = new Quill('#editor-container', {
+        modules: {
+            "toolbar": toolbarOptions,
+            "emoji-toolbar": true,
+            "emoji-shortname": true
+        },
+        theme: 'snow',
+    });
+
+    // Получаем initData
+    const initData = Telegram.WebApp.initData;
+
+    // Отправляем запрос на проверку прав на редактирование
+    async function checkEditPermissions() {
+        const response = await fetch('/WebEditorAction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ initData: initData })
+        });
+        const data = await response.json();
+
+        if (!data.ok) {
+            showToast('У вас нет прав на редактирование!');
+            showToast(data.error);
+            document.getElementById('saveButton').disabled = true;
+            quill.enable(false); // Переводим Quill в режим только для чтения
+        }
+    }
+
+    // Отправляем изменения на сервер
+    async function saveChanges() {
+        const editedText = quill.root.innerHTML;
+        const response = await fetch('/WebEditorAction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ initData: initData, text: editedText })
+        });
+        const data = await response.json();
+
+        if (data.ok) {
+            showToast('Изменения сохранены!');
+        } else {
+            showToast('Ошибка при сохранении: ' + data.error);
+        }
+    }
+
+    // Назначаем обработчик для кнопки сохранения
+    document.getElementById('saveButton').addEventListener('click', saveChanges);
+
+    const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (systemPrefersDark) {
+        document.body.setAttribute('data-bs-theme', 'dark');
+    }
+
+
+    // Выполняем проверку прав при загрузке
+    checkEditPermissions();
+</script>
+{% endblock %}
