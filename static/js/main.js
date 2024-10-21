@@ -1034,14 +1034,17 @@ function importTransaction() {
 }
 
 function calculateFinalCost(inputElement) {
-    const $operationBlock = $(inputElement).closest('.card-content');
+    const $operationBlock = $(inputElement).closest('.gather-block');
+
     const getValueByType = (type) => $operationBlock.find(`[data-type="${type}"]`).val();
     const parseNumber = (value) => parseFloat(value.replace(',', '.'));
 
     const amount = parseNumber(getValueByType('amount'));
     const price = parseNumber(getValueByType('price'));
-    const sellingAsset = getValueByType('selling').split('-')[0];
-    const buyingAsset = getValueByType('buying').split('-')[0];
+
+    const sellingAsset = getValueByType('selling')?.split('-')[0] || '';
+    const buyingAsset = getValueByType('buying')?.split('-')[0] || '';
+
     const operationType = $operationBlock.data('type');
 
     const $helperText = $operationBlock.find('[data-type="price"]').closest('.row').find('.form-text');
@@ -1051,12 +1054,18 @@ function calculateFinalCost(inputElement) {
         return;
     }
 
+    if (amount === 0) {
+        $helperText.text('The order will be deleted');
+        return;
+    }
+
     const finalCost = amount * price;
     const assetType = operationType === 'buy' ? sellingAsset : buyingAsset;
-    const action = operationType === 'buy' ? 'продадите' : 'купите';
+    const action = operationType === 'buy' ? 'sell' : 'buy';
 
-    $helperText.text(`Вы ${action} ${finalCost.toFixed(7)} ${assetType}`);
+    $helperText.text(`You will ${action} ${finalCost.toFixed(7)} ${assetType}`);
 }
+
 
 function initLab() {
     var newCardHTML = generateCardFirst();

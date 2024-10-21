@@ -1,17 +1,19 @@
 import hashlib
 import hmac
 import urllib.parse
-
 import requests
 from aiogram import Bot
+from sulguk import AiogramSulgukMiddleware
 
 from config.config_reader import config
 
 skynet_bot = Bot(token=config.skynet_token.get_secret_value())
 mmwb_bot = Bot(token=config.mmwb_token.get_secret_value())
+skynet_bot.session.middleware(AiogramSulgukMiddleware())
+mmwb_bot.session.middleware(AiogramSulgukMiddleware())
 
 
-def send_telegram_message(chat_id, text, entities=None):
+def send_telegram_message_(chat_id, text, entities=None):
     """
     Sends a Telegram message to the specified chat.
 
@@ -43,8 +45,8 @@ def send_telegram_message(chat_id, text, entities=None):
         print(f'Failed to send message: {response.content}')
 
 
-def edit_telegram_message(chat_id, message_id, text, reply_markup=None, entities=None,
-                          config_token=config.skynet_token):
+def edit_telegram_message_(chat_id, message_id, text, reply_markup=None, entities=None,
+                           config_token=config.skynet_token):
     """
     Edit a message in the Telegram chat.
 
@@ -92,8 +94,8 @@ def is_bot_admin(chat_id):
     :param chat_id: ID чата.
     :return: True, если бот является администратором, иначе False.
     """
-    token = config.skynet_token.get_secret_value()
-    return is_user_admin(chat_id, token.split(':')[0])  # user_id бота можно получить из его токена
+    # token = config.skynet_token.get_secret_value()
+    return is_user_admin(chat_id, skynet_bot.id)  # user_id бота можно получить из его токена
 
 
 def is_user_admin(chat_id, user_id):
@@ -166,6 +168,37 @@ def check_response_webapp(data, config_token=config.skynet_token):
     result = is_hash_valid(hash_value, check_data_string, config_token.get_secret_value())
     return result
 
+def prepare_html_text(text: str) -> str:
+    """
+    Prepares HTML text by replacing <p> tags with <div> tags.
+
+    Args:
+        text (str): The input HTML text.
+
+    Returns:
+        str: The modified HTML text with <p> tags replaced by <div> tags.
+
+    Note:
+        This function performs a simple string replacement and does not parse the HTML.
+        It may not handle all cases correctly if the input is complex or malformed HTML.
+    """
+    if not isinstance(text, str):
+        raise TypeError("Input must be a string")
+    text = text.replace('<p>', '<div>')
+    text = text.replace('</p>', '</div>')
+
+    return text
+
+# Optional: Add a simple test
+def test_prepare_html_text():
+    input_text = "<p>Hello</p><p>World</p>"
+    expected_output = "<div>Hello</div><div>World</div>"
+    assert prepare_html_text(input_text) == expected_output, "Test failed"
+    print("Test passed")
+
+# Uncomment the following line to run the test
+# test_prepare_html_text()
 
 if __name__ == '__main__':
     pass
+    test_prepare_html_text()

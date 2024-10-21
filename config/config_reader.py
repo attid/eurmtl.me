@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     mongo_db_name: str
     test_user_id: int
     test_mode: bool = False
+    grist_token: str
 
     class Config:
         env_file = dotenv_path

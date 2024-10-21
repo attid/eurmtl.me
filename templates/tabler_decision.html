@@ -40,7 +40,7 @@
                    value="{{ question_number }}" {% if links_url or disable_fields %}disabled{% endif %}>
         </div>
         <div class="col-2 mb-3 d-flex align-items-end">
-            <button type="button" id="loadsDecisionNum" class="btn btn-sm btn-outline-primary"
+            <button type="button" id="loadsDecisionNum" class="btn btn btn-outline-primary"
                     {% if links_url or disable_fields %}disabled{% endif %}>
                 🔍
             </button>
@@ -117,7 +117,7 @@
         handlers: {
             'emoji': function () {}
         }
-    }
+    };
 
     var quill = new Quill('#editor-container', {
         modules: {
@@ -145,7 +145,7 @@
             var currentText = quill.root.innerHTML; // Fetch current content from Quill editor
             var shortSubject = document.querySelector("#short_subject").value;
             quill.root.innerHTML = "<b>Вопрос " + data.number + ": "+ shortSubject +"</b><br> " + currentText; // Update content in Quill editor
-            M.updateTextFields(); // Обновляем текстовые поля
+            // M.updateTextFields(); // Обновляем текстовые поля
         })
         .catch(error => {
             console.log("There was a problem with the fetch operation:", error.message);

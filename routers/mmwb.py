@@ -1,11 +1,14 @@
 import json
+
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from loguru import logger
 from quart import Blueprint, request, render_template, jsonify
 
 from config.config_reader import config
 from db.sql_models import MMWBTransactions
 from db.sql_pool import db_pool
 from utils.stellar_utils import get_account, decode_data_value, stellar_manage_data
-from utils.telegram_utils import edit_telegram_message, check_response_webapp
+from utils.telegram_utils import check_response_webapp, mmwb_bot
 
 blueprint = Blueprint('mmwb', __name__)
 
@@ -33,16 +36,11 @@ async def manage_data():
         return 'Параметры не найдены', 400
 
 
-async def get_md_reply_markup(uuid_callback_data):
-    reply_markup = {
-        "inline_keyboard": [
-            [
-                {"text": "Decode", "callback_data": f"MDCallbackData:{uuid_callback_data}"}
-            ]
-        ]
-    }
-    reply_markup_json = json.dumps(reply_markup)
-    return reply_markup_json
+async def get_md_reply_markup(uuid_callback_data: str) -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton(text="Decode", callback_data=f"MDCallbackData:{uuid_callback_data}")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 @blueprint.route('/ManageDataAction', methods=['POST'])
@@ -70,14 +68,16 @@ async def manage_data_action():
         db_session.commit()
 
         # Выполняем редактирование сообщения в Telegram
-        reply_markup_json = await get_md_reply_markup(record.uuid)
-        edit_success = edit_telegram_message(int(user_id), int(message_id),
+        reply_markup = await get_md_reply_markup(record.uuid)
+        try:
+            await mmwb_bot.edit_message_text(chat_id=int(user_id),
+                                             message_id=int(message_id),
                                              text='Press <b>Decode</b> to continue',
-                                             reply_markup=reply_markup_json,
-                                             config_token=config.mmwb_token)
-        if edit_success:
+                                             reply_markup=reply_markup,
+                                             parse_mode='HTML')
             return jsonify({'ok': True}), 200
-        else:
+        except Exception as e:
+            logger.info(f'Ошибка при редактировании сообщения: {e}')
             return jsonify({'ok': False, 'error': 'Ошибка при редактировании сообщения'}), 500
 
 

@@ -20,6 +20,9 @@
         body {
             font-feature-settings: "cv03", "cv04", "cv11";
         }
+        .avatar {
+            border-radius: 30px;
+        }
     </style>
     {% block head_scripts %}{% endblock %}
     <!-- Yandex.Metrika counter -->
@@ -55,7 +58,7 @@
             </button>
             <h1 class="navbar-brand navbar-brand-autodark d-none-navbar-horizontal pe-0 pe-md-3">
                 <a href=".">
-                    <span class="avatar bg-yellow" >MTL</span>
+                    <span class="avatar bg-yellow">MTL</span>
                 </a>
             </h1>
 
@@ -165,6 +168,14 @@
                             <span class="nav-link-title">Multi Sign Tools</span>
                         </a>
                     </li>
+                    <li class="nav-item {{ 'active' if request.path == '/addr' else '' }}">
+                        <a class="nav-link" href="/addr">
+                            <span class="nav-link-icon d-md-none d-lg-inline-block">
+                              <i class="ti ti-star"></i>
+                            </span>
+                            <span class="nav-link-title">Gen Address</span>
+                        </a>
+                    </li>
                     {% if session['user_id'] %}
                     <li class="nav-item {{ 'active' if request.path == '/decision' else '' }}">
                         <a class="nav-link" href="/decision">
@@ -204,33 +215,20 @@
         <div class="page-body">
             <div class="container-xl">
                 <!-- Место для flash-сообщений -->
-                {% for message in get_flashed_messages(category_filter=['message']) %}
-                <div class="alert alert-danger alert-dismissible" role="alert">
+                {% for category, message in get_flashed_messages(with_categories=true) %}
+                <div class="alert alert-{{ 'success' if category == 'good' else 'danger' }} alert-dismissible"
+                     role="alert">
                     <div class="d-flex">
                         <div>
-                            <i class="ti ti-alert-triangle icon alert-icon"></i>
+                            <i class="ti ti-{{ 'check' if category == 'good' else 'alert-triangle' }} icon alert-icon"></i>
                         </div>
                         <div>
-                            {{ message }}
+                            {{ message|safe }}
                         </div>
                     </div>
                     <a class="btn-close" data-bs-dismiss="alert" aria-label="close"></a>
                 </div>
                 {% endfor %}
-                {% for message in get_flashed_messages(category_filter=['good']) %}
-                <div class="alert alert-success alert-dismissible" role="alert">
-                    <div class="d-flex">
-                        <div>
-                            <i class="ti ti-check icon alert-icon"></i>
-                        </div>
-                        <div>
-                            {{ message }}
-                        </div>
-                    </div>
-                    <a class="btn-close" data-bs-dismiss="alert" aria-label="close"></a>
-                </div>
-                {% endfor %}
-
                 <!-- Основное содержимое -->
                 <div class="row row-cards">
                     <div class="col-12">
