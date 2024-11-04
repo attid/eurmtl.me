@@ -38,7 +38,7 @@
                 </div>
                 <div class="field has-addons">
                     <div class="control is-expanded">
-                        <input class="input" id="importInput" type="text" placeholder="Введите публичный ключ для импорта данных" value="" data-translate-placeholder="importInputPlaceholder">
+                        <input class="input" id="importInput" type="text" placeholder="Введите публичный ключ для импорта данных" value="{{account_id}}" data-translate-placeholder="importInputPlaceholder">
                     </div>
                     <div class="control">
                         <button class="button is-info" id="importButton" onclick="importData()" data-translate="importButton">Импортировать</button>
@@ -141,6 +141,6 @@
     </section>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/10.4.1/stellar-sdk.min.js"></script>
     <script src="/static/js/i18.js?1"></script>
-    <script src="/static/js/bsn.js?1"></script>
+    <script src="/static/js/bsn.js?2"></script>
 </body>
 </html>

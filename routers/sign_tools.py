@@ -23,7 +23,7 @@ blueprint = Blueprint('sign_tools', __name__)
 async def start_add_transaction():
     session['return_to'] = request.url
 
-    xdr = ''
+    xdr = request.args.get('xdr', '')
     description = ''
     memo = ''
     error_message = None

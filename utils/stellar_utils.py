@@ -950,9 +950,9 @@ async def stellar_build_xdr(data):
                 weight=int(operation['weight']) if len(operation['weight']) > 0 else None,
                 source=source_account)
         if operation['type'] == 'set_trust_line_flags':
-            set_flags_decoded = decode_flags(int(operation['set_flags'])) if len(operation['set_flags']) > 0 else None
-            clear_flags_decoded = (decode_flags(int(operation['clear_flags']))
-                                   if len(operation['clear_flags']) > 0 else None)
+            set_flags_decoded = decode_flags(int(operation['setFlags'])) if len(operation['setFlags']) > 0 else None
+            clear_flags_decoded = (decode_flags(int(operation['clearFlags']))
+                                   if len(operation['clearFlags']) > 0 else None)
 
             transaction.append_set_trust_line_flags_op(
                 trustor=operation['trustor'],

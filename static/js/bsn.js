@@ -183,3 +183,10 @@ async function getXDR() {
     const xdr = builtTx.toXDR();
     document.getElementById('xdr').value = xdr;
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    const input = document.getElementById('importInput').value;
+    if (input.length === 56) {
+        importData();
+    }
+});

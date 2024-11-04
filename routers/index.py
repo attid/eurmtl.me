@@ -49,17 +49,27 @@ async def cmd_send_err():
 @blueprint.route('/restart', methods=('GET', 'POST'))
 async def restart():
     if request.method == 'POST':
+        # надо проверить параметр если
+        # body: JSON.stringify({type: 'cache'})
+        json_data = await request.get_json()
+        cache_refresh = json_data and json_data.get('type') == 'cache'
+
         if (await check_user_weight()) > 0:
             username = '@' + session['userdata']['username']
             if username.lower() == '@itolstov':
-                cmd = f"/usr/bin/ps -o ppid= -p {os.getpid()}"
-                result = subprocess.run(cmd.split(), stdout=subprocess.PIPE)
-                parent_pid = int(result.stdout.decode('utf-8').strip())
+                if cache_refresh:
+                    from quart import current_app
+                    current_app.jinja_env.cache = {}
+                    return "Cache refreshed"
+                else:
+                    cmd = f"/usr/bin/ps -o ppid= -p {os.getpid()}"
+                    result = subprocess.run(cmd.split(), stdout=subprocess.PIPE)
+                    parent_pid = int(result.stdout.decode('utf-8').strip())
 
-                # Отправить сигнал SIGTERM родительскому процессу
-                os.kill(parent_pid, signal.SIGTERM)
+                    # Отправить сигнал SIGTERM родительскому процессу
+                    os.kill(parent_pid, signal.SIGTERM)
 
-                return "Restarting..."
+                    return "Restarting..."
         else:
             return "need authority", 403
     else:
@@ -115,8 +125,10 @@ async def logout():
 
 @blueprint.route('/bor', methods=('GET', 'POST'))
 @blueprint.route('/bsn', methods=('GET', 'POST'))
-async def get_bsn():
-    return await render_template('bsn.html')
+@blueprint.route('/bsn/', methods=('GET', 'POST'))
+@blueprint.route('/bsn/<account_id>', methods=('GET', 'POST'))
+async def get_bsn(account_id: str = ''):
+    return await render_template('bsn.html', account_id=account_id)
 
 
 @blueprint.route('/myip')
