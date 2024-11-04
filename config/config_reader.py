@@ -43,7 +43,7 @@ def update_test_user():
         config.test_mode = True
         data = {
             'id': config.test_user_id,
-            'username': "test_user",
+            'username': "itolstov",
             'photo_url': "https://yastatic.net/s3/home/div/new_app/bender/weather/weather_new_2023/bkn_n.svg",
         }
         session['userdata'] = data

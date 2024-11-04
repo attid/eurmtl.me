@@ -5,7 +5,8 @@
 
 <div class="d-flex mb-4">
     <button class="btn btn-primary me-2" onclick="checkServerMultiple()">Проверить</button>
-    <button class="btn btn-danger" onclick="restartServer()">Перезагрузить</button>
+    <button class="btn btn-danger me-2" onclick="restartServer()">Перезагрузить</button>
+    <button class="btn btn-warning me-2" onclick="restartCash()">Перезагрузить кеш</button>
 </div>
 
 <div class="card">
@@ -64,6 +65,27 @@
             .catch(error => {
                 console.error('Error:', error);
                 showToast('Ошибка при перезагрузке сервера', 'danger');
+            });
+    }
+
+    function restartCash() {
+        fetch('/restart', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ type: 'cache' })
+        })
+            .then(response => {
+                if (response.ok) {
+                    showToast('Кеш перезагружается...', 'success');
+                } else {
+                    showToast('Нет доступа к перезагрузке кеша', 'warning');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('Ошибка при перезагрузке кеша', 'danger');
             });
     }
 </script>

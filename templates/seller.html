@@ -1,30 +1,74 @@
-{% extends 'base.html' %}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-translate="pageSellerTitle">Создание QR-кода для продажи</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bulma/1.0.0/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16x16.png">
+    <link rel="manifest" href="/static/icons/site.webmanifest">
+</head>
+<body>
+    <section class="section">
+        <div class="container">
+            <!-- Языковые переключатели -->
+            <div class="field is-grouped" style="justify-content: flex-end;">
+                <div class="control">
+                    <button id="lang-en" class="button" onclick="setLanguage('en')">EN</button>
+                </div>
+                <div class="control">
+                    <button id="lang-ru" class="button" onclick="setLanguage('ru')">RU</button>
+                </div>
+            </div>
 
-{% block nav %}
-{% endblock %}
+            <!-- Форма создания QR-кода -->
+            <div class="box">
+                <form action="" method="post">
+                    <div class="field">
+                        <label class="label" for="sale_sum" data-translate="saleSumLabel">Сумма</label>
+                        <div class="control">
+                            <input class="input" type="text" id="sale_sum" name="sale_sum" placeholder="Введите сумму в eurmtl" value="{{ sale_sum }}" data-translate-placeholder="saleSumPlaceholder">
+                        </div>
+                    </div>
 
-{% block content %}
+                    <div class="field">
+                        <label class="label" for="memo_text" data-translate="memoTextLabel">Примечание</label>
+                        <div class="control">
+                            <input class="input" type="text" id="memo_text" name="memo_text" placeholder="Вы можете добавить примечание здесь" value="{{ memo_text }}" data-translate-placeholder="memoTextPlaceholder">
+                        </div>
+                    </div>
 
-<form action="" method="post">
-    <fieldset id="create-tx">
-        <legend>New QR</legend>
-        <p>
-            <label for="sale_sum">SUM</label>
-            <input type="text" id="sale_sum" name="sale_sum"
-                   placeholder="please enter sum in eurmtl" value="{{ sale_sum }}">
-        </p>
-        <p>
-            <label for="memo_text">memo_text</label>
-            <input type="text" id="memo_text" name="memo_text"
-                   placeholder="you can add memo here" value="{{ memo_text }}">
-        </p>
-        <input type="submit" class="button primary" value="Create">
-    </fieldset>
-</form>
+                    <div class="field">
+                        <div class="control">
+                            <button type="submit" class="button is-primary is-fullwidth" data-translate="createButton">Создать</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
 
-{% if qr_text %}
-<img src="{{ qr_img }}"> <br>
-<a href="{{qr_text}}">Link to open QR</a>
-{% endif %}
-
-{% endblock %}
+            <!-- Блок для отображения QR-кода -->
+            {% if qr_text %}
+            <div class="box">
+                <div class="columns is-centered">
+                    <div class="column is-half-desktop is-full-mobile is-centered">
+                        <figure class="image is-square has-background-white">
+                            <img src="{{ qr_img }}" alt="QR Code">
+                        </figure>
+                    </div>
+                </div>
+                <div class="field mt-4">
+                    <div class="control">
+                        <a href="{{ qr_text }}" class="button is-link is-fullwidth" data-translate="openQRLink">Открыть QR-код</a>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+    <script src="/static/js/i18.js?1"></script>
+    <!-- Add any additional scripts here -->
+</body>
+</html>
