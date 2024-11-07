@@ -1,5 +1,6 @@
 import asyncio
 import json
+from loguru import logger
 
 import requests
 from quart import Blueprint, request, render_template, jsonify, session
@@ -154,9 +155,10 @@ async def cmd_path(asset_from, asset_for, asset_sum):
             source_amount=float2str(asset_sum),
             destination=[decode_asset(asset_for)]).call()
         for record in account['_embedded']['records']:
-            result[f"{record['destination_amount']} {record['destination_asset_code']}"] = json.dumps(record['path'])
-    except:
-        pass
+            destination_asset_code = record['destination_asset_code'] if record.get('destination_asset_code') else 'XLM'
+            result[f"{record['destination_amount']} {destination_asset_code}"] = json.dumps(record['path'])
+    except Exception as e:
+        logger.info(f"Error: {e}")
     return jsonify(result)
 
 

@@ -295,7 +295,7 @@ function fetchPath(buttonElement, pathFieldId) {
     var $button = $(buttonElement);
     var $row = $button.closest('.row');
     var $input = $('#' + pathFieldId);
-    var $operationBlock = $button.closest('.card-content');
+    var $operationBlock = $button.closest('.card-body');
 
     var sellingAsset = $operationBlock.find('[data-type="selling"]').val() || 0;
     var buyingAsset = $operationBlock.find('[data-type="buying"]').val() || 0;
