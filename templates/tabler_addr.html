@@ -57,6 +57,7 @@
                     <label class="form-label" for="privateKey">Private Key</label>
                     <input type="text" id="privateKey" class="form-control" readonly>
                 </div>
+                <div class="mb-3" id="info"></div>
             </div>
         </div>
     </div>
@@ -68,6 +69,19 @@
 <script>
 let workers = [];
 let isGenerating = false;
+let startTime = null;
+let totalAttempts = 0;
+
+function detectBrowser() {
+    const isChromiumBased = !!window.chrome &&
+        (navigator.userAgent.includes('Chrome') ||
+         navigator.userAgent.includes('Edge') ||
+         navigator.userAgent.includes('Opera'));
+
+    const isFirefox = typeof InstallTrigger !== 'undefined';
+
+    return { isChromiumBased, isFirefox };
+}
 
 function incrementProcessCount() {
     let count = parseInt(document.getElementById('processCount').value);
@@ -83,9 +97,33 @@ function decrementProcessCount() {
     }
 }
 
+function updateInfo() {
+    const elapsedTime = Math.round((Date.now() - startTime) / 1000);
+    if (elapsedTime === 0) return; // Предотвращаем деление на ноль
+
+    const infoDiv = document.getElementById('info');
+    infoDiv.innerHTML = `
+        Total attempts: ${totalAttempts.toLocaleString()}<br>
+        Time taken: ${formatTime(elapsedTime)}<br>
+        Attempts per second: ${Math.round(totalAttempts / elapsedTime).toLocaleString()}
+    `;
+}
+
+function formatTime(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+
+    const parts = [];
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    parts.push(`${remainingSeconds}s`);
+
+    return parts.join(' ');
+}
+
 function startGenerateAddress() {
     const suffix = document.getElementById('suffix').value.toUpperCase();
-    const processCount = parseInt(document.getElementById('processCount').value);
     const validChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
     if (!suffix.split('').every(char => validChars.includes(char))) {
@@ -93,10 +131,37 @@ function startGenerateAddress() {
         return;
     }
 
+    const { isChromiumBased, isFirefox } = detectBrowser();
+    let processCount;
+
+    if (isFirefox) {
+        showToast('Using high-performance Firefox algorithm with multiple workers', 'info');
+        processCount = parseInt(document.getElementById('processCount').value);
+    } else if (isChromiumBased) {
+        showToast('Using optimized Chromium algorithm with reduced workers', 'info');
+        processCount = Math.min(4, parseInt(document.getElementById('processCount').value));
+    } else {
+        showToast('Using default algorithm for your browser', 'info');
+        processCount = parseInt(document.getElementById('processCount').value);
+    }
+
     isGenerating = true;
+    startTime = Date.now();
+    totalAttempts = 0;
+
     document.getElementById('generateBtn').style.display = 'none';
     document.getElementById('stopBtn').style.display = 'inline-block';
-    showToast('Generating address...', 'info');
+
+    const infoInterval = setInterval(() => {
+        if (isGenerating) {
+            updateInfo();
+        } else {
+            clearInterval(infoInterval);
+        }
+    }, 1000);
+
+    // Оптимизация для Chromium-based браузеров
+    const updateFrequency = isChromiumBased ? 5000 : 1000; // Меньше обновлений для Chromium
 
     for (let i = 0; i < processCount; i++) {
         let worker = new Worker('/static/js/address-generator-worker.js');
@@ -104,16 +169,27 @@ function startGenerateAddress() {
 
         worker.onmessage = function(e) {
             if (e.data.type === 'progress') {
-                showToast(`Worker ${i+1}: Tried ${e.data.count} variations`, 'info');
+                totalAttempts += e.data.count;
+                // Уменьшаем количество toast-уведомлений для Chromium
+                if (!isChromiumBased || (i === 0 && totalAttempts % updateFrequency === 0)) {
+                    showToast(`Worker ${i+1}: Tried ${e.data.count} variations`, 'info');
+                }
             } else if (e.data.type === 'result') {
                 document.getElementById('publicKey').value = e.data.publicKey;
                 document.getElementById('privateKey').value = e.data.privateKey;
                 showToast('Address generated successfully!', 'success');
+                updateInfo();
                 stopGenerateAddress();
             }
         };
 
-        worker.postMessage({ suffix: suffix, workerId: i });
+        // Добавляем параметр для оптимизации воркера в зависимости от браузера
+        worker.postMessage({
+            suffix: suffix,
+            workerId: i,
+            isChromiumBased: isChromiumBased,
+            batchSize: isChromiumBased ? 1000 : 100 // Больше размер пакета для Chromium
+        });
     }
 }
 
@@ -124,6 +200,7 @@ function stopGenerateAddress() {
     document.getElementById('generateBtn').style.display = 'inline-block';
     document.getElementById('stopBtn').style.display = 'none';
     showToast('Address generation stopped', 'warning');
+    updateInfo();
 }
 </script>
 {% endblock %}

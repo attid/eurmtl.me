@@ -515,9 +515,9 @@ function generateCardSetOption() {
     <div class="card-body gather-block" data-type="set_options" data-index="${blockId}">
         ${generateCardHeader("Set Options", blockId)}
 
-        ${generateInput("master", "Master Weight (optional)", "int",  "",
+        ${generateInput("master", "Master Weight (optional)", "int_null",  "",
             "This can result in a permanently locked account. Are you sure you know what you are doing?")}
-        ${generateInput("threshold", "Low/Medium/High Threshold (optional)", "int",  "",
+        ${generateInput("threshold", "Low/Medium/High Threshold (optional) you can set just 1 or 10 for all or use 1/2/3", "threshold",  "",
             "This can result in a permanently locked account. Are you sure you know what you are doing?")}
         ${generateInput("home", "Home Domain (optional)", "text_null")}
 
@@ -826,6 +826,11 @@ function validateInput(value, validationType, dataType, type, index) {
             break;
         case 'text_null':
             // Нет дополнительной проверки, так как может быть пустым
+            break;
+        case 'threshold':
+            if (!/^\d+$/.test(value) && !/^\d+\/\d+\/\d+$/.test(value)) {
+                throw new Error(`Неверный формат для ${dataType} в блоке ${type} #${index}. Должно быть одно число или три числа через слэш (например, 1/2/3)`);
+            }
             break;
         default:
             throw new Error(`Неизвестный тип валидации: ${validationType}`);

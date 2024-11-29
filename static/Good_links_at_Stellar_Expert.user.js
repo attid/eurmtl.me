@@ -3,7 +3,7 @@
 // @namespace   http://tampermonkey.net/
 // @match       https://stellar.expert/*
 // @grant       none
-// @version     1.07
+// @version     1.09
 // @description Change links at Stellar Expert
 // @author      skynet
 // @updateURL   https://eurmtl.me/static/Good_links_at_Stellar_Expert.user.js
@@ -235,10 +235,89 @@ function initOfferButton() {
     }
 }
 
+function loadXDR(txID) {
+    const url = 'https://horizon.stellar.org/transactions/' + txID;
+
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            // Получаем envelope_xdr из ответа
+            const envelopeXDR = data.envelope_xdr;
+
+            // Создаём новый div с XDR
+            const xdrDiv = document.createElement('div');
+            xdrDiv.className = 'xdr-container';
+            xdrDiv.style.cssText = `
+                padding: 10px;
+                border-radius: 4px;
+                margin-bottom: 10px;
+                word-break: break-all;
+                font-family: monospace;
+            `;
+
+            // Добавляем заголовок
+            const heading = document.createElement('h4');
+            heading.textContent = 'Transaction XDR:';
+            heading.style.marginBottom = '5px';
+            xdrDiv.appendChild(heading);
+
+            // Добавляем сам XDR
+            const xdrContent = document.createElement('div');
+            xdrContent.textContent = envelopeXDR;
+            xdrContent.style.cssText = `
+                -webkit-user-select: all !important;
+                -moz-user-select: all !important;
+                -ms-user-select: all !important;
+                user-select: all !important;
+            `;
+            xdrDiv.appendChild(xdrContent);
+
+            // Находим ближайший div с классом segment
+            const segmentDiv = document.querySelector('.segment');
+            if (segmentDiv) {
+                // Вставляем новый div в начало segment
+                segmentDiv.insertBefore(xdrDiv, segmentDiv.firstChild);
+            } else {
+                console.error('Элемент с классом segment не найден');
+            }
+        })
+        .catch(error => {
+            console.error('Ошибка при загрузке XDR:', error);
+        });
+}
+
+
+
+
+function initTxButton() {
+    //const txId = new URL(window.location.href).pathname.split('/').pop().split('?')[0];
+    const txId = document.querySelector('h2 .block-select').textContent.trim();
+
+    if (txId) {
+        const button = document.createElement('a');
+        button.href = '#';
+        button.innerText = 'Get XDR';
+        button.classList.add('button', 'small', 'text-small', 'skynet-button');
+        button.addEventListener('click', () => loadXDR(txId));
+
+        // Поиск элемента для добавления кнопок
+        const parentElement = document.querySelector('h1, h2'); // Измените селектор в соответствии с реальным расположением на странице
+
+        // Добавление кнопок на страницу
+        if (parentElement) {
+            parentElement.appendChild(button);
+        }
+
+    } else {
+        console.error('ID предложения не найден.');
+    }
+}
+
 
 function checkPage() {
     const accountPattern = /https:\/\/stellar.expert\/explorer\/public\/account\/[^/]+$/;
     const offerPattern = /https:\/\/stellar.expert\/explorer\/public\/offer\/[^/]+$/;
+    const txPattern = /https:\/\/stellar.expert\/explorer\/public\/tx\/[^/]+$/;
     const currentUrl = window.location.href;
 
     if (accountPattern.test(currentUrl)) {
@@ -257,27 +336,49 @@ function checkPage() {
             initOfferButton()
         }
     }
+    if (txPattern.test(currentUrl)) {
+        if (!document.querySelector('.skynet-button')) {
+            //console.log("URL соответствует и кнопок нет, выполняем скрипт.");
+            initTxButton()
+        }
+    }
 }
 
 
 function loadWhereSigner(accountAddress) {
-    var myHtmlContent = '<h4 style="margin-bottom: 0px;">Where Account Signer</h4>'
+    var myHtmlContent = '<h4 style="margin-bottom: 0px;">Where Account Signer</h4>';
     myHtmlContent += '<ul class="text-small condensed">';
     var url = 'https://horizon.stellar.org/accounts/?signer=' + accountAddress + '&limit=200';
 
-    fetch(url).then(response => response.json()).then(data => {
-        data._embedded.records.forEach(record => {
-            var accountId = record.id;
-            myHtmlContent += '<li><a title="' + accountId + '" aria-label="' + accountId + '" class="account-address word-break" href="/explorer/public/account/' + accountId + '"><span class="account-key">' + accountId.slice(0, 4) + '…' + accountId.slice(-4) + '</span></a></li>';
-        });
-        myHtmlContent += '</ul>';
-        var allAccountBalancesDiv = document.querySelector('.all-account-balances');
-        if (allAccountBalancesDiv) {
-            allAccountBalancesDiv.parentNode.innerHTML = myHtmlContent;
-        } else {
-            console.error('Element with class all-account-balances not found.');
-        }
-    }).catch(error => console.error('Error:', error));
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            data._embedded.records.forEach(record => {
+                var accountId = record.id;
+                myHtmlContent += '<li><a title="' + accountId + '" aria-label="' + accountId + '" class="account-address word-break" href="/explorer/public/account/' + accountId + '"><span class="account-key">' + accountId.slice(0, 4) + '…' + accountId.slice(-4) + '</span></a></li>';
+            });
+            myHtmlContent += '</ul>';
+
+            // Ищем или создаем контейнер для содержимого
+            var containerId = 'where-signer-container';
+            var container = document.getElementById(containerId);
+            if (!container) {
+                container = document.createElement('div');
+                container.id = containerId;
+                var allAccountBalancesDiv = document.querySelector('.all-account-balances');
+                if (allAccountBalancesDiv) {
+                    // Вставляем контейнер перед элементом all-account-balances
+                    allAccountBalancesDiv.parentNode.insertBefore(container, allAccountBalancesDiv);
+                } else {
+                    console.error('Element with class all-account-balances not found.');
+                    return;
+                }
+            }
+
+            // Обновляем содержимое контейнера
+            container.innerHTML = myHtmlContent;
+        })
+        .catch(error => console.error('Error:', error));
 }
 
 function loadBSN(accountAddress) {
@@ -285,34 +386,51 @@ function loadBSN(accountAddress) {
     myHtmlContent += '<ul class="text-small condensed">';
     var url = 'https://bsn.mtla.me/json';
 
-    fetch(url).then(response => response.json()).then(data => {
-        var accounts = data.accounts;
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            var accounts = data.accounts;
 
-        for (var accountId in accounts) {
-            if (accounts.hasOwnProperty(accountId)) {
-                var account = accounts[accountId];
-                var tags = account.tags;
+            for (var accountId in accounts) {
+                if (accounts.hasOwnProperty(accountId)) {
+                    var account = accounts[accountId];
+                    var tags = account.tags;
 
-                for (var tag in tags) {
-                    if (tags.hasOwnProperty(tag) && tag !== 'Signer') {
-                        if (tags[tag].includes(accountAddress)) {
-                            myHtmlContent += '<li><b>' + tag + '</b> from ';
-                            myHtmlContent += '<a title="' + accountId + '" aria-label="' + accountId + '" class="account-address word-break" href="/explorer/public/account/' + accountId + '"><span class="account-key">' + accountId.slice(0, 4) + '…' + accountId.slice(-4) + '</span></a></li>';
+                    for (var tag in tags) {
+                        if (tags.hasOwnProperty(tag) && tag !== 'Signer') {
+                            if (tags[tag].includes(accountAddress)) {
+                                myHtmlContent += '<li><b>' + tag + '</b> from ';
+                                myHtmlContent += '<a title="' + accountId + '" aria-label="' + accountId + '" class="account-address word-break" href="/explorer/public/account/' + accountId + '"><span class="account-key">' + accountId.slice(0, 4) + '…' + accountId.slice(-4) + '</span></a></li>';
+                            }
                         }
                     }
                 }
             }
-        }
 
-        myHtmlContent += '</ul>';
-        var allAccountBalancesDiv = document.querySelector('.all-account-balances');
-        if (allAccountBalancesDiv) {
-            allAccountBalancesDiv.parentNode.innerHTML = myHtmlContent;
-        } else {
-            console.error('Element with class all-account-balances not found.');
-        }
-    }).catch(error => console.error('Error:', error));
+            myHtmlContent += '</ul>';
+
+            // Ищем или создаем контейнер для содержимого BSN
+            var containerId = 'bsn-income-tags-container';
+            var container = document.getElementById(containerId);
+            if (!container) {
+                container = document.createElement('div');
+                container.id = containerId;
+                var allAccountBalancesDiv = document.querySelector('.all-account-balances');
+                if (allAccountBalancesDiv) {
+                    // Вставляем контейнер перед элементом all-account-balances
+                    allAccountBalancesDiv.parentNode.insertBefore(container, allAccountBalancesDiv);
+                } else {
+                    console.error('Element with class all-account-balances not found.');
+                    return;
+                }
+            }
+
+            // Обновляем содержимое контейнера
+            container.innerHTML = myHtmlContent;
+        })
+        .catch(error => console.error('Error:', error));
 }
+
 
 async function reloadScripts(accountAddress) {
     CalcOrders(accountAddress)
