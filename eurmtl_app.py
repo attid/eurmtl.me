@@ -22,7 +22,7 @@ from db.sql_pool import engine
 
 app = Quart(__name__)
 
-logger.add('log/app.log', level=logging.INFO)
+logger.add("log/app.log", level=logging.INFO)
 
 # app.config['HOME_PATH'] = ''
 # assets = Environment(app)
@@ -31,10 +31,10 @@ logger.add('log/app.log', level=logging.INFO)
 # assets.register('main_css', scss)
 # sky say it must be bottom assets.register
 
-app.config['SECRET_KEY'] = config.secret_key.get_secret_value()
+app.config["SECRET_KEY"] = config.secret_key.get_secret_value()
 app.config["EXPLAIN_TEMPLATE_LOADING"] = False
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 
 app.register_blueprint(routers.index.blueprint)
@@ -61,8 +61,8 @@ error_cache = TTLCache(maxsize=100, ttl=timedelta(hours=1).total_seconds())
 
 
 def before_send(event, hint):
-    error_type = event.get('exception', {}).get('values', [{}])[0].get('type', '')
-    error_value = event.get('exception', {}).get('values', [{}])[0].get('value', '')
+    error_type = event.get("exception", {}).get("values", [{}])[0].get("type", "")
+    error_value = event.get("exception", {}).get("values", [{}])[0].get("value", "")
     error_key = f"{error_type}:{error_value}"
 
     if error_key in error_cache:
@@ -78,11 +78,11 @@ sentry_sdk.init(
     dsn=config.sentry_dsn,
     traces_sample_rate=1.0,
     profiles_sample_rate=1.0,
-    before_send=before_send
+    before_send=before_send,
 )
 
 
-@app.route('/updatedb')
+@app.route("/updatedb")
 async def update_db():
     # Base.metadata.drop_all(engine, tables=[Signatures])
     # DROP TABLE ` t_signatures `
@@ -97,9 +97,9 @@ async def update_db():
 @app.before_request
 async def before_request():
     session.permanent = True
-    if 'userdata' not in session:  # Чтобы избежать перезаписи сессии на каждом запросе
+    if "userdata" not in session:  # Чтобы избежать перезаписи сессии на каждом запросе
         update_test_user()
 
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8000)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)

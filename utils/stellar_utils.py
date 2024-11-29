@@ -88,17 +88,20 @@ def decode_xdr_to_base64(xdr, return_json=False):
         # Декодируем атрибуты операции в зависимости от её типа
         from stellar_sdk import Payment, ChangeTrust, CreateAccount, SetOptions, ManageData
         if isinstance(operation, Payment):
+            # noinspection PyTypedDict
             op_json['attributes'] = {'destination': operation.destination.account_id,
                                      'asset': operation.asset.to_dict(),
                                      'amount': float2str(operation.amount),
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, ChangeTrust):
+            # noinspection PyTypedDict
             op_json['attributes'] = {'asset': operation.asset.to_dict(),
                                      'limit': operation.limit,
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, ManageData):
+            # noinspection PyTypedDict
             op_json['attributes'] = {'name': operation.data_name,
                                      'dataName': operation.data_name,
                                      'value': operation.data_value.decode() if operation.data_value is not None else "",
@@ -106,11 +109,13 @@ def decode_xdr_to_base64(xdr, return_json=False):
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, CreateAccount):
+            # noinspection PyTypedDict
             op_json['attributes'] = {'destination': operation.destination,
                                      'startingBalance': operation.starting_balance,
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, SetTrustLineFlags):
+            # noinspection PyTypedDict
             op_json['attributes'] = {'trustor': operation.trustor,
                                      'asset': operation.asset.to_dict(),
                                      'setFlags': operation.set_flags.value if operation.set_flags else None,
@@ -118,6 +123,7 @@ def decode_xdr_to_base64(xdr, return_json=False):
                                      'sourceAccount': operation.source.account_id if operation.source else None
                                      }
         elif isinstance(operation, ManageSellOffer) or isinstance(operation, ManageBuyOffer):
+            # noinspection PyTypedDict
             op_json['attributes'] = {'amount': operation.amount,
                                      'price': operation.price.n / operation.price.d,
                                      'offerId': operation.offer_id,
@@ -126,6 +132,7 @@ def decode_xdr_to_base64(xdr, return_json=False):
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, CreatePassiveSellOffer):
+            # noinspection PyTypedDict
             op_json['attributes'] = {'amount': operation.amount,
                                      'price': operation.price.n / operation.price.d,
                                      'selling': operation.selling.to_dict(),
@@ -133,24 +140,35 @@ def decode_xdr_to_base64(xdr, return_json=False):
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, Clawback):
+            # noinspection PyTypedDict
             op_json['attributes'] = {'amount': operation.amount,
                                      'asset': operation.asset.to_dict(),
                                      'from': operation.from_.account_id,
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, SetOptions):
-            op_json['attributes'] = {
-                'signer': None if operation.signer is None else {'type': 'ed25519PublicKey',
-                                                                 'content': operation.signer.signer_key.encoded_signer_key,
-                                                                 'weight': str(operation.signer.weight)},
-                'sourceAccount': operation.source.account_id if operation.source is not None else None,
-                'masterWeight': operation.master_weight,
-                'lowThreshold': operation.low_threshold,
-                'medThreshold': operation.med_threshold,
-                'highThreshold': operation.high_threshold,
-                'homeDomain': operation.home_domain
-            }
+            if operation.signer:
+                op_json['name'] = 'setOptionsSigner'
+                # noinspection PyTypedDict
+                op_json['attributes'] = {'signerAccount': operation.signer.signer_key.encoded_signer_key,
+                                         'weight': str(operation.signer.weight)}
+            else:
+                if operation.low_threshold and operation.med_threshold and operation.high_threshold:
+                    if operation.low_threshold == operation.med_threshold == operation.high_threshold:
+                        threshold = operation.low_threshold
+                    else:
+                        threshold = f"{operation.low_threshold}/{operation.med_threshold}/{operation.high_threshold}"
+                else:
+                    threshold = None
+                # noinspection PyTypedDict
+                op_json['attributes'] = {
+                    'sourceAccount': operation.source.account_id if operation.source is not None else None,
+                    'master': operation.master_weight,
+                    'threshold': threshold,
+                    'home': operation.home_domain
+                }
         elif isinstance(operation, PathPaymentStrictSend):
+            # noinspection PyTypedDict
             op_json['attributes'] = {'sendAsset': operation.send_asset.to_dict(),
                                      'destination': operation.destination.account_id,
                                      'path': operation.path,
@@ -348,9 +366,9 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             if operation.signer:
                 result.append(
                     f"    Изменяем подписанта {address_id_to_link(operation.signer.signer_key.encoded_signer_key)} новые голоса : {operation.signer.weight}")
-            if operation.med_threshold:
+            if operation.med_threshold or operation.low_threshold or operation.high_threshold:
                 data_exist = True
-                result.append(f"Установка нового требования. Нужно будет {operation.med_threshold} голосов")
+                result.append(f"Установка нового требования. Нужно будет {operation.low_threshold}/{operation.med_threshold}/{operation.high_threshold} голосов")
             if operation.home_domain:
                 data_exist = True
                 result.append(f"Установка нового домена {operation.home_domain}")
@@ -665,7 +683,7 @@ async def check_user_in_sign(tr_hash):
     if 'user_id' in session:
         user_id = session['user_id']
 
-        if user_id in (84131737, 3718221):
+        if int(user_id) in (84131737, 3718221):
             return True
 
         with db_pool() as db_session:
@@ -944,13 +962,20 @@ async def stellar_build_xdr(data):
                                                   operation['data_value']) > 0 else None,
                                               source=source_account)
         if operation['type'] == 'set_options':
+            threshold = operation['threshold']
+            if threshold and '/' in str(threshold):
+                low, med, high = map(int, threshold.split('/'))
+            else:
+                low = med = high = int(threshold) if threshold else None
+
             transaction.append_set_options_op(
-                master_weight=int(operation['master']) if len(operation['master']) > 0 else None,
-                med_threshold=int(operation['threshold']) if len(operation['threshold']) > 0 else None,
-                high_threshold=int(operation['threshold']) if len(operation['threshold']) > 0 else None,
-                low_threshold=int(operation['threshold']) if len(operation['threshold']) > 0 else None,
-                home_domain=operation['home'] if len(operation['home']) > 0 else None,
-                source=source_account)
+                master_weight=int(operation['master']) if operation.get('master') else None,
+                med_threshold=med,
+                high_threshold=high,
+                low_threshold=low,
+                home_domain=operation['home'] if operation.get('home') else None,
+                source=source_account
+            )
         if operation['type'] == 'set_options_signer':
             transaction.append_ed25519_public_key_signer(
                 account_id=operation['signerAccount'] if len(operation['signerAccount']) > 55 else None,

@@ -42,7 +42,11 @@ def get_full_text(status, start_text, links_url, uuid_url, username):
 async def cmd_add_decision():
     question_number, short_subject, reading = '', '', 1
     session['return_to'] = request.url
-    inquiry = '<br><b>Предложение:</b> <br><br><b>Обоснование:</b> <br>'
+    inquiry = ('<br>'
+               '<b>Предложение:</b> <br><br>'
+               '<b>Обоснование:</b> <br><br>'
+               '<b>Примечание:</b> <br><br>'
+               '<b>Имплементация:</b> <br><br>')
 
     user_weight = await check_user_weight(False)
 
