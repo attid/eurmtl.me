@@ -270,7 +270,7 @@ async def parse_xdr_for_signatures(tx_body):
                             text = f'Added signature from {signer.username if signer else None}'
                             result['MESSAGES'].append(text)
                             result['SUCCESS'] = True
-                            alert_singers(tr_hash=transaction.hash, small_text=text,
+                            await alert_singers(tr_hash=transaction.hash, small_text=text,
                                           tx_description=transaction.description)
                         except BadSignatureError:
                             result['MESSAGES'].append(f'Bad signature. {signature.signature_hint.hex()} not verify')
@@ -362,13 +362,13 @@ async def add_alert(tr_hash):
         })
 
 
-def alert_singers(tr_hash, small_text, tx_description):
+async def alert_singers(tr_hash, small_text, tx_description):
     text = (f'Transaction <a href="https://eurmtl.me/sign_tools/{tr_hash}">{tx_description}</a> : '
             f'{small_text}.')
     with db_pool() as db_session:
         alert_query = db_session.query(Alerts).filter(Alerts.transaction_hash == tr_hash).all()
         for alert in alert_query:
-            skynet_bot.send_message(chat_id=alert.tg_id, text=text, disable_web_page_preview=True, parse_mode='HTML')
+            await skynet_bot.send_message(chat_id=alert.tg_id, text=text, disable_web_page_preview=True, parse_mode='HTML')
 
 
 if __name__ == '__main__':

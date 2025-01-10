@@ -20,5 +20,16 @@
   "memoTextLabel": "Примечание (MEMO для транзакции, 28 байт, опционально)",
   "memoTextPlaceholder": "Вы можете добавить примечание здесь",
   "createButton": "Создать",
-  "openQRLink": "Открыть QR-код"
+  "openQRLink": "Открыть QR-код",
+  "pageURITitle": "Подписание и отправка транзакции",
+  "openLaboratoryButton": "Открыть Laboratory",
+  "copyTransactionButton": "Копировать транзакцию",
+  "decodeButton": "Декодировать",
+  "openLobsterButton": "Открыть в Lobster*",
+  "xdrLabel": "XDR транзакции:",
+  "privateKeyLabel": "Приватный ключ:",
+  "privateKeyPlaceholder": "Введите приватный ключ, начинающийся с S",
+  "signButton": "Подписать",
+  "signedXDRLabel": "Подписанный XDR:",
+  "submitButton": "Отправить транзакцию"
 }

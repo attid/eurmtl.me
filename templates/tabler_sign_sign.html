@@ -119,7 +119,7 @@
 <div class="card mt-3">
     <div class="card-header">
         <h3 class="card-title">Collected {{ record['has_votes'] }} from {{ record['threshold'] }} for
-            <span class="badge bg-info" title="{{ record['sources'] }}">{{ record['sources'][:4] }}..{{ record['sources'][-4:] }}</span>
+            <a class="bg-link" title="{{ record['sources'] }}" href="https://stellar.expert/explorer/public/account/{{ record['sources'] }}">{{ record['sources'][:4] }}..{{ record['sources'][-4:] }}</a>
         </h3>
     </div>
     <div class="card-body">
@@ -184,7 +184,7 @@
         {% for signer in bad_signers %}
         {% if signer %}
         {% if signer[0] == '@' %}
-        <a class="badge bg-link" href="https://t.me/{{ signer[1:] }}">{{ signer }}</a>
+        <a class="bg-link" href="https://t.me/{{ signer[1:] }}">{{ signer }}</a>
         {% endif %}
         {% endif %}
         {% endfor %}

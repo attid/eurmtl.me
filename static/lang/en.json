@@ -20,5 +20,16 @@
   "memoTextLabel": "Memo (optional, 28 bytes)",
   "memoTextPlaceholder": "You can add a memo here",
   "createButton": "Create",
-  "openQRLink": "Open QR Code"
+  "openQRLink": "Open QR Code",
+  "pageURITitle": "Sign and Submit Transaction",
+  "openLaboratoryButton": "Open Laboratory",
+  "copyTransactionButton": "Copy Transaction",
+  "decodeButton": "Decode",
+  "openLobsterButton": "Open in Lobster*",
+  "xdrLabel": "Transaction XDR:",
+  "privateKeyLabel": "Private Key:",
+  "privateKeyPlaceholder": "Enter private key starting with S",
+  "signButton": "Sign",
+  "signedXDRLabel": "Signed XDR:",
+  "submitButton": "Submit Transaction"
 }
