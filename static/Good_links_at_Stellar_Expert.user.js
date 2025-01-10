@@ -149,7 +149,28 @@ function isValidStellarAddress(address) {
 }
 
 function decodeBase64Text() {
+    // Функция для проверки, является ли строка URL
+    function isValidUrl(string) {
+        try {
+            new URL(string);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // Функция для создания HTML-ссылки
+    function createLink(url) {
+        const link = document.createElement('a');
+        link.href = url;
+        link.textContent = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer'; // Для безопасности
+        return link;
+    }
+
     let encodedListItems = document.querySelectorAll('.text-small.condensed .word-break');
+
     if (encodedListItems) {
         encodedListItems.forEach(item => {
             let separatorIndex = item.textContent.lastIndexOf(': ');
@@ -159,17 +180,49 @@ function decodeBase64Text() {
 
                 if (!item.hasAttribute('data-old')) {
                     item.setAttribute('data-old', encodedText);
+
                     if (isValidBase64(encodedText) && !encodedText.startsWith('*')) {
                         let decodedText = atob(encodedText);
+
+                        // Очищаем содержимое элемента
+                        item.textContent = property + ': ';
+
                         if (isValidStellarAddress(decodedText)) {
+                            // Обработка Stellar-адреса
                             let link = document.createElement('a');
                             link.href = `https://stellar.expert/explorer/public/account/${decodedText}`;
                             link.textContent = decodedText;
                             link.target = '_blank';
-                            item.textContent = property + ': ';
                             item.appendChild(link);
+                        } else if (isValidUrl(decodedText)) {
+                            // Обработка URL
+                            item.appendChild(createLink(decodedText));
                         } else {
-                            item.textContent = property + ': ' + decodedText;
+                            // Поиск URL в тексте
+                            const urlRegex = /(https?:\/\/[^\s]+)/g;
+                            let lastIndex = 0;
+                            let match;
+
+                            while ((match = urlRegex.exec(decodedText)) !== null) {
+                                // Добавляем текст до URL
+                                if (match.index > lastIndex) {
+                                    item.appendChild(document.createTextNode(
+                                        decodedText.substring(lastIndex, match.index)
+                                    ));
+                                }
+
+                                // Добавляем URL как ссылку
+                                item.appendChild(createLink(match[0]));
+
+                                lastIndex = match.index + match[0].length;
+                            }
+
+                            // Добавляем оставшийся текст
+                            if (lastIndex < decodedText.length) {
+                                item.appendChild(document.createTextNode(
+                                    decodedText.substring(lastIndex)
+                                ));
+                            }
                         }
                     }
                 }
@@ -177,6 +230,7 @@ function decodeBase64Text() {
         });
     }
 }
+
 
 function modifyLinks() {
     let links = document.querySelectorAll('.account-balance');
@@ -292,6 +346,7 @@ function loadXDR(txID) {
 function initTxButton() {
     //const txId = new URL(window.location.href).pathname.split('/').pop().split('?')[0];
     const txId = document.querySelector('h2 .block-select').textContent.trim();
+    console.log(txId);
 
     if (txId) {
         const button = document.createElement('a');
