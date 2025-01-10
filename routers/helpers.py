@@ -6,6 +6,7 @@ from urllib.parse import quote_plus
 import pyqrcode
 import qrcode
 from PIL import ImageDraw, Image, ImageFont
+from loguru import logger
 from quart import Blueprint, request, render_template, flash
 
 from config.config_reader import start_path
@@ -88,8 +89,12 @@ async def cmd_asset(asset_code):
 async def cmd_uri():
     # if exist GET data xdr
     xdr = request.args.get('xdr')
-    print(xdr)
-    uri_xdr = xdr_to_uri(xdr) if xdr else None
+    try:
+        uri_xdr = xdr_to_uri(xdr) if xdr else None
+    except Exception as ex:
+        await flash('BAD XDR')
+        uri_xdr = None
+        logger.info(f'cmd_uri: {ex} \n XDR:{xdr}\n')
     resp = await render_template('uri.html', xdr=xdr, uri_xdr=uri_xdr)
     return resp
 
