@@ -5,7 +5,7 @@ import requests
 from aiogram import Bot
 from sulguk import AiogramSulgukMiddleware
 
-from config.config_reader import config
+from other.config_reader import config
 
 skynet_bot = Bot(token=config.skynet_token.get_secret_value())
 mmwb_bot = Bot(token=config.mmwb_token.get_secret_value())

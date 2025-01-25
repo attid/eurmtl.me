@@ -10,7 +10,7 @@ from stellar_sdk.utils import is_valid_hash
 from db.mongo import get_all_assets, get_all_accounts
 from db.sql_models import Transactions
 from db.sql_pool import db_pool
-from utils.stellar_utils import (decode_data_value, float2str, decode_xdr_to_base64,
+from other.stellar_tools import (decode_data_value, float2str, decode_xdr_to_base64,
                                  stellar_build_xdr, decode_asset, is_valid_base64, update_memo_in_xdr)
 
 blueprint = Blueprint('lab', __name__)

@@ -11,9 +11,9 @@ from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
 
 from db.sql_models import Transactions, Signers, Signatures, Alerts
 from db.sql_pool import db_pool
-from utils.stellar_utils import (decode_xdr_to_text, check_publish_state, check_user_in_sign,
+from other.stellar_tools import (decode_xdr_to_text, check_publish_state, check_user_in_sign,
                                  add_transaction)
-from utils.telegram_utils import skynet_bot
+from other.telegram_tools import skynet_bot
 
 blueprint = Blueprint('sign_tools', __name__)
 

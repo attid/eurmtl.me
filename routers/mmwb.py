@@ -4,11 +4,11 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from loguru import logger
 from quart import Blueprint, request, render_template, jsonify
 
-from config.config_reader import config
+from other.config_reader import config
 from db.sql_models import MMWBTransactions
 from db.sql_pool import db_pool
-from utils.stellar_utils import get_account, decode_data_value, stellar_manage_data
-from utils.telegram_utils import check_response_webapp, mmwb_bot
+from other.stellar_tools import get_account, decode_data_value, stellar_manage_data
+from other.telegram_tools import check_response_webapp, mmwb_bot
 
 blueprint = Blueprint('mmwb', __name__)
 

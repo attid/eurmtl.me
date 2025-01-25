@@ -16,7 +16,7 @@ import routers.mmwb
 import routers.remote
 import routers.sign_tools
 import routers.web_editor
-from config.config_reader import config, update_test_user
+from other.config_reader import config, update_test_user
 from db.sql_models import Base
 from db.sql_pool import engine
 

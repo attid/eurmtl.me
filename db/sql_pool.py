@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from config.config_reader import config
+from other.config_reader import config
 
 engine = create_engine(
     config.db_dsn,

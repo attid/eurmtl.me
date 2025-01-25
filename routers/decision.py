@@ -2,14 +2,14 @@ import uuid
 
 from loguru import logger
 from quart import Blueprint, request, render_template, flash, jsonify, session, redirect, abort
-from sulguk import transform_html, SULGUK_PARSE_MODE
+from sulguk import SULGUK_PARSE_MODE
 
-from config.config_reader import config
+from other.config_reader import config
 from db.sql_models import Decisions
 from db.sql_pool import db_pool
-from utils.gspread_utils import gs_update_decision, gs_get_last_id, gs_save_new_decision
-from utils.stellar_utils import check_user_weight
-from utils.telegram_utils import skynet_bot
+from other.gspread_tools import gs_update_decision, gs_get_last_id, gs_save_new_decision
+from other.stellar_tools import check_user_weight
+from other.telegram_tools import skynet_bot
 
 blueprint = Blueprint('decision', __name__)
 

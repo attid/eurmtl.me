@@ -19,11 +19,11 @@ from stellar_sdk import (
 )
 from stellar_sdk.sep import stellar_uri
 
-from config import config_reader
 from db import mongo
 from db.mongo import get_asset_by_code
 from db.sql_models import Signers, Transactions, Signatures
 from db.sql_pool import db_pool
+from other.config_reader import config
 
 main_fund_address = 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'
 
@@ -636,7 +636,7 @@ def add_trust_line_uri(public_key, asset_code, asset_issuer) -> str:
     replacements = [r1, r2]
     t = stellar_uri.TransactionStellarUri(transaction_envelope=transaction, replace=replacements,
                                           origin_domain='eurmtl.me')
-    t.sign(config_reader.config.signing_key.get_secret_value())
+    t.sign(config.signing_key.get_secret_value())
 
     return t.to_uri()
 
