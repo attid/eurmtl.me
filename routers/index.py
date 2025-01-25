@@ -5,12 +5,12 @@ import uuid
 
 from quart import Blueprint, send_file, request, session, redirect, render_template
 
-from config.config_reader import config
+from other.config_reader import config
 from db.sql_models import Signers
 from db.sql_pool import db_pool
-from utils.stellar_utils import check_user_weight
-from utils.telegram_utils import check_response
-from utils.www_utils import get_ip
+from other.stellar_tools import check_user_weight
+from other.telegram_tools import check_response
+from other.quart_tools import get_ip
 
 blueprint = Blueprint('index', __name__)
 

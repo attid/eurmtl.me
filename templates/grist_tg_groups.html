@@ -1,0 +1,23 @@
+<div class="table-container">
+  <table class="table is-bordered is-striped is-narrow is-hoverable is-fullwidth">
+    <thead>
+      <tr>
+        <th>Чат</th>
+        <th>Вступил</th>
+        <th>Вышел</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for chat in chats %}
+      <tr>
+        <td>{{ chat.title }}</td>
+        <td>{{ chat.joined }}</td>
+        <td>{{ chat.left }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="has-text-centered has-text-grey mt-3">
+    Данные на основе логов, могут быть неточности
+  </p>
+</div>

@@ -4,12 +4,12 @@ import uuid
 
 from quart import Blueprint, request, jsonify, abort
 
-from config.config_reader import config
+from other.config_reader import config
 from db.mongo import get_all_assets
 from db.sql_models import Transactions, Signers, Signatures, WebEditorMessages, MMWBTransactions
 from db.sql_pool import db_pool
 from routers.sign_tools import parse_xdr_for_signatures
-from utils.stellar_utils import decode_xdr_to_text, is_valid_base64, add_transaction
+from other.stellar_tools import decode_xdr_to_text, is_valid_base64, add_transaction
 
 blueprint = Blueprint('remote', __name__)
 

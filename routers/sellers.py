@@ -2,8 +2,8 @@ import uuid
 import pyqrcode
 from urllib.parse import quote_plus
 from flask import Blueprint, render_template, request, make_response, flash
-from config.config_reader import start_path
-from utils.stellar_utils import float2str
+from other.config_reader import start_path
+from other.stellar_tools import float2str
 
 blueprint = Blueprint('sellers', __name__)
 

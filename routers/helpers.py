@@ -9,9 +9,9 @@ from PIL import ImageDraw, Image, ImageFont
 from loguru import logger
 from quart import Blueprint, request, render_template, flash
 
-from config.config_reader import start_path
+from other.config_reader import start_path
 from db.mongo import get_asset_by_code
-from utils.stellar_utils import add_trust_line_uri, float2str, xdr_to_uri
+from other.stellar_tools import add_trust_line_uri, float2str, xdr_to_uri
 
 blueprint = Blueprint('sellers', __name__)
 last_update_time = datetime.now() - timedelta(minutes=20)

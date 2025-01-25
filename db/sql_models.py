@@ -4,7 +4,7 @@ from datetime import datetime
 from sqlalchemy import String, Integer, Column, Text, DateTime, create_engine, ForeignKey, BigInteger
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from config.config_reader import config
+from other.config_reader import config
 
 Base = declarative_base()
 metadata = Base.metadata

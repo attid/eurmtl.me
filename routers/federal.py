@@ -3,7 +3,7 @@ from stellar_sdk import Network
 from stellar_sdk.exceptions import BadRequestError
 from stellar_sdk.sep.stellar_web_authentication import build_challenge_transaction
 
-from config.config_reader import config
+from other.config_reader import config
 from db.sql_models import Addresses
 from db.sql_pool import db_pool
 from quart_cors import cors

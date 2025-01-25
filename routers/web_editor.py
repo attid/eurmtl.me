@@ -3,18 +3,17 @@ import urllib.parse
 import uuid
 
 import aiohttp
-from aiogram.enums import ParseMode
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from loguru import logger
 from quart import Blueprint, request, render_template, jsonify, session, abort
-from sulguk import transform_html, SULGUK_PARSE_MODE
+from sulguk import SULGUK_PARSE_MODE
 
-from config.config_reader import config
+from other.config_reader import config
 from db.sql_models import WebEditorMessages, WebEditorLogs
 from db.sql_pool import db_pool
-from utils.telegram_utils import is_bot_admin, is_user_admin, check_response_webapp, skynet_bot, prepare_html_text
-from utils.www_utils import get_ip
+from other.telegram_tools import is_bot_admin, is_user_admin, check_response_webapp, skynet_bot, prepare_html_text
+from other.quart_tools import get_ip
 
 blueprint = Blueprint('web_editor', __name__)
 

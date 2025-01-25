@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from config.config_reader import config
+from other.config_reader import config
 from db import mongo
 from db.sql_models import Signers
 
