@@ -1071,7 +1071,7 @@ async def add_transaction(tx_body, tx_description):
     with db_pool() as db_session:
         existing_transaction = db_session.query(Transactions).filter(Transactions.hash == tx_hash).first()
         if existing_transaction:
-            return False, f'Transaction already exists: /sign_tools/{tx_hash}'
+            return True, tx_hash
 
         new_transaction = Transactions(hash=tx_hash, body=tr.to_xdr(), description=tx_description,
                                        json=json.dumps(sources))
