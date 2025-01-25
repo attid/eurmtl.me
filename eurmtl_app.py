@@ -16,6 +16,7 @@ import routers.mmwb
 import routers.remote
 import routers.sign_tools
 import routers.web_editor
+import routers.grist
 from other.config_reader import config, update_test_user
 from db.sql_models import Base
 from db.sql_pool import engine
@@ -48,6 +49,7 @@ app.register_blueprint(routers.cup.blueprint)
 app.register_blueprint(routers.remote.blueprint)
 app.register_blueprint(routers.web_editor.blueprint)
 app.register_blueprint(routers.mmwb.blueprint)
+app.register_blueprint(routers.grist.blueprint)
 
 # @app.context_processor
 # def inject_assets():
