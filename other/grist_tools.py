@@ -104,6 +104,28 @@ class GristAPI:
             case _:
                 raise Exception(f'Ошибка запроса: Статус {response.status}')
 
+    async def post_data(self, table: GristTableConfig, json_data: Dict[str, Any]) -> bool:
+        """
+        Добавляет новые записи в указанную таблицу Grist.
+
+        Args:
+            table: Конфигурация таблицы Grist
+            json_data: Данные для добавления в формате {"records": [{"fields": {...}}]}
+        """
+        headers = {
+            'accept': 'application/json',
+            'Authorization': f'Bearer {self.token}'
+        }
+        url = f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
+        response = await self.session_manager.get_web_request(method='POST', url=url, headers=headers,
+                                                              json=json_data)
+
+        match response.status:
+            case 200:
+                return True
+            case _:
+                raise Exception(f'Ошибка запроса: Статус {response.status}')
+
     async def load_table_data(self, table: GristTableConfig, sort: Optional[str] = None) -> Optional[
         List[Dict[str, Any]]]:
         """
