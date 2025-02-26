@@ -1080,12 +1080,12 @@ async def extract_sources(xdr):
             for signer in data['signers']:
                 signers.append([signer['key'], signer['weight'],
                                 Keypair.from_public_key(signer['key']).signature_hint().hex()])
-                add_signer(signer['key'])
+                await add_signer(signer['key'])
             sources[source] = {'threshold': threshold, 'signers': signers}
         except:
             sources[source] = {'threshold': 0,
                                'signers': [[source, 1, Keypair.from_public_key(source).signature_hint().hex()]]}
-            add_signer(source)
+            await add_signer(source)
     # print(json.dumps(sources))
     return sources
 
