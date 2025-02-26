@@ -7,9 +7,9 @@ from quart import Blueprint, request, render_template, jsonify, session
 from stellar_sdk import Server
 from stellar_sdk.utils import is_valid_hash
 
-from db.mongo import get_all_assets, get_all_accounts
 from db.sql_models import Transactions
 from db.sql_pool import db_pool
+from other.grist_tools import MTLGrist, grist_manager
 from other.stellar_tools import (decode_data_value, float2str, decode_xdr_to_base64,
                                  stellar_build_xdr, decode_asset, is_valid_base64, update_memo_in_xdr)
 
@@ -41,10 +41,13 @@ async def cmd_laboratory():
 async def cmd_mtl_accounts():
     if request.method == 'GET':
         result = {}
-        accounts = await get_all_accounts(True)
+        accounts = await grist_manager.load_table_data(
+            MTLGrist.EURMTL_accounts,
+            filter_dict={"need_dropdown": [True]}
+        )
         for account in accounts:
-            account_id = account.account_id
-            result[f"{account.descr} {account_id[:4]}..{account_id[-4:]}"] = account_id
+            account_id = account["account_id"] ###
+            result[f"{account['description']} {account_id[:4]}..{account_id[-4:]}"] = account_id
 
         return jsonify(result)
 
@@ -63,11 +66,14 @@ async def cmd_sequence(account_id):
 async def cmd_mtl_assets():
     if request.method == 'GET':
         result = {}
-        assets = await get_all_assets(True)
+        assets = await grist_manager.load_table_data(
+            MTLGrist.EURMTL_assets,
+            filter_dict={"need_dropdown": [True]}
+        )
 
         for asset in assets:
-            asset_code = asset.code
-            asset_issuer = asset.issuer
+            asset_code = asset["code"]
+            asset_issuer = asset["issuer"]
 
             # Формируем ключ и значение как в исходной функции
             key = f"{asset_code}-{asset_issuer[:4]}..{asset_issuer[-4:]}"
