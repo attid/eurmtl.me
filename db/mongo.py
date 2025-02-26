@@ -41,29 +41,29 @@ class User(Model):
     }
 
 
-class Asset(Model):
-    name: str
-    code: Optional[str] = None
-    issuer: Optional[str] = None
-    need_eurmtl: Optional[bool] = False
-    need_history: Optional[bool] = False
-
-    description: Optional[str] = None
-    status: Optional[str] = None
-    stellar: Optional[str] = None
-    domain: Optional[str] = None
-    contract: Optional[str] = None
-    QR: Optional[str] = None
-    e_rate: Optional[float] = None
-    person: Optional[str] = None
-    chat: Optional[str] = None
-    b_rate: Optional[float] = None
-    MTL_fund: Optional[float] = None
-
-    model_config = {
-        "collection": "assets",
-        "parse_doc_with_default_factories": True
-    }
+# class Asset(Model):
+#     name: str
+#     code: Optional[str] = None
+#     issuer: Optional[str] = None
+#     need_eurmtl: Optional[bool] = False
+#     need_history: Optional[bool] = False
+#
+#     description: Optional[str] = None
+#     status: Optional[str] = None
+#     stellar: Optional[str] = None
+#     domain: Optional[str] = None
+#     contract: Optional[str] = None
+#     QR: Optional[str] = None
+#     e_rate: Optional[float] = None
+#     person: Optional[str] = None
+#     chat: Optional[str] = None
+#     b_rate: Optional[float] = None
+#     MTL_fund: Optional[float] = None
+#
+#     model_config = {
+#         "collection": "assets",
+#         "parse_doc_with_default_factories": True
+#     }
 
 
 class Signer(EmbeddedModel):
@@ -77,23 +77,23 @@ class Balance(EmbeddedModel):
     asset: Optional[str] = None
 
 
-class Account(Model):
-    account_id: str
-    alias: Optional[str] = None
-    descr: Optional[str] = None
-    status: Optional[str] = None
-    stellar: Optional[str] = None
-    need_history: Optional[bool] = False
-    need_eurmtl: Optional[bool] = False
-    balances: Optional[List[Balance]] = Field(default_factory=list)
-    signers: Optional[List[Signer]] = Field(default_factory=list)
-    data: Optional[Dict[str, str]] = Field(default_factory=dict)
-    last_update: datetime = Field(default_factory=datetime.utcnow)
-
-    model_config = {
-        "collection": "accounts",
-        "parse_doc_with_default_factories": True
-    }
+# class Account(Model):
+#     account_id: str
+#     alias: Optional[str] = None
+#     descr: Optional[str] = None
+#     status: Optional[str] = None
+#     stellar: Optional[str] = None
+#     need_history: Optional[bool] = False
+#     need_eurmtl: Optional[bool] = False
+#     balances: Optional[List[Balance]] = Field(default_factory=list)
+#     signers: Optional[List[Signer]] = Field(default_factory=list)
+#     data: Optional[Dict[str, str]] = Field(default_factory=dict)
+#     last_update: datetime = Field(default_factory=datetime.utcnow)
+#
+#     model_config = {
+#         "collection": "accounts",
+#         "parse_doc_with_default_factories": True
+#     }
 
 
 class Log(Model):
@@ -126,30 +126,30 @@ class MongoChat(BaseModel):
     admins: List[int] = Field(default_factory=list)
 
 
-async def get_asset_by_code(code: str, need_eurmtl=False):
-    return await engine.find_one(
-        Asset,
-        query.and_(
-            Asset.code == code,
-            Asset.need_eurmtl == True
-        )
-    )
+# async def get_asset_by_code(code: str, need_eurmtl=False):
+#     return await engine.find_one(
+#         Asset,
+#         query.and_(
+#             Asset.code == code,
+#             Asset.need_eurmtl == True
+#         )
+#     )
 
 
-async def get_all_assets(need_eurmtl_value: bool):
-    assets = await engine.find(
-        Asset,
-        Asset.need_eurmtl == need_eurmtl_value
-    )
-    return assets
+# async def get_all_assets(need_eurmtl_value: bool):
+#     assets = await engine.find(
+#         Asset,
+#         Asset.need_eurmtl == need_eurmtl_value
+#     )
+#     return assets
 
 
-async def get_all_accounts(need_eurmtl_value: bool):
-    accounts = await engine.find(
-        Account,
-        Account.need_eurmtl == need_eurmtl_value
-    )
-    return accounts
+# async def get_all_accounts(need_eurmtl_value: bool):
+#     accounts = await engine.find(
+#         Account,
+#         Account.need_eurmtl == need_eurmtl_value
+#     )
+#     return accounts
 
 async def get_all_chats_by_user(user_id: int) -> List[MongoChat]:
     """Получить все чаты, в которых участвует пользователь

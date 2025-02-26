@@ -1,16 +1,22 @@
 import json
+import os
 from datetime import datetime
 from random import shuffle
 
 import requests
+from loguru import logger
 from quart import Markup, jsonify, Blueprint, request, render_template, flash, session, redirect, abort, url_for
 from sqlalchemy import func
 from stellar_sdk import DecoratedSignature, Keypair, Network, TransactionEnvelope
 from stellar_sdk.exceptions import BadSignatureError
 from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
+from stellar_sdk.sep import stellar_uri
 
 from db.sql_models import Transactions, Signers, Signatures, Alerts
 from db.sql_pool import db_pool
+from other.cache_tools import async_cache_with_ttl
+from other.config_reader import start_path, config
+from other.grist_tools import load_user_from_grist
 from other.stellar_tools import (decode_xdr_to_text, check_publish_state, check_user_in_sign,
                                  add_transaction)
 from other.telegram_tools import skynet_bot
@@ -137,10 +143,11 @@ async def show_transaction(tr_hash):
                     Signers.public_key == signer[0],
                     Signatures.hidden != 1
                 ).first()
-                db_signer = db_session.query(Signers).filter(Signers.public_key == signer[0]).first()
+                db_signer: Signers = db_session.query(Signers).filter(Signers.public_key == signer[0]).first()
                 signature_dt = db_session.query(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
                     Signers.public_key == signer[0]).order_by(Signatures.add_dt.desc()).first()
-                username = db_signer.username if db_signer else None
+                user = await load_user_from_grist(account_id=db_signer.public_key) if db_signer else None
+                username = user.username if user else None
                 signature_days = (datetime.now() - signature_dt.add_dt).days if signature_dt else "Never"
             if signature:
                 if has_votes < int(json_transaction[address]['threshold']) or int(
@@ -170,9 +177,10 @@ async def show_transaction(tr_hash):
             .outerjoin(Signers, Signatures.signer_id == Signers.id) \
             .filter(Signatures.transaction_hash == transaction.hash).order_by(Signatures.id).all()
         for signature in db_signatures:
-            signer = db_session.query(Signers).filter(
+            signer:Signers = db_session.query(Signers).filter(
                 Signers.id == signature.signer_id).first()
-            username = signer.username if signer else None
+            user = await load_user_from_grist(account_id=signer.public_key) if signer else None
+            username = user.username if user else None
             signatures.append([signature.id, signature.add_dt, username, signature.signature_xdr, signature.hidden])
     #    from stellar_sdk import DecoratedSignature
     #    from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
@@ -227,6 +235,8 @@ async def parse_xdr_for_signatures(tx_body):
     try:
         tr_full: TransactionEnvelope = TransactionEnvelope.from_xdr(tx_body,
                                                                     network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+        # Добавляем хеш транзакции в результат
+        result["hash"] = tr_full.hash_hex()
     except:
         result['MESSAGES'].append('BAD xdr. Can`t load')
         return result
@@ -245,12 +255,14 @@ async def parse_xdr_for_signatures(tx_body):
     if len(tr_full.signatures) > 0:
         with db_pool() as db_session:
             for signature in tr_full.signatures:
-                signer = db_session.query(Signers).filter(
+                signer: Signers = db_session.query(Signers).filter(
                     Signers.signature_hint == signature.signature_hint.hex()).first()
+                user = await load_user_from_grist(account_id=signer.public_key) if signer else None
+                username = user.username if user else None
                 if db_session.query(Signatures).filter(Signatures.transaction_hash == transaction.hash,
                                                        Signatures.signature_xdr == signature.to_xdr_object(
                                                        ).to_xdr()).first():
-                    result['MESSAGES'].append(f'Can`t add {signer.username if signer else None}. '
+                    result['MESSAGES'].append(f'Can`t add {username if signer else None}. '
                                               f'Already was added.')
                 else:
                     # check is good ?
@@ -267,7 +279,7 @@ async def parse_xdr_for_signatures(tx_body):
                             db_session.add(Signatures(signature_xdr=signature.to_xdr_object().to_xdr(),
                                                       signer_id=signer.id if signer else None,
                                                       transaction_hash=transaction.hash))
-                            text = f'Added signature from {signer.username if signer else None}'
+                            text = f'Added signature from {username}'
                             result['MESSAGES'].append(text)
                             result['SUCCESS'] = True
                             await alert_singers(tr_hash=transaction.hash, small_text=text,
@@ -317,8 +329,126 @@ async def decode_xdr(tr_hash):
         return 'Transaction not exist =('
 
     encoded_xdr = await decode_xdr_to_text(transaction.body)
-
     return ('<br>'.join(encoded_xdr) + '<br><br><br>').replace('\n', '<br>').replace('  ', '&nbsp;&nbsp;')
+
+
+@async_cache_with_ttl(ttl_seconds=7*24*60*60, maxsize=30)  # Кеш на неделю с лимитом 30 транзакций
+async def create_transaction_uri(tr_hash):
+    """
+    Создает URI для транзакции с использованием TransactionStellarUri.
+    
+    Args:
+        tr_hash: Хеш транзакции
+        
+    Returns:
+        str: URI транзакции для использования в QR-коде или None, если транзакция не найдена
+    """
+    with db_pool() as db_session:
+        if len(tr_hash) == 64:
+            transaction = db_session.query(Transactions).filter(Transactions.hash == tr_hash).first()
+        else:
+            transaction = db_session.query(Transactions).filter(Transactions.uuid == tr_hash).first()
+    
+    if not transaction:
+        return None
+        
+    # Получаем транзакцию из XDR
+    transaction_envelope = TransactionEnvelope.from_xdr(transaction.body, Network.PUBLIC_NETWORK_PASSPHRASE)
+    
+    # Ограничиваем описание до 300 символов для параметра msg
+    msg = transaction.description[:300] if transaction.description else None
+    
+    # Создаем URI с колбеком и описанием в msg
+    transaction_uri = stellar_uri.TransactionStellarUri(
+        transaction_envelope=transaction_envelope,
+        callback="https://eurmtl.me/remote/sep07",
+        origin_domain="eurmtl.me",
+        message=msg
+    )
+
+    transaction_uri.sign(config.signing_key.get_secret_value())
+
+    return transaction_uri.to_uri()
+
+
+@blueprint.route('/uri_qr/<tr_hash>', methods=('GET', 'POST'))
+async def generate_transaction_qr(tr_hash):
+    """
+    Генерирует QR-код для транзакции, превращая её в URI.
+    QR-код сохраняется в static/qr/хеш_транзакции.png
+    """
+    if len(tr_hash) != 64 and len(tr_hash) != 32:
+        return jsonify({
+            'success': False,
+            'message': 'Invalid transaction hash',
+            'file': '',
+            'uri': ''
+        })
+
+    # Путь для сохранения QR-кода
+    qr_file_path = f'/static/qr/{tr_hash}.png'
+    full_path = start_path + qr_file_path
+
+    # Получаем URI для транзакции
+    uri = await create_transaction_uri(tr_hash)
+    
+    if uri is None:
+        return jsonify({
+            'success': False,
+            'message': 'Transaction not found',
+            'file': '',
+            'uri': ''
+        })
+
+    # Если файл уже существует, не генерируем его заново
+    if os.path.exists(full_path+'88'):
+        return jsonify({
+            'success': True,
+            'message': 'QR code already exists',
+            'file': qr_file_path,
+            'uri': uri
+        })
+
+    try:
+        # Получаем транзакцию для получения описания
+        with db_pool() as db_session:
+            if len(tr_hash) == 64:
+                transaction = db_session.query(Transactions).filter(Transactions.hash == tr_hash).first()
+            else:
+                transaction = db_session.query(Transactions).filter(Transactions.uuid == tr_hash).first()
+        
+        # URI уже получен выше через create_transaction_uri
+        
+        # Получаем первые целые слова описания транзакции (не более 10 символов)
+        text_for_qr = "Transaction"
+        if transaction and transaction.description:
+            words = transaction.description.split()
+            text = ""
+            for word in words:
+                if len(text + " " + word if text else word) <= 10:
+                    text = text + " " + word if text else word
+                else:
+                    break
+            text_for_qr = text if text else words[0][:10]  # Если одно слово больше 10 символов, берем первые 10
+        
+        # Создаем QR-код
+        from routers.helpers import create_beautiful_code
+        create_beautiful_code(qr_file_path, text_for_qr, uri)
+        
+        return jsonify({
+            'success': True,
+            'message': 'QR code created',
+            'file': qr_file_path,
+            'uri': uri
+        })
+    except Exception as e:
+        logger.error(f"Error generating QR code for transaction {tr_hash}: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}',
+            'file': '',
+            'uri': ''
+        })
 
 
 @blueprint.route('/add_alert/<tr_hash>', methods=('GET', 'POST'))

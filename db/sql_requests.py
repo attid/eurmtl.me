@@ -1,6 +1,6 @@
-from sqlalchemy.orm import Session
-
-from db.sql_models import *
+# from sqlalchemy.orm import Session
+#
+# from db.sql_models import *
 
 
 # class EURMTLDictsType:

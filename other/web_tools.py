@@ -6,7 +6,6 @@ from typing import Optional, Dict, Any, Union
 
 from loguru import logger
 
-
 # Датакласс для ответа
 @dataclass
 class WebResponse:
@@ -90,29 +89,27 @@ class HTTPSessionManager:
             raise Exception(f"Ошибка при выполнении запроса: {e}")
 
 
-
 http_session_manager = HTTPSessionManager()
 
 
 # Пример использования
 async def main():
-    session_manager = HTTPSessionManager()
     try:
         # GET-запрос
-        response = await session_manager.get_web_request(
+        response = await http_session_manager.get_web_request(
             "GET", "https://example.com", return_type="json"
         )
         print(f"GET Response: {response}")
 
         # POST-запрос
         post_data = {"key": "value"}
-        response = await session_manager.get_web_request(
+        response = await http_session_manager.get_web_request(
             "POST", "https://example.com", json=post_data
         )
         print(f"POST Response: {response}")
 
     finally:
-        await session_manager.close()
+        await http_session_manager.close()
 
 
 async def get_eurmtl_xdr(url):

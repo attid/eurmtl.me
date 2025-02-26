@@ -131,3 +131,5 @@ dmypy.json
 # secret files
 /.idea/
 *.sh
+/*/mtl-google-doc.json
+/static/qr/*

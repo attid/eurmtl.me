@@ -14,8 +14,9 @@
                     <button class="btn btn-primary me-2 mt-2" onclick="copy_url()">Copy URL <i class="ti ti-copy"></i></button>
                     <a href="https://lab.stellar.org/transaction/sign?$=network$id=mainnet&label=Mainnet&horizonUrl=https:////horizon.stellar.org&rpcUrl=&passphrase=Public%20Global%20Stellar%20Network%20/;%20September%202015;;" class="btn btn-primary me-2 mt-2"
                        target="_blank">Open Laboratory <i class="ti ti-external-link"></i></a>
-                    <a href="https://t.me/MyMTLWalletBot?start=sign_{{ uuid }}" class="btn btn-primary me-2 mt-2" target="_blank">Open
-                        at MyMTLWalletBot <i class="ti ti-send"></i></a>
+                    <a href="https://t.me/MyMTLWalletBot?start=sign_{{ uuid }}" class="btn btn-warning me-2 mt-2" target="_blank">Open
+                         at MyMTLWalletBot <img src="/static/img/mmwb.svg" alt="MMWB" class="icon" style="width: 20px; height: 20px;"></a>
+                    <button class="btn btn-primary me-2 mt-2" onclick="generateSEP07()">SEP-07 <i class="ti ti-qrcode"></i></button>
                     <a href="?send" class="btn btn-primary me-2 mt-2">Send to Stellar <i class="ti ti-send"></i></a>
                 </div>
             </div>
@@ -269,6 +270,30 @@
     </a>
 </div>
 
+<!-- Модальное окно для QR-кода SEP-07 -->
+<div class="modal" id="sep07Modal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">SEP-07 Transaction URI</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center" id="sep07ModalBody">
+                <div class="spinner-border text-primary" role="status" id="sep07Spinner">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <div id="sep07QrContainer" style="display: none;">
+                    <img src="" alt="QR Code" class="img-fluid mb-3" id="sep07QrImg">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a href="#" class="btn btn-primary" id="sep07UriLink" target="_blank">Open URI</a>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block bottom_scripts %}
@@ -392,6 +417,50 @@
         } catch (error) {
             console.error('There was a problem:', error);
             showToast(`Ошибка: ${error.message}`, 'danger');
+        }
+    }
+    
+    // Функция для генерации SEP-07 QR-кода
+    async function generateSEP07() {
+        const sep07Modal = new bootstrap.Modal(document.getElementById('sep07Modal'));
+        const sep07Spinner = document.getElementById('sep07Spinner');
+        const sep07QrContainer = document.getElementById('sep07QrContainer');
+        const sep07QrImg = document.getElementById('sep07QrImg');
+        const sep07UriLink = document.getElementById('sep07UriLink');
+        
+        // Показываем модальное окно и спиннер
+        sep07Modal.show();
+        sep07Spinner.style.display = 'inline-block';
+        sep07QrContainer.style.display = 'none';
+        
+        try {
+            // Делаем запрос к API
+            let response = await fetch('/uri_qr/{{tx_hash}}');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            let data = await response.json();
+            
+            if (data.success) {
+                // Скрываем спиннер и показываем QR-код
+                sep07Spinner.style.display = 'none';
+                sep07QrContainer.style.display = 'block';
+                
+                // Устанавливаем источник изображения и ссылку
+                sep07QrImg.src = data.file;
+                sep07UriLink.href = data.uri;
+                
+                // Показываем сообщение об успехе
+                showToast(data.message, 'success');
+            } else {
+                // Показываем ошибку и закрываем модальное окно
+                sep07Modal.hide();
+                throw new Error(data.message);
+            }
+        } catch (error) {
+            console.error('There was a problem generating SEP-07 QR:', error);
+            showToast(`Ошибка: ${error.message}`, 'danger');
+            sep07Modal.hide();
         }
     }
 </script>

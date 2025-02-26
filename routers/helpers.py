@@ -10,7 +10,7 @@ from loguru import logger
 from quart import Blueprint, request, render_template, flash
 
 from other.config_reader import start_path
-from db.mongo import get_asset_by_code
+from other.grist_tools import grist_manager, MTLGrist
 from other.stellar_tools import add_trust_line_uri, float2str, xdr_to_uri
 
 blueprint = Blueprint('sellers', __name__)
@@ -65,17 +65,25 @@ async def cmd_asset(asset_code):
     if len(asset_code) < 3:
         await flash('BAD asset code')
 
-    global last_update_time
-    asset = await get_asset_by_code(asset_code, True)
+    # global last_update_time
+    #asset = await get_asset_by_code(asset_code, True)
+    asset = await grist_manager.load_table_data(
+        MTLGrist.EURMTL_assets,
+        filter_dict={"code": [asset_code]}
+    )
+
     if asset:
-        qr_text = add_trust_line_uri(asset.issuer, asset.code, asset.issuer)
+        asset_issuer = asset[0]['issuer']
+        asset_code = asset[0]['code']
+
+        qr_text = add_trust_line_uri(asset_issuer, asset_code, asset_issuer)
         qr_img = f'/static/qr/{asset_code}.png'
         # если файл не существует, то создаем его
         if not os.path.exists(start_path + qr_img):
             create_beautiful_code(qr_img, asset_code, qr_text)
 
         resp = await render_template('tabler_asset.html', asset_code=asset_code,
-                                     asset_issuer=asset.issuer, qr_text=qr_text, qr_img=qr_img)
+                                     asset_issuer=asset_issuer, qr_text=qr_text, qr_img=qr_img)
         return resp
 
     else:

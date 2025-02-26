@@ -5,9 +5,9 @@ import uuid
 from quart import Blueprint, request, jsonify, abort
 
 from other.config_reader import config
-from db.mongo import get_all_assets
 from db.sql_models import Transactions, Signers, Signatures, WebEditorMessages, MMWBTransactions
 from db.sql_pool import db_pool
+from other.grist_tools import grist_manager, MTLGrist
 from routers.sign_tools import parse_xdr_for_signatures
 from other.stellar_tools import decode_xdr_to_text, is_valid_base64, add_transaction
 
@@ -63,6 +63,53 @@ async def remote_update_signature():
         return jsonify(result), 404  # Not Found
 
 
+@blueprint.route('/remote/sep07', methods=('POST',))
+async def remote_sep07():
+    """
+    Обработчик для SEP-0007 колбека.
+    
+    Принимает параметры:
+    - xdr: XDR транзакции для подписи
+    
+    Возвращает:
+    - JSON с полями status и hash при успешной обработке
+    - Код 200 при успехе, не 200 при ошибке
+    """
+    form_data = await request.form
+    xdr = form_data.get("xdr")
+    
+    if not xdr or not is_valid_base64(xdr):
+        return jsonify({
+            "status": "failed",
+            "hash": "",
+            "error": {
+                "message": "Invalid or missing base64 data",
+                "details": None
+            }
+        }), 400  # Bad Request
+    
+    # Обрабатываем XDR и получаем результат
+    result = await parse_xdr_for_signatures(xdr)
+    
+    # Формируем ответ на основе результата parse_xdr_for_signatures
+    if result["SUCCESS"]:
+        response = {
+            "status": "ready",  # Если SUCCESS=True, то статус ready
+            "hash": result.get("hash", "")  # Получаем хеш из результата
+        }
+        return jsonify(response), 200  # OK
+    else:
+        response = {
+            "status": "failed",
+            "hash": result.get("hash", ""),
+            "error": {
+                "message": "; ".join(result.get("MESSAGES", [])),
+                "details": None
+            }
+        }
+        return jsonify(response), 404  # Not Found
+
+
 @blueprint.route('/remote/decode', methods=('GET', 'POST'))
 async def remote_decode_xdr():
     data = await request.json
@@ -113,13 +160,16 @@ async def remote_get_new_pin_id():
 
 @blueprint.route('/remote/good_assets', methods=['GET'])
 async def remote_good_assets():
-    # Получаем активы, у которых need_eurmtl равно True
-    assets = await get_all_assets(True)
+    # Получаем активы, xz
+    assets = await grist_manager.load_table_data(
+        MTLGrist.EURMTL_assets,
+        #filter_dict={"need_dropdown": [True]}
+    )
 
     # Переструктурируем данные, группируя активы по issuer (это аналогично account)
     account_assets = {}
     for asset in assets:
-        issuer = asset.issuer
+        issuer = asset["issuer"]
         if issuer not in account_assets:
             account_assets[issuer] = []
         account_assets[issuer].append(asset)
@@ -127,7 +177,7 @@ async def remote_good_assets():
     # Формируем ответ в виде JSON
     accounts = [{
         "account": issuer,
-        "assets": [{"asset": asset.name} for asset in assets]
+        "assets": [{"asset": asset["name"]} for asset in assets]
     } for issuer, assets in account_assets.items()]
 
     return jsonify({"accounts": accounts})

@@ -1,5 +1,7 @@
 import uuid as uuid
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import String, Integer, Column, Text, DateTime, create_engine, ForeignKey, BigInteger
 from sqlalchemy.orm import declarative_base, sessionmaker
@@ -8,6 +10,14 @@ from other.config_reader import config
 
 Base = declarative_base()
 metadata = Base.metadata
+
+
+@dataclass
+class User:
+    telegram_id: int
+    account_id: str
+    username: Optional[str] = None
+    weight: Optional[int] = None
 
 
 class Addresses(Base):

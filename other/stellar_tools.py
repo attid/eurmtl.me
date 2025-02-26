@@ -5,6 +5,7 @@ from datetime import datetime
 
 import aiohttp
 import requests
+from loguru import logger
 from quart import session, flash
 from stellar_sdk import (
     FeeBumpTransactionEnvelope,
@@ -20,12 +21,15 @@ from stellar_sdk import (
 from stellar_sdk.sep import stellar_uri
 
 from db import mongo
-from db.mongo import get_asset_by_code
+from other.cache_tools import async_cache_with_ttl
+from other.grist_tools import grist_manager, MTLGrist, load_user_from_grist
 from db.sql_models import Signers, Transactions, Signatures
 from db.sql_pool import db_pool
 from other.config_reader import config
+from other.web_tools import http_session_manager
 
 main_fund_address = 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'
+tools_cash = {}
 
 
 def get_key_sort(key, idx=1):
@@ -228,11 +232,26 @@ async def asset_to_link(operation_asset) -> str:
     if operation_asset.code == 'XLM':
         return f'<a href="{start_url}/{operation_asset.code}" target="_blank">{operation_asset.code}⭐</a>'
     else:
+        star = ''
         # add * if we have asset in DB
-        asset = await get_asset_by_code(operation_asset.code, False)
-        if asset and asset.issuer == operation_asset.issuer:
-            return f'<a href="{start_url}/{operation_asset.code}-{operation_asset.issuer}" target="_blank">{operation_asset.code}⭐</a>'
-        return f'<a href="{start_url}/{operation_asset.code}-{operation_asset.issuer}" target="_blank">{operation_asset.code}</a>'
+        key = f"{operation_asset.code}-{operation_asset.issuer}"
+        if key in tools_cash:
+            asset = tools_cash[key]
+            if asset:
+                if asset[0]['issuer'] == operation_asset.issuer:
+                    star = '⭐'
+        else:
+            asset = await grist_manager.load_table_data(
+                MTLGrist.EURMTL_assets,
+                filter_dict={"code": [operation_asset.code]}
+            )
+
+            if asset:
+                tools_cash[key] = asset
+                if asset[0]['issuer'] == operation_asset.issuer:
+                    star = '⭐'
+
+        return f'<a href="{start_url}/{operation_asset.code}-{operation_asset.issuer}" target="_blank">{operation_asset.code}{star}</a>'
 
 
 def check_asset(asset, cash: dict):
@@ -368,7 +387,8 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                     f"    Изменяем подписанта {address_id_to_link(operation.signer.signer_key.encoded_signer_key)} новые голоса : {operation.signer.weight}")
             if operation.med_threshold or operation.low_threshold or operation.high_threshold:
                 data_exist = True
-                result.append(f"Установка нового требования. Нужно будет {operation.low_threshold}/{operation.med_threshold}/{operation.high_threshold} голосов")
+                result.append(
+                    f"Установка нового требования. Нужно будет {operation.low_threshold}/{operation.med_threshold}/{operation.high_threshold} голосов")
             if operation.home_domain:
                 data_exist = True
                 result.append(f"Установка нового домена {operation.home_domain}")
@@ -646,38 +666,45 @@ def xdr_to_uri(xdr):
     return stellar_uri.TransactionStellarUri(transaction_envelope=transaction).to_uri()
 
 
+@async_cache_with_ttl(3600)
+async def get_fund_signers():
+    response = await http_session_manager.get_web_request(
+        "GET", 'https://horizon.stellar.org/accounts/' + main_fund_address, return_type="json"
+    )
+    if response.status == 200:
+        data = response.data
+        # signers = [signer['key'] for signer in result.get('signers', [])]
+
+        for signer in data['signers']:
+            user = await load_user_from_grist(account_id=signer['key'])
+            signer['telegram_id'] = user.telegram_id if user else 0
+
+        return data
+
+        # if any(key in signers for key in public_keys):  # Тут список 20 адресов
+        #     for signer in result.get('signers', []):
+        #         if signer['key'] in public_keys:  # Найти первое совпадение
+        #             weight = signer['weight']
+        #             break
+
+
 async def check_user_weight(need_flash=True):
     weight = 0
     if 'user_id' in session:
         user_id = session['user_id']
-        user = await mongo.User.find_by_telegram_id(user_id)
-        if user is None:
-            if need_flash:
-                await flash('No such user')
-        else:
-            public_keys = user.stellar
-
-            url = f'https://horizon.stellar.org/accounts/{main_fund_address}'
-
-            async with aiohttp.ClientSession() as web_session:
-                async with web_session.get(url) as response:
-                    if response.status == 200:
-                        result = await response.json()
-                        signers = [signer['key'] for signer in result.get('signers', [])]
-
-                        if any(key in signers for key in public_keys):  # Тут список 20 адресов
-                            for signer in result.get('signers', []):
-                                if signer['key'] in public_keys:  # Найти первое совпадение
-                                    weight = signer['weight']
-                                    break
-                        else:
-                            if need_flash:
-                                await flash('User is not a signer')
-                    else:
-                        if need_flash:
-                            await flash('Failed to retrieve account information from Stellar Horizon')
+        logger.info(f'check_user_weight user_id {user_id}')
+        fund_data = await get_fund_signers()
+        if fund_data and 'signers' in fund_data:
+            signers = fund_data['signers']
+            for signer in signers:
+                if int(signer.get('telegram_id',0)) == int(user_id):
+                    weight = signer['weight']
+                    break
+            if weight == 0 and need_flash:
+                await flash('User is not a signer')
+        elif need_flash:
+            await flash('Failed to retrieve account information')
     return weight
-
 
 async def check_user_in_sign(tr_hash):
     if 'user_id' in session:
@@ -1006,7 +1033,16 @@ async def stellar_build_xdr(data):
     return xdr
 
 
-def add_signer(signer_key, username='FaceLess', user_id=None):
+async def add_signer(signer_key):
+    username = 'FaceLess'
+    user_id = None
+
+    user = await load_user_from_grist(account_id=signer_key)
+    if user:
+        username = user.username if user.username else 'FaceLess'
+        user_id = user.telegram_id
+
+
     if username != "FaceLess" and username[0] != '@':
         username = '@' + username
 
@@ -1033,26 +1069,23 @@ async def extract_sources(xdr):
             sources[operation.source.account_id] = {}
     for source in sources:
         try:
-            rq = requests.get('https://horizon.stellar.org/accounts/' + source)
-            threshold = rq.json()['thresholds']['high_threshold']
+            response = await http_session_manager.get_web_request(
+                "GET", 'https://horizon.stellar.org/accounts/' + source, return_type="json"
+            )
+
+            data = response.data
+
+            threshold = data['thresholds']['high_threshold']
             signers = []
-            for signer in rq.json()['signers']:
+            for signer in data['signers']:
                 signers.append([signer['key'], signer['weight'],
                                 Keypair.from_public_key(signer['key']).signature_hint().hex()])
-                mongo_user = await mongo.User.find_by_stellar_id(signer['key'])
-                if mongo_user:
-                    add_signer(signer['key'], mongo_user.username, mongo_user.telegram_id)
-                else:
-                    add_signer(signer['key'])
+                add_signer(signer['key'])
             sources[source] = {'threshold': threshold, 'signers': signers}
         except:
             sources[source] = {'threshold': 0,
                                'signers': [[source, 1, Keypair.from_public_key(source).signature_hint().hex()]]}
-            mongo_user = await mongo.User.find_by_stellar_id(source)
-            if mongo_user:
-                add_signer(source, mongo_user.username, mongo_user.telegram_id)
-            else:
-                add_signer(source)
+            add_signer(source)
     # print(json.dumps(sources))
     return sources
 
@@ -1062,7 +1095,8 @@ async def add_transaction(tx_body, tx_description):
         tr = TransactionEnvelope.from_xdr(tx_body, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
         tr_full = TransactionEnvelope.from_xdr(tx_body, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
         sources = await extract_sources(tx_body)
-    except:
+    except Exception as ex:
+        logger.info(ex)
         return False, 'BAD xdr. Can`t load'
 
     tx_hash = tr.hash_hex()
@@ -1098,16 +1132,24 @@ def update_memo_in_xdr(xdr: str, new_memo: str) -> str:
         raise Exception(f"Error updating memo: {str(e)}")
 
 
+async def test():
+    a = await get_fund_signers()
+    print(a)
+    a = await get_fund_signers()
+    print(a)
+
+
 if __name__ == '__main__':
-    xdr = "AAAAAgAAAAAJk92FjbTLLsK8gty2kiek3bh5GNzHlPtL2Ju3g1BewQAAJ3UCwvFDAAAAHAAAAAEAAAAAAAAAAAAAAABmzaa8AAAAAQAAABBRMzE2IENyZWF0ZSBMQUJSAAAAAQAAAAAAAAAAAAAAAD6PSNQ8NeBFoh7/6169tIn6pjfziFaURDRWU2bQRX+1AAAAAF/2poAAAAAAAAAAAA=="
-    print(asyncio.run(add_transaction(xdr, 'True')))
-    exit()
-    # simple way to find error in editing
-    # l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHQlRPRjZSTEhSUEc1TlJJVTZNUTdKR01DVjdZSEw1VjMzWVlDNzZZWUc0SlVLQ0pUVVA1REVGSSIsInNlcXVlbmNlIjoiMTg2NzM2MjAxNTQ4NDMxMzc4IiwiZmVlIjoiMTAwMTAiLCJiYXNlRmVlIjoiMTAwIiwibWluRmVlIjoiNTAwMCIsIm1lbW9UeXBlIjoiTUVNT19URVhUIiwibWVtb0NvbnRlbnQiOiJsYWxhbGEifSwiZmVlQnVtcEF0dHJpYnV0ZXMiOnsibWF4RmVlIjoiMTAxMDEifSwib3BlcmF0aW9ucyI6W3siaWQiOjAsImF0dHJpYnV0ZXMiOnsiZGVzdGluYXRpb24iOiJHQUJGUUlLNjNSMk5FVEpNN1Q2NzNFQU1aTjRSSkxMR1AzT0ZVRUpVNVNaVlRHV1VLVUxaSk5MNiIsImFzc2V0Ijp7InR5cGUiOiJjcmVkaXRfYWxwaGFudW00IiwiY29kZSI6IlVTREMiLCJpc3N1ZXIiOiJHQTVaU0VKWUIzN0pSQzVBVkNJQTVNT1A0UkhUTTMzNVgyS0dYM0lIT0pBUFA1UkUzNEs0S1pWTiJ9LCJhbW91bnQiOiIzMDAwMCIsInNvdXJjZUFjY291bnQiOm51bGx9LCJuYW1lIjoicGF5bWVudCJ9XX0%3D&network=public'
-    # l = l.split('/')[-1].split('=')[1].split('&')[0]
-    # decode_xdr_from_base64(l)
-    # e = decode_xdr_to_base64(
-    #     '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')
-    # decode_xdr_from_base64(e)
-    # print(f'https://laboratory.stellar.org/#txbuilder?params={e}&network=public')
-    # pass
+    asyncio.run(test())
+#    xdr = "AAAAAgAAAAAJk92FjbTLLsK8gty2kiek3bh5GNzHlPtL2Ju3g1BewQAAJ3UCwvFDAAAAHAAAAAEAAAAAAAAAAAAAAABmzaa8AAAAAQAAABBRMzE2IENyZWF0ZSBMQUJSAAAAAQAAAAAAAAAAAAAAAD6PSNQ8NeBFoh7/6169tIn6pjfziFaURDRWU2bQRX+1AAAAAF/2poAAAAAAAAAAAA=="
+#    print(asyncio.run(add_transaction(xdr, 'True')))
+#    exit()
+# simple way to find error in editing
+# l = 'https://laboratory.stellar.org/#txbuilder?params=eyJhdHRyaWJ1dGVzIjp7InNvdXJjZUFjY291bnQiOiJHQlRPRjZSTEhSUEc1TlJJVTZNUTdKR01DVjdZSEw1VjMzWVlDNzZZWUc0SlVLQ0pUVVA1REVGSSIsInNlcXVlbmNlIjoiMTg2NzM2MjAxNTQ4NDMxMzc4IiwiZmVlIjoiMTAwMTAiLCJiYXNlRmVlIjoiMTAwIiwibWluRmVlIjoiNTAwMCIsIm1lbW9UeXBlIjoiTUVNT19URVhUIiwibWVtb0NvbnRlbnQiOiJsYWxhbGEifSwiZmVlQnVtcEF0dHJpYnV0ZXMiOnsibWF4RmVlIjoiMTAxMDEifSwib3BlcmF0aW9ucyI6W3siaWQiOjAsImF0dHJpYnV0ZXMiOnsiZGVzdGluYXRpb24iOiJHQUJGUUlLNjNSMk5FVEpNN1Q2NzNFQU1aTjRSSkxMR1AzT0ZVRUpVNVNaVlRHV1VLVUxaSk5MNiIsImFzc2V0Ijp7InR5cGUiOiJjcmVkaXRfYWxwaGFudW00IiwiY29kZSI6IlVTREMiLCJpc3N1ZXIiOiJHQTVaU0VKWUIzN0pSQzVBVkNJQTVNT1A0UkhUTTMzNVgyS0dYM0lIT0pBUFA1UkUzNEs0S1pWTiJ9LCJhbW91bnQiOiIzMDAwMCIsInNvdXJjZUFjY291bnQiOm51bGx9LCJuYW1lIjoicGF5bWVudCJ9XX0%3D&network=public'
+# l = l.split('/')[-1].split('=')[1].split('&')[0]
+# decode_xdr_from_base64(l)
+# e = decode_xdr_to_base64(
+#     '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')
+# decode_xdr_from_base64(e)
+# print(f'https://laboratory.stellar.org/#txbuilder?params={e}&network=public')
+# pass
