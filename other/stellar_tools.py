@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import json
+import os
 from datetime import datetime
 
 import aiohttp
@@ -656,7 +657,7 @@ def add_trust_line_uri(public_key, asset_code, asset_issuer) -> str:
     replacements = [r1, r2]
     t = stellar_uri.TransactionStellarUri(transaction_envelope=transaction, replace=replacements,
                                           origin_domain='eurmtl.me')
-    t.sign(config.signing_key.get_secret_value())
+    t.sign(config.domain_key.get_secret_value())
 
     return t.to_uri()
 
@@ -664,6 +665,45 @@ def add_trust_line_uri(public_key, asset_code, asset_issuer) -> str:
 def xdr_to_uri(xdr):
     transaction = TransactionEnvelope.from_xdr(xdr, Network.PUBLIC_NETWORK_PASSPHRASE)
     return stellar_uri.TransactionStellarUri(transaction_envelope=transaction).to_uri()
+
+async def process_xdr_transaction(signed_xdr: str) -> dict:
+    """Process XDR transaction from SEP-7 callback"""
+    try:
+        # Используем основную сеть
+        network_passphrase = Network.PUBLIC_NETWORK_PASSPHRASE
+        tx_envelope = TransactionEnvelope.from_xdr(signed_xdr, network_passphrase)
+        tx = tx_envelope.transaction
+        operations = tx.operations
+
+        if len(operations) != 2:
+            raise ValueError("Неверное количество операций")
+
+        # Проверка операции 1: manage_data от клиента
+        op1 = operations[0]
+        expected_key = config.domain + " auth"
+        if op1.data_name != expected_key:
+            raise ValueError("Неверный ключ в первой операции")
+            
+        # Значение nonce хранится в байтах, поэтому преобразуем в строку
+        nonce_value = op1.data_value.decode() if op1.data_value is not None else ""
+            
+        # Проверка операции 2: manage_data от сервера
+        op2 = operations[1]
+        if op2.source.account_id != config.domain_account_id or op2.data_name != "web_auth_domain":
+            raise ValueError("Неверные данные во второй операции")
+            
+        domain_value = op2.data_value.decode() if op2.data_value is not None else ""
+
+        # Возвращаем информацию о транзакции
+        return {
+            "hash": tx_envelope.hash_hex(),
+            "client_address": tx.source.account_id,
+            "timestamp": datetime.now().isoformat(),
+            "domain": domain_value,
+            "nonce": nonce_value
+        }
+    except Exception as e:
+        raise ValueError(f"Ошибка обработки XDR: {str(e)}")
 
 
 @async_cache_with_ttl(3600)
@@ -1133,10 +1173,62 @@ def update_memo_in_xdr(xdr: str, new_memo: str) -> str:
 
 
 async def test():
-    a = await get_fund_signers()
+    a = await process_xdr_transaction('AAAAAgAAAADXM/FKYDkdJMoH7qR0azpDSfND7E9VelL2D5ys9ViskAAAAZACGVTNAAAHjwAAAAEAAAAAAAAAAAAAAABny7nTAAAAAAAAAAIAAAAAAAAACgAAAA5ldXJtdGwubWUgYXV0aAAAAAAAAQAAAAp0MHFiNTg2OWhoAAAAAAABAAAAAC6F6mrl0kGQk/bzZ60mRWIoAqzhhMgX7hjAF9yaZNIGAAAACgAAAA93ZWJfYXV0aF9kb21haW4AAAAAAQAAAAlldXJtdGwubWUAAAAAAAAAAAAAAfVYrJAAAABAiVfCKA3CfHxlcqJYITjM8ta2ljioPHROi7X9jKJrwdrME4jJ5QOpXsehZBUw/RI8r7sK+/ZvJcvBQBgUJN3ZBQ==')
     print(a)
-    a = await get_fund_signers()
-    print(a)
+
+
+async def create_sep7_auth_transaction(domain: str, nonce: str, callback: str) -> str:
+    """Создает SEP-7 транзакцию для аутентификации с подменой адреса.
+    
+    Args:
+        domain: Домен сайта
+        nonce: Уникальный идентификатор сессии
+        callback: URL для перенаправления пользователя после аутентификации. Должен быть валидным URL.
+
+    Returns:
+        URI транзакции с подменой адреса
+    """
+    # Создаем транзакцию с sequence=0
+    source_account = Server("https://horizon.stellar.org").load_account(account_id=main_fund_address)
+    transaction = (
+        TransactionBuilder(
+            source_account=source_account,
+            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            base_fee=100
+        )
+        .append_manage_data_op(
+            data_name=f'{config.domain} auth',
+            data_value=nonce.encode()
+        )
+        .append_manage_data_op(
+            data_name='web_auth_domain',
+            data_value=domain.encode(),
+            source=config.domain_account_id
+        )
+        .set_timeout(300)  # 5 minutes
+        .build()
+    )
+    
+    # Устанавливаем sequence=0
+    transaction.transaction.sequence = 101
+    
+    # Создаем замену только для адреса
+    r1 = stellar_uri.Replacement("sourceAccount", "X", "account to authenticate")
+    replacements = [r1]
+    
+    # Создаем URI с заменой
+    t = stellar_uri.TransactionStellarUri(
+        transaction_envelope=transaction,
+        replace=replacements,
+        origin_domain=config.domain,
+        callback=callback
+    )
+    
+    # Подписываем URI серверным ключом
+    t.sign(config.domain_key.get_secret_value())
+    
+    # Возвращаем URI вместо XDR
+    return t.to_uri()
 
 
 if __name__ == '__main__':
