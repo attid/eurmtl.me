@@ -78,8 +78,8 @@ def before_send(event, hint):
 
 sentry_sdk.init(
     dsn=config.sentry_dsn,
-    traces_sample_rate=1.0,
-    profiles_sample_rate=1.0,
+    traces_sample_rate=0.1,
+    profiles_sample_rate=0.1,
     before_send=before_send,
 )
 

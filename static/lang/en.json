@@ -25,7 +25,7 @@
   "openLaboratoryButton": "Open Laboratory",
   "copyTransactionButton": "Copy Transaction",
   "decodeButton": "Decode",
-  "openLobsterButton": "Open in Lobster*",
+  "openLobsterButton": "Open in Sunce/Lobstr",
   "xdrLabel": "Transaction XDR:",
   "privateKeyLabel": "Private Key:",
   "privateKeyPlaceholder": "Enter private key starting with S",

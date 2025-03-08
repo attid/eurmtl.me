@@ -25,7 +25,7 @@
   "openLaboratoryButton": "Открыть Laboratory",
   "copyTransactionButton": "Копировать транзакцию",
   "decodeButton": "Декодировать",
-  "openLobsterButton": "Открыть в Lobster*",
+  "openLobsterButton": "Открыть в Sunce/Lobstr",
   "xdrLabel": "XDR транзакции:",
   "privateKeyLabel": "Приватный ключ:",
   "privateKeyPlaceholder": "Введите приватный ключ, начинающийся с S",

@@ -10,8 +10,11 @@ from db.sql_pool import db_pool
 from other.grist_tools import grist_manager, MTLGrist
 from routers.sign_tools import parse_xdr_for_signatures
 from other.stellar_tools import decode_xdr_to_text, is_valid_base64, add_transaction
+from other.web_tools import cors_jsonify
+from routers.remote_sep07 import blueprint as sep07_blueprint
 
 blueprint = Blueprint('remote', __name__)
+blueprint.register_blueprint(sep07_blueprint)
 
 
 @blueprint.route('/remote/need_sign/<public_key>', methods=('GET',))
@@ -63,7 +66,7 @@ async def remote_update_signature():
         return jsonify(result), 404  # Not Found
 
 
-@blueprint.route('/remote/sep07', methods=('POST',))
+@blueprint.route('/remote/sep07', methods=('POST', 'OPTIONS'))
 async def remote_sep07():
     """
     Обработчик для SEP-0007 колбека.
@@ -74,40 +77,47 @@ async def remote_sep07():
     Возвращает:
     - JSON с полями status и hash при успешной обработке
     - Код 200 при успехе, не 200 при ошибке
+    States
+    failed = "failed",
+    pending = "pending",
+    ready = "ready",
+    submitted = "submitted"
     """
+    # Обработка OPTIONS запроса для CORS preflight
+    if request.method == 'OPTIONS':
+        return cors_jsonify({})
+    
     form_data = await request.form
     xdr = form_data.get("xdr")
     
     if not xdr or not is_valid_base64(xdr):
-        return jsonify({
+        return cors_jsonify({
             "status": "failed",
             "hash": "",
             "error": {
                 "message": "Invalid or missing base64 data",
                 "details": None
             }
-        }), 400  # Bad Request
+        }, 400)  # Bad Request
     
     # Обрабатываем XDR и получаем результат
     result = await parse_xdr_for_signatures(xdr)
     
     # Формируем ответ на основе результата parse_xdr_for_signatures
     if result["SUCCESS"]:
-        response = {
-            "status": "ready",  # Если SUCCESS=True, то статус ready
+        return cors_jsonify({
+            "status": "pending",  # Если SUCCESS=True
             "hash": result.get("hash", "")  # Получаем хеш из результата
-        }
-        return jsonify(response), 200  # OK
+        })  # OK (200 по умолчанию)
     else:
-        response = {
+        return cors_jsonify({
             "status": "failed",
             "hash": result.get("hash", ""),
             "error": {
                 "message": "; ".join(result.get("MESSAGES", [])),
                 "details": None
             }
-        }
-        return jsonify(response), 404  # Not Found
+        }, 404)  # Not Found
 
 
 @blueprint.route('/remote/decode', methods=('GET', 'POST'))

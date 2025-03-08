@@ -31,7 +31,7 @@
                     <button class="button is-info" onclick="copy_tx()" data-translate="copyTransactionButton">Копировать транзакцию</button>
                     <button class="button is-primary" onclick="getDecode()" data-translate="decodeButton">Декодировать</button>
                     {% if uri_xdr %}
-                    <a href="{{ uri_xdr }}" target="_blank" class="button is-warning" data-translate="openLobsterButton">Открыть в Lobster*</a>
+                    <a href="{{ uri_xdr }}" target="_blank" class="button is-warning" onclick="return handleSunceButtonClick(event)" data-translate="openLobsterButton">Открыть в Lobster*</a>
                     {% endif %}
                 </div>
             </div>
@@ -85,7 +85,7 @@
                 </div>
                 <div class="field mt-4">
                     <div class="control">
-                        <a href="{{ qr_text }}" class="button is-link is-fullwidth" data-translate="openQRLink">Открыть QR-код</a>
+                        <a href="{{ qr_text }}" class="button is-link is-fullwidth" id="sunceButton" onclick="return handleSunceButtonClick(event)" data-translate="openQRLink">Открыть в Sunce</a>
                     </div>
                 </div>
             </div>
@@ -96,6 +96,21 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/10.4.1/stellar-sdk.min.js"></script>
     <script src="/static/js/i18.js?1"></script>
     <script>
+    // Функция для проверки, является ли браузер встроенным браузером Telegram
+    function isInTelegramBrowser() {
+        return typeof window.TelegramWebview !== 'undefined';
+    }
+    
+    // Функция-обработчик для кнопки "Открыть в Sunce"
+    function handleSunceButtonClick(event) {
+        if (isInTelegramBrowser()) {
+            // Если это Telegram браузер, показываем предупреждение и отменяем переход по ссылке
+            alert("This is Telegram in-app browser. This function is not available here. Please open the page in a regular browser.");
+            return false; // Предотвращаем переход по ссылке
+        }
+        return true; // Разрешаем переход по ссылке
+    }
+    
     async function copy_tx() {
         if (!navigator.clipboard) {
             M.toast({html: 'Clipboard API не доступен'});

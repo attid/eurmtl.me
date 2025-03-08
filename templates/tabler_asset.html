@@ -20,7 +20,7 @@
                class="btn btn-primary me-2 mt-2">
                 View on stellar.expert
             </a>
-            <a href="{{ qr_text }}" target="_blank" class="btn btn-info me-2 mt-2">
+            <a href="{{ qr_text }}" target="_blank" class="btn btn-info me-2 mt-2" id="sunceButton" onclick="return handleSunceButtonClick(event)">
                 Add to Sunce / Lobstr
             </a>
             <a href="https://t.me/MyMTLWalletBot?start=asset_{{ asset_code }}-0" target="_blank"
@@ -43,6 +43,21 @@
 
 {% block bottom_scripts %}
 <script>
+    // Функция для проверки, является ли браузер встроенным браузером Telegram
+    function isInTelegramBrowser() {
+        return typeof window.TelegramWebview !== 'undefined';
+    }
+    
+    // Функция-обработчик для кнопки "Add to Sunce / Lobstr"
+    function handleSunceButtonClick(event) {
+        if (isInTelegramBrowser()) {
+            // Если это Telegram браузер, показываем предупреждение и отменяем переход по ссылке
+            alert("This is Telegram in-app browser. This function is not available here. Please open the page in a regular browser.");
+            return false; // Предотвращаем переход по ссылке
+        }
+        return true; // Разрешаем переход по ссылке
+    }
+    
     document.addEventListener('DOMContentLoaded', function() {
       var textToCopy = document.getElementById('text-to-copy');
       if (textToCopy) {
