@@ -2,9 +2,10 @@ import aiohttp
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, Tuple
 
 from loguru import logger
+from quart import jsonify as quart_jsonify
 
 # Датакласс для ответа
 @dataclass
@@ -125,6 +126,37 @@ async def get_eurmtl_xdr(url):
         logger.info(['get_eurmtl_xdr', ex])
         return 'An error occurred during the request.'
 
+def cors_jsonify(*args, **kwargs) -> Tuple:
+    """
+    Обертка для функции jsonify из Quart, которая автоматически добавляет CORS заголовки.
+    
+    Использование:
+    return cors_jsonify(data)  # Возвращает (response, 200)
+    return cors_jsonify(data, 404)  # Возвращает (response, 404)
+    
+    :param args: Аргументы для передачи в jsonify
+    :param kwargs: Именованные аргументы для передачи в jsonify
+    :return: Кортеж (response, status_code)
+    """
+    # Извлекаем код статуса, если он предоставлен
+    status_code = 200
+    if len(args) > 1 and isinstance(args[-1], int):
+        status_code = args[-1]
+        args = args[:-1]
+    elif 'status_code' in kwargs:
+        status_code = kwargs.pop('status_code')
+    
+    # Создаем ответ с помощью jsonify
+    resp = quart_jsonify(*args, **kwargs)
+    
+    # Добавляем CORS заголовки
+    resp.headers.add('Access-Control-Allow-Origin', '*')
+    resp.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+    resp.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    
+    return resp, status_code
+
 
 if __name__ == "__main__":
+    asyncio.run(main())
     asyncio.run(main())
