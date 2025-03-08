@@ -366,7 +366,7 @@ async def create_transaction_uri(tr_hash):
         message=msg
     )
 
-    transaction_uri.sign(config.signing_key.get_secret_value())
+    transaction_uri.sign(config.domain_key.get_secret_value())
 
     return transaction_uri.to_uri()
 

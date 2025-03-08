@@ -305,7 +305,7 @@ async def sep10_auth():
         # Создаём вызов транзакции для аутентификации
         try:
             transaction = build_challenge_transaction(
-                server_secret=config.signing_key.get_secret_value(),
+                server_secret=config.domain_key.get_secret_value(),
                 client_account_id=account,
                 home_domain=home_domain,
                 web_auth_domain='anchor.mtl.montelibero.org',

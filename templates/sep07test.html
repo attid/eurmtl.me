@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Авторизация через Stellar</title>
+    <!-- Подключаем Stellar SDK и библиотеку для генерации QR-кодов -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/10.4.1/stellar-sdk.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+<h1>Войти через Stellar</h1>
+<button id="loginButton" onclick="initAuth()">Войти</button>
+<div id="qrcode"></div>
+
+<script>
+    async function initAuth() {
+      try {
+        const response = await fetch('/remote/sep07/auth/init', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            domain: window.location.hostname,
+            nonce: Math.random().toString(36).substring(2)
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error('Ошибка инициализации');
+        }
+
+        const { qr_path, uri, status_url } = await response.json();
+
+        // Отображаем QR-код **
+        document.getElementById("qrcode").innerHTML = `
+          <img src="${qr_path}" alt="QR Code">
+          <p>Или используйте ссылку: <a href="${uri}">SEP-07</a></p>
+        `;
+
+        // Запускаем опрос статуса
+        async function pollStatus() {
+          try {
+            const statusResponse = await fetch(status_url);
+            const statusData = await statusResponse.json();
+            
+            if (statusData.authenticated) {
+              alert(`Аутентификация прошла успешно!\nАдрес: ${statusData.client_address}`);
+            } else {
+              setTimeout(pollStatus, 5000);
+            }
+          } catch (err) {
+            console.error('Ошибка проверки статуса:', err);
+            setTimeout(pollStatus, 5000);
+          }
+        }
+        
+        pollStatus();
+      } catch (err) {
+        console.error('Ошибка:', err);
+        alert('Произошла ошибка при инициализации аутентификации');
+      }
+    }
+</script>
+</body>
+</html>

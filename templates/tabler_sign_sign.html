@@ -288,7 +288,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <a href="#" class="btn btn-primary" id="sep07UriLink" target="_blank">Open URI</a>
+                <a href="javascript:void(0)" class="btn btn-primary" id="sep07UriLink">Open URI</a>
             </div>
         </div>
     </div>
@@ -299,6 +299,11 @@
 {% block bottom_scripts %}
 <script src="/static/js/stellar-sdk.min.js"></script>
 <script>
+    // Функция для проверки, является ли браузер встроенным браузером Telegram
+    function isInTelegramBrowser() {
+        return typeof window.TelegramWebview !== 'undefined';
+    }
+
     // Элементы DOM, к которым часто обращаемся
     const txBodyTextarea = document.querySelector("#tx_body");
     const defXdrDiv = document.querySelector("#defXdrDiv");
@@ -446,9 +451,24 @@
                 sep07Spinner.style.display = 'none';
                 sep07QrContainer.style.display = 'block';
                 
-                // Устанавливаем источник изображения и ссылку
+                // Устанавливаем источник изображения
                 sep07QrImg.src = data.file;
-                sep07UriLink.href = data.uri;
+                
+                // Сохраняем URI в атрибуте data-uri вместо href
+                sep07UriLink.setAttribute('data-uri', data.uri);
+                
+                // Добавляем обработчик события click для кнопки
+                sep07UriLink.onclick = function(e) {
+                    e.preventDefault(); // Предотвращаем стандартное поведение ссылки
+                    
+                    if (isInTelegramBrowser()) {
+                        // Если это Telegram браузер, показываем предупреждение
+                        alert("This is Telegram in-app browser. This function is not available here. Please open the page in a regular browser.");
+                    } else {
+                        // Если это обычный браузер, открываем URI
+                        window.open(this.getAttribute('data-uri'), '_blank');
+                    }
+                };
                 
                 // Показываем сообщение об успехе
                 showToast(data.message, 'success');
