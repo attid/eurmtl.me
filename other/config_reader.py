@@ -17,7 +17,9 @@ class Settings(BaseSettings):
     secret_key: SecretStr
     eurmtl_key: SecretStr
     mmwb_token: SecretStr
-    signing_key: SecretStr
+    domain: str
+    domain_account_id: str
+    domain_key: SecretStr
     skynet_token: SecretStr
     cloudflare_secret_key: SecretStr
     yandex_secret_key: SecretStr
