@@ -176,6 +176,48 @@ function generateAccountSelector(fieldName = "sourceAccount",
     `;
 }
 
+function viewPool(element) {
+    var poolId = $(element).closest('.row').find('.account-input').val().trim();
+    if (poolId.length === 64) {
+        window.open('https://stellar.expert/explorer/public/liquidity-pool/' + poolId, '_blank');
+    } else {
+        showToast('Pool ID должен содержать 64 символа', 'warning');
+    }
+}
+
+function fetchPoolsMTL(buttonElement) {
+    var $button = $(buttonElement);
+    var $row = $button.closest('.row');
+    var $input = $row.find('.account-input');
+    fetchDataAndShowDropdown('/lab/mtl_pools', 'poolsMTL', $row, $input);
+}
+
+function generatePoolSelector(fieldName = "pool",
+                             labelName = "Liquidity Pool",
+                             fieldValue = "") {
+    var uid = get_uid();
+    return `
+<!-- Pool Selector -->
+<div class="row mb-3">
+    <div class="col-12">
+        <label for="${fieldName}-${uid}" class="form-label">${labelName}</label>
+        <div class="input-group">
+            <input type="text" class="form-control account-input me-2" data-type="${fieldName}" data-validation="pool"
+                value="${fieldValue}" id="${fieldName}-${uid}">
+            <button type="button" class="btn btn-icon btn-primary me-2" data-bs-toggle="tooltip"
+                title="Выбрать из списка" onclick="fetchPoolsMTL(this)">
+                <i class="ti ti-list"></i>
+            </button>
+            <button type="button" class="btn btn-icon btn-info" data-bs-toggle="tooltip"
+                title="Просмотреть в эксперте" onclick="viewPool(this)">
+                <i class="ti ti-eye"></i>
+            </button>
+        </div>
+    </div>
+</div>
+    `;
+}
+
 function generateAssetSelector(fieldName = "asset",
                                  labelName = "Asset",
                                  fieldValue = "") {
@@ -269,7 +311,7 @@ function fetchDataEntry(buttonElement) {
 
     var $button = $(buttonElement);
     var $row = $button.closest('.row');
-    var $input = $row.find('.account-input');
+    var $input = $row.find('[data-type="data_name"]');
 
     fetchDataAndShowDropdown(`/lab/data/${keyToUse}`, 'data'+keyToUse, $row, $input);
 }
@@ -345,6 +387,23 @@ function generateCardFirst() {
             <label for="memo" class="form-label">Memo</label>
             <input type="text" id="memo" name="memo" class="form-control" maxlength="28">
         </div>
+
+        <!-- Sequence -->
+        <div class="row mb-3">
+            <div class="col-12">
+                <label for="sequence" class="form-label">Sequence</label>
+                <div class="input-group">
+                    <input type="text" id="sequence" name="sequence" class="form-control" value="0" min="0">
+    
+                    <button type="button" class="btn btn-icon btn-primary" 
+                    data-bs-toggle="tooltip" title="Fetch current sequence" onclick="fetchSequence(this)">
+                        <i class="ti ti-refresh"></i>
+                    </button>
+                </div>
+                <div class="form-text">Set to 0 for automatic sequence generation from horizon</div>
+            </div>
+        </div>
+
     </div>
 </div>
     `;
@@ -480,12 +539,12 @@ function generateCardManageData() {
         ${generateCardHeader("Manage Data", blockId)}
 
         <div class="row mb-3">
-            <div class="col-10">
+            <div class="col-11">
                 <label for="data_name-${uid}" class="form-label">Entry Name</label>
                 <input id="data_name-${uid}" type="text" class="form-control" maxlength="64"
                     data-type="data_name" data-validation="text_null">
             </div>
-            <div class="col-2 d-flex align-items-end">
+            <div class="col-1 d-flex align-items-end">
                 <button type="button" class="btn btn-icon btn-primary" data-bs-toggle="tooltip"
                     title="Fetch Data" onclick="fetchDataEntry(this)">
                     <i class="ti ti-search"></i>
@@ -494,7 +553,7 @@ function generateCardManageData() {
         </div>
 
         <div class="row mb-3">
-            <div class="col-10">
+            <div class="col-11">
                 <label for="data_value-${uid}" class="form-label">Entry Value (optional)</label>
                 <input id="data_value-${uid}" type="text" class="form-control" maxlength="64"
                     data-type="data_value" data-validation="text_null">
@@ -613,7 +672,6 @@ function generateCardCopyMultiSign() {
 </div>
     `;
 }
-
 function generateCardSwap() {
     var blockId = getBlockCounter();
     return `
@@ -628,6 +686,60 @@ function generateCardSwap() {
         ${generateInput("destination", "Minimum destination amount", "float")}
 
         ${generatePathSelector("path", "Path")}
+
+        ${generateAccountSelector("sourceAccount")}
+    </div>
+</div>
+    `;
+}
+function generateCardLiquidityPoolDeposit() {
+    var blockId = getBlockCounter();
+    return `
+<div class="card">
+    <div class="card-body gather-block" data-type="liquidity_pool_deposit" data-index="${blockId}">
+        ${generateCardHeader("Liquidity Pool Deposit", blockId)}
+
+        ${generatePoolSelector("liquidity_pool_id", "Liquidity Pool")}
+        ${generateInput("max_amount_a", "Max Amount A", "float")}
+        ${generateInput("max_amount_b", "Max Amount B", "float")}
+        ${generateInput("min_price", "Min Price (deposit_a/deposit_b price). Set 0 for auto", "float")}
+        ${generateInput("max_price", "Max Price (deposit_a/deposit_b price). Set 0 for auto", "float")}
+
+        ${generateAccountSelector("sourceAccount")}
+    </div>
+</div>
+    `;
+}
+
+function generateCardLiquidityPoolWithdraw() {
+    var blockId = getBlockCounter();
+    return `
+<div class="card">
+    <div class="card-body gather-block" data-type="liquidity_pool_withdraw" data-index="${blockId}">
+        ${generateCardHeader("Liquidity Pool Withdraw", blockId)}
+
+        ${generatePoolSelector("liquidity_pool_id", "Liquidity Pool")}
+        ${generateInput("amount", "Amount (shares to withdraw)", "float")}
+        ${generateInput("min_amount_a", "Min Amount A to receive (0 for auto -5%)", "float")}
+        ${generateInput("min_amount_b", "Min Amount B to receive (0 for auto -5%)", "float")}
+
+        ${generateAccountSelector("sourceAccount")}
+    </div>
+</div>
+    `;
+}
+
+function generateCardLiquidityPoolTrustline() {
+    var blockId = getBlockCounter();
+    return `
+<div class="card">
+    <div class="card-body gather-block" data-type="liquidity_pool_trustline" data-index="${blockId}">
+        ${generateCardHeader("Liquidity Pool Trustline", blockId)}
+
+        ${generatePoolSelector("liquidity_pool_id", "Liquidity Pool")}
+        
+        ${generateInput("limit", "Trust Limit (optional)", "float_null", "",
+            "Leave empty to default to the max int64. Set to 0 to remove the trust line.")}
 
         ${generateAccountSelector("sourceAccount")}
     </div>
@@ -697,7 +809,18 @@ function getCardByName(selectedOperation){
         case 'payDivs':
             newCardHTML = generatePayDivs();
             break;
-
+        case 'liquidity_pool_deposit':
+        case 'liquidityPoolDeposit':
+            newCardHTML = generateCardLiquidityPoolDeposit();
+            break;
+        case 'liquidity_pool_withdraw':
+        case 'liquidityPoolWithdraw':
+            newCardHTML = generateCardLiquidityPoolWithdraw();
+            break;
+        case 'liquidity_pool_trustline':
+        case 'liquidityPoolTrustline':
+            newCardHTML = generateCardLiquidityPoolTrustline();
+            break;
         default:
             showToast(`Can't find selectedOperation ${selectedOperation} =(`, 'warning');
             return;
@@ -832,6 +955,11 @@ function validateInput(value, validationType, dataType, type, index) {
                 throw new Error(`Неверный формат для ${dataType} в блоке ${type} #${index}. Должно быть одно число или три числа через слэш (например, 1/2/3)`);
             }
             break;
+        case 'pool':
+            if (value.trim().length !== 64 || !/^[a-f0-9]+$/i.test(value)) {
+                throw new Error(`Неверный формат Pool ID для ${dataType} в блоке ${type} #${index}. Должен быть 64 hex-символа`);
+            }
+            break;
         default:
             throw new Error(`Неизвестный тип валидации: ${validationType}`);
     }
@@ -853,6 +981,14 @@ function gatherData() {
 
     data['memo_type'] = $('#memo_type').val();
     data['memo'] = $('#memo').val();
+    
+    // Validate sequence
+    const sequence = $('#sequence').val();
+    if (isNaN(sequence) || sequence < 0) {
+        showToast('Sequence must be a positive number or zero', 'warning');
+        return;
+    }
+    data['sequence'] = sequence;
 
     try {
         $('.gather-block').each(function() {
@@ -949,9 +1085,11 @@ function processOperations(jsonData) {
 
                     if (asset && asset.type === 'native') {
                         value = 'XLM';
+                    } else if (asset && asset.liquidityPoolId) {
+                        value = asset.liquidityPoolId;
                     } else if (asset) {
                         value = `${asset.code}-${asset.issuer}`;
-                    }
+                    }    
 
                 $(this).val(value);
             } else if (op.attributes.hasOwnProperty(camelCaseDataType)) {
@@ -1034,6 +1172,29 @@ function importTransaction() {
             // В случае ошибки, показываем сообщение пользователю
             var errorMessage = xhr.status + ': ' + xhr.statusText;
             showToast('Ошибка при импорте XDR: ' + errorMessage, 'warning');
+        }
+    });
+}
+
+function fetchSequence(buttonElement) {
+    const publicKey = $('[id^="publicKey-"]').val();
+    if (!publicKey || publicKey.length !== 56) {
+        showToast('Please enter a valid public key first', 'warning');
+        return;
+    }
+
+    $.ajax({
+        url: `https://horizon.stellar.org/accounts/${publicKey}`,
+        type: 'GET',
+        success: function(response) {
+            // Handle sequence as string to avoid BigInt precision issues
+            const currentSequence = String(BigInt(response.sequence) + BigInt(1));
+            $('#sequence').val(currentSequence);
+            showToast(`Sequence updated to ${currentSequence}`, 'success');
+        },
+        error: function(xhr, status, error) {
+            showToast('Failed to fetch sequence from Horizon', 'danger');
+            console.error('Error fetching sequence:', error);
         }
     });
 }

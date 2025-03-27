@@ -38,6 +38,7 @@ class MTLGrist:
     EURMTL_users = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Users")
     EURMTL_accounts = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Accounts")
     EURMTL_assets = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Assets")
+    EURMTL_pools = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Pools")
 
 
 class GristAPI:
@@ -203,7 +204,7 @@ async def load_user_from_grist(account_id: Optional[str] = None, telegram_id: Op
 
 async def main():
     # Пример загрузки данных
-    assets = await grist_manager.load_table_data(MTLGrist.NOTIFY_TREASURY, sort='order')
+    assets = await grist_manager.load_table_data(MTLGrist.EURMTL_pools)
     if assets:
         print(json.dumps(assets, indent=2))
     await grist_session_manager.close()
