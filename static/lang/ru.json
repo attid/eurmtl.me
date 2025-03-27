@@ -4,6 +4,8 @@
   "importInputPlaceholder": "Введите публичный ключ для импорта данных",
   "importButton": "Импортировать",
   "addButton": "Добавить ключ",
+  "filterInputPlaceholder": "Введите текст для фильтрации",
+  "filterButton": "Фильтр",
   "keyLabel": "Ключ (Entry name):",
   "keyInputPlaceholder": "Начните вводить ключ или сделайте клик мышью...",
   "valueLabel": "Значение (Entry value):",

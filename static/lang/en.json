@@ -4,6 +4,8 @@
   "importInputPlaceholder": "Enter public key for data import",
   "importButton": "Import",
   "addButton": "Add Key",
+  "filterInputPlaceholder": "Enter text to filter",
+  "filterButton": "Filter",
   "keyLabel": "Entry name (key):",
   "keyInputPlaceholder": "Start typing a key or click...",
   "valueLabel": "Entry value:",
