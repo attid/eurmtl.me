@@ -433,8 +433,12 @@ async def generate_transaction_qr(tr_hash):
         
         # Создаем QR-код
         from routers.helpers import create_beautiful_code
-        create_beautiful_code(qr_file_path, text_for_qr, uri)
-        
+        try:
+            create_beautiful_code(qr_file_path, text_for_qr, uri)
+        except Exception as e:
+            logger.error(f"Error creating beautiful QR code: {str(e)}")
+            # Continue execution even if QR code creation fails
+
         return jsonify({
             'success': True,
             'message': 'QR code created',
