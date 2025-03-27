@@ -50,6 +50,15 @@
                         <button class="button is-info is-fullwidth is-hidden add-button" onclick="addKey()" data-translate="addButton">Добавить ключ</button>
                     </div>
                 </div>
+                <!-- Поле фильтра и кнопка -->
+                <div class="field has-addons">
+                    <div class="control is-expanded">
+                        <input class="input" id="filterInput" type="text" placeholder="Введите текст для фильтрации" data-translate-placeholder="filterInputPlaceholder">
+                    </div>
+                    <div class="control">
+                        <button class="button is-info" id="filterButton" onclick="filterData()" data-translate="filterButton">Фильтр</button>
+                    </div>
+                </div>
             </div>
             <!-- Второй блок в боксе -->
             <div class="box key-box-hidden is-hidden">
@@ -140,7 +149,7 @@
         </div>
     </section>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stellar-sdk/10.4.1/stellar-sdk.min.js"></script>
-    <script src="/static/js/i18.js?1"></script>
-    <script src="/static/js/bsn.js?2"></script>
+    <script src="/static/js/i18.js?3"></script>
+    <script src="/static/js/bsn.js?3"></script>
 </body>
 </html>

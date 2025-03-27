@@ -184,9 +184,57 @@ async function getXDR() {
     document.getElementById('xdr').value = xdr;
 }
 
+function filterData() {
+    const filterText = document.getElementById('filterInput').value.toLowerCase();
+    const keyBoxes = document.querySelectorAll('.key-box');
+    const filterButton = document.getElementById('filterButton');
+    
+    // Добавляем класс is-loading к кнопке фильтра
+    filterButton.classList.add('is-loading');
+    
+    // Если фильтр пустой, показываем все блоки
+    if (filterText === '') {
+        keyBoxes.forEach(box => {
+            box.classList.remove('is-hidden');
+        });
+        filterButton.classList.remove('is-loading');
+        return;
+    }
+    
+    // Проверяем каждый блок на соответствие фильтру
+    keyBoxes.forEach(box => {
+        const keyInput = box.querySelector('.bor-key').value.toLowerCase();
+        const valueInput = box.querySelector('.bor-value').value.toLowerCase();
+        
+        // Если текст фильтра содержится в ключе или значении, показываем блок, иначе скрываем
+        if (keyInput.includes(filterText) || valueInput.includes(filterText)) {
+            box.classList.remove('is-hidden');
+        } else {
+            box.classList.add('is-hidden');
+        }
+    });
+    
+    // Убираем класс is-loading с кнопки фильтра
+    filterButton.classList.remove('is-loading');
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     const input = document.getElementById('importInput').value;
     if (input.length === 56) {
         importData();
+    }
+    
+    // Добавляем обработчик события нажатия клавиши Enter в поле фильтра
+    const filterInput = document.getElementById('filterInput');
+    if (filterInput) {
+        filterInput.addEventListener('keydown', function(event) {
+            // Проверяем, была ли нажата клавиша Enter (код 13)
+            if (event.keyCode === 13 || event.key === 'Enter') {
+                // Предотвращаем стандартное действие (отправку формы, если она есть)
+                event.preventDefault();
+                // Вызываем функцию фильтрации
+                filterData();
+            }
+        });
     }
 });
