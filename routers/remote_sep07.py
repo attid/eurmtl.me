@@ -38,9 +38,10 @@ async def auth_test():
     return await render_template('sep07test.html')
 
 
-@blueprint.route('/init', methods=['POST'])
-@blueprint.route('/init', methods=['POST'])
+@blueprint.route('/init', methods=['POST', 'OPTIONS'])
 async def auth_init():
+    if request.method == 'OPTIONS':
+        return cors_jsonify({})  # пустой ответ, но с CORS-заголовками
     # Очищаем хранилище от старых nonce
     cleanup_nonce_store()
 
@@ -84,12 +85,14 @@ async def auth_init():
     })
 
 
-@blueprint.route('/status/<nonce>/<salt>')
+@blueprint.route('/status/<nonce>/<salt>', methods=['GET', 'OPTIONS'])
 async def auth_status(nonce, salt):
+    if request.method == 'OPTIONS':
+        return cors_jsonify({})  # пустой ответ, но с CORS-заголовками
     # Ищем nonce в хранилище
     if nonce not in nonce_store:
         return jsonify({"error": "nonce not found"}), 400
-        
+
     # Проверяем соль
     nonce_data = nonce_store[nonce]
     if nonce_data["salt"] != salt:
@@ -107,7 +110,7 @@ async def auth_status(nonce, salt):
             "domain": nonce_data["tx_info"]["domain"]
         })
 
-    return jsonify({
+    return cors_jsonify({
         "authenticated": False,
         "nonce": nonce
     })
