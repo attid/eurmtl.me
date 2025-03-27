@@ -46,7 +46,7 @@ async def cmd_mtl_accounts():
             filter_dict={"need_dropdown": [True]}
         )
         for account in accounts:
-            account_id = account["account_id"] ###
+            account_id = account["account_id"]  ###
             result[f"{account['description']} {account_id[:4]}..{account_id[-4:]}"] = account_id
 
         return jsonify(result)
@@ -82,6 +82,28 @@ async def cmd_mtl_assets():
 
         # Добавляем XLM как отдельный элемент
         result["XLM"] = "XLM"
+
+        return jsonify(result)
+
+
+@blueprint.route('/lab/mtl_pools', methods=['GET'])
+async def cmd_mtl_pools():
+    if request.method == 'GET':
+        result = {}
+        rows = await grist_manager.load_table_data(
+            MTLGrist.EURMTL_pools,
+            filter_dict={"need_dropdown": [True]}
+        )
+
+        for row in rows:
+            print(row)
+            info = row["info"]
+            pool_id = row["pool_id"]
+
+            # Формируем ключ и значение как в исходной функции
+            key = f"{info}"
+            value = f"{pool_id}"
+            result[key] = value
 
         return jsonify(result)
 

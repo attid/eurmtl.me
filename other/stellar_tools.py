@@ -1,10 +1,7 @@
 import asyncio
 import base64
 import json
-import os
 from datetime import datetime
-
-import aiohttp
 import requests
 from loguru import logger
 from quart import session, flash
@@ -17,11 +14,10 @@ from stellar_sdk import (
     TransactionEnvelope,
     PathPaymentStrictSend,
     ManageSellOffer, Transaction, Keypair, Server, Asset, TransactionBuilder, ServerAsync, AiohttpClient,
-    CreatePassiveSellOffer, ManageBuyOffer, Clawback, SetTrustLineFlags, TrustLineFlags
+    CreatePassiveSellOffer, ManageBuyOffer, Clawback, SetTrustLineFlags, TrustLineFlags, LiquidityPoolWithdraw,
+    LiquidityPoolDeposit, LiquidityPoolAsset
 )
 from stellar_sdk.sep import stellar_uri
-
-from db import mongo
 from other.cache_tools import async_cache_with_ttl
 from other.grist_tools import grist_manager, MTLGrist, load_user_from_grist
 from db.sql_models import Signers, Transactions, Signatures
@@ -65,6 +61,42 @@ def decode_xdr_from_base64(xdr):
     # print(decoded_str)
     decoded_json = json.loads(decoded_str)
     # print(decoded_json)
+
+
+async def get_pool_data(pool_id: str) -> dict:
+    """Get current pool data from Horizon including price and reserves"""
+    try:
+        async with ServerAsync(
+                horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+        ) as server:
+            pool = await server.liquidity_pools().liquidity_pool(pool_id).call()
+            reserves = pool['reserves']
+            if len(reserves) == 2:
+                a_amount = float(reserves[0]['amount'])
+                b_amount = float(reserves[1]['amount'])
+                price = a_amount / b_amount if b_amount > 0 else 1.0
+
+                # Создаем объекты Asset из строк в формате "CODE:ISSUER"
+                asset_a_parts = reserves[0]['asset'].split(':')
+                asset_b_parts = reserves[1]['asset'].split(':')
+
+                asset_a = Asset(asset_a_parts[0], asset_a_parts[1] if len(asset_a_parts) > 1 else None)
+                asset_b = Asset(asset_b_parts[0], asset_b_parts[1] if len(asset_a_parts) > 1 else None)
+
+                return {
+                    'price': price,
+                    'reserves': reserves,
+                    'total_shares': float(pool['total_shares']),
+                    'LiquidityPoolAsset': LiquidityPoolAsset(asset_a=asset_a, asset_b=asset_b)
+                }
+    except Exception as e:
+        logger.warning(f"Failed to get pool data: {e}")
+    return {
+        'price': 1.0,
+        'reserves': [{'amount': '0'}, {'amount': '0'}],
+        'total_shares': 0,
+        'assets': LiquidityPoolAsset(asset_a=Asset('XLM'), asset_b=Asset('XLM'))
+    }
 
 
 def decode_xdr_to_base64(xdr, return_json=False):
@@ -180,6 +212,23 @@ def decode_xdr_to_base64(xdr, return_json=False):
                                      'destMin': operation.dest_min,
                                      'sendAmount': operation.send_amount,
                                      'destAsset': operation.dest_asset.to_dict(),
+                                     'sourceAccount': operation.source.account_id if operation.source is not None else None
+                                     }
+        elif isinstance(operation, LiquidityPoolWithdraw):
+            # noinspection PyTypedDict
+            op_json['attributes'] = {'liquidityPoolId': operation.liquidity_pool_id,
+                                     'amount': operation.amount,
+                                     'minAmountA': operation.min_amount_a,
+                                     'minAmountB': operation.min_amount_b,
+                                     'sourceAccount': operation.source.account_id if operation.source is not None else None
+                                     }
+        elif isinstance(operation, LiquidityPoolDeposit):
+            # noinspection PyTypedDict
+            op_json['attributes'] = {'liquidityPoolId': operation.liquidity_pool_id,
+                                     'maxAmountA': operation.max_amount_a,
+                                     'maxAmountB': operation.max_amount_b,
+                                     'minPrice': operation.min_price.n / operation.min_price.d,
+                                     'maxPrice': operation.max_price.n / operation.max_price.d,
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         else:
@@ -666,6 +715,7 @@ def xdr_to_uri(xdr):
     transaction = TransactionEnvelope.from_xdr(xdr, Network.PUBLIC_NETWORK_PASSPHRASE)
     return stellar_uri.TransactionStellarUri(transaction_envelope=transaction).to_uri()
 
+
 async def process_xdr_transaction(signed_xdr: str) -> dict:
     """Process XDR transaction from SEP-7 callback"""
     try:
@@ -683,15 +733,15 @@ async def process_xdr_transaction(signed_xdr: str) -> dict:
         expected_key = config.domain + " auth"
         if op1.data_name != expected_key:
             raise ValueError("Неверный ключ в первой операции")
-            
+
         # Значение nonce хранится в байтах, поэтому преобразуем в строку
         nonce_value = op1.data_value.decode() if op1.data_value is not None else ""
-            
+
         # Проверка операции 2: manage_data от сервера
         op2 = operations[1]
         if op2.source.account_id != config.domain_account_id or op2.data_name != "web_auth_domain":
             raise ValueError("Неверные данные во второй операции")
-            
+
         domain_value = op2.data_value.decode() if op2.data_value is not None else ""
 
         # Возвращаем информацию о транзакции
@@ -737,7 +787,7 @@ async def check_user_weight(need_flash=True):
         if fund_data and 'signers' in fund_data:
             signers = fund_data['signers']
             for signer in signers:
-                if int(signer.get('telegram_id',0)) == int(user_id):
+                if int(signer.get('telegram_id', 0)) == int(user_id):
                     weight = signer['weight']
                     break
             if weight == 0 and need_flash:
@@ -745,6 +795,7 @@ async def check_user_weight(need_flash=True):
         elif need_flash:
             await flash('Failed to retrieve account information')
     return weight
+
 
 async def check_user_in_sign(tr_hash):
     if 'user_id' in session:
@@ -930,7 +981,14 @@ def decode_asset(asset):
 
 async def stellar_build_xdr(data):
     root_account = Server(horizon_url="https://horizon.stellar.org").load_account(data['publicKey'])
-    transaction = TransactionBuilder(source_account=root_account, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+    # old_sequence = root_account.sequence
+    # Use provided sequence if > 0, otherwise get from horizon
+    if 'sequence' in data and int(data['sequence']) > 0:
+        root_account.sequence = int(data['sequence']) - 1
+        # transaction.set_min_sequence_age()in_sequence_number() = int(data['sequence'])
+
+    transaction = TransactionBuilder(source_account=root_account,
+                                     network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
                                      base_fee=10101)
     transaction.set_timeout(60 * 60 * 24 * 7)
     if data['memo_type'] == 'memo_text':
@@ -1067,6 +1125,55 @@ async def stellar_build_xdr(data):
                                                   asset=decode_asset(operation['asset']),
                                                   amount=float2str(record['payment']),
                                                   source=source_account)
+
+        if operation['type'] == 'liquidity_pool_deposit':
+            min_price = float(operation['min_price'])
+            max_price = float(operation['max_price'])
+
+            if min_price == 0 or max_price == 0:
+                pool_data = await get_pool_data(operation['liquidity_pool_id'])
+                current_price = pool_data['price']
+                if min_price == 0:
+                    min_price = current_price * 0.95  # -5%
+                if max_price == 0:
+                    max_price = current_price * 1.05  # +5%
+
+            transaction.append_liquidity_pool_deposit_op(
+                liquidity_pool_id=operation['liquidity_pool_id'],
+                max_amount_a=float2str(operation['max_amount_a']),
+                max_amount_b=float2str(operation['max_amount_b']),
+                min_price=float2str(min_price),
+                max_price=float2str(max_price),
+                source=source_account
+            )
+        if operation['type'] == 'liquidity_pool_withdraw':
+            min_amount_a = float(operation['min_amount_a'])
+            min_amount_b = float(operation['min_amount_b'])
+
+            if min_amount_a == 0 or min_amount_b == 0:
+                pool_data = await get_pool_data(operation['liquidity_pool_id'])
+                share_ratio = float(operation['amount']) / pool_data['total_shares']
+
+                if min_amount_a == 0:
+                    min_amount_a = pool_data['reserves'][0]['amount']
+                    min_amount_a = float(min_amount_a) * share_ratio * 0.95
+                if min_amount_b == 0:
+                    min_amount_b = pool_data['reserves'][1]['amount']
+                    min_amount_b = float(min_amount_b) * share_ratio * 0.95
+
+            transaction.append_liquidity_pool_withdraw_op(
+                liquidity_pool_id=operation['liquidity_pool_id'],
+                amount=float2str(operation['amount']),
+                min_amount_a=float2str(min_amount_a),
+                min_amount_b=float2str(min_amount_b),
+                source=source_account
+            )
+        if operation['type'] == 'liquidity_pool_trustline':
+            pool_data = await get_pool_data(operation['liquidity_pool_id'])
+            transaction.append_change_trust_op(asset=pool_data['LiquidityPoolAsset'],
+                                               source=source_account,
+                                               limit=operation['limit'] if len(operation['limit']) > 0 else None
+                                               )
     transaction = transaction.build()
     # transaction.transaction.sequence = int(data['sequence'])
     xdr = transaction.to_xdr()
@@ -1081,7 +1188,6 @@ async def add_signer(signer_key):
     if user:
         username = user.username if user.username else 'FaceLess'
         user_id = user.telegram_id
-
 
     if username != "FaceLess" and username[0] != '@':
         username = '@' + username
@@ -1173,13 +1279,14 @@ def update_memo_in_xdr(xdr: str, new_memo: str) -> str:
 
 
 async def test():
-    a = await process_xdr_transaction('AAAAAgAAAADXM/FKYDkdJMoH7qR0azpDSfND7E9VelL2D5ys9ViskAAAAZACGVTNAAAHjwAAAAEAAAAAAAAAAAAAAABny7nTAAAAAAAAAAIAAAAAAAAACgAAAA5ldXJtdGwubWUgYXV0aAAAAAAAAQAAAAp0MHFiNTg2OWhoAAAAAAABAAAAAC6F6mrl0kGQk/bzZ60mRWIoAqzhhMgX7hjAF9yaZNIGAAAACgAAAA93ZWJfYXV0aF9kb21haW4AAAAAAQAAAAlldXJtdGwubWUAAAAAAAAAAAAAAfVYrJAAAABAiVfCKA3CfHxlcqJYITjM8ta2ljioPHROi7X9jKJrwdrME4jJ5QOpXsehZBUw/RI8r7sK+/ZvJcvBQBgUJN3ZBQ==')
+    a = await process_xdr_transaction(
+        'AAAAAgAAAADXM/FKYDkdJMoH7qR0azpDSfND7E9VelL2D5ys9ViskAAAAZACGVTNAAAHjwAAAAEAAAAAAAAAAAAAAABny7nTAAAAAAAAAAIAAAAAAAAACgAAAA5ldXJtdGwubWUgYXV0aAAAAAAAAQAAAAp0MHFiNTg2OWhoAAAAAAABAAAAAC6F6mrl0kGQk/bzZ60mRWIoAqzhhMgX7hjAF9yaZNIGAAAACgAAAA93ZWJfYXV0aF9kb21haW4AAAAAAQAAAAlldXJtdGwubWUAAAAAAAAAAAAAAfVYrJAAAABAiVfCKA3CfHxlcqJYITjM8ta2ljioPHROi7X9jKJrwdrME4jJ5QOpXsehZBUw/RI8r7sK+/ZvJcvBQBgUJN3ZBQ==')
     print(a)
 
 
 async def create_sep7_auth_transaction(domain: str, nonce: str, callback: str) -> str:
     """Создает SEP-7 транзакцию для аутентификации с подменой адреса.
-    
+
     Args:
         domain: Домен сайта
         nonce: Уникальный идентификатор сессии
@@ -1208,14 +1315,14 @@ async def create_sep7_auth_transaction(domain: str, nonce: str, callback: str) -
         .set_timeout(300)  # 5 minutes
         .build()
     )
-    
+
     # Устанавливаем sequence=0
     transaction.transaction.sequence = 101
-    
+
     # Создаем замену только для адреса
     r1 = stellar_uri.Replacement("sourceAccount", "X", "account to authenticate")
     replacements = [r1]
-    
+
     # Создаем URI с заменой
     t = stellar_uri.TransactionStellarUri(
         transaction_envelope=transaction,
@@ -1223,16 +1330,17 @@ async def create_sep7_auth_transaction(domain: str, nonce: str, callback: str) -
         origin_domain=config.domain,
         callback=callback
     )
-    
+
     # Подписываем URI серверным ключом
     t.sign(config.domain_key.get_secret_value())
-    
+
     # Возвращаем URI вместо XDR
     return t.to_uri()
 
 
 if __name__ == '__main__':
     asyncio.run(test())
+
 #    xdr = "AAAAAgAAAAAJk92FjbTLLsK8gty2kiek3bh5GNzHlPtL2Ju3g1BewQAAJ3UCwvFDAAAAHAAAAAEAAAAAAAAAAAAAAABmzaa8AAAAAQAAABBRMzE2IENyZWF0ZSBMQUJSAAAAAQAAAAAAAAAAAAAAAD6PSNQ8NeBFoh7/6169tIn6pjfziFaURDRWU2bQRX+1AAAAAF/2poAAAAAAAAAAAA=="
 #    print(asyncio.run(add_transaction(xdr, 'True')))
 #    exit()
