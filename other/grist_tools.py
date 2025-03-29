@@ -3,6 +3,7 @@ import json
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 from loguru import logger
+from other.cache_tools import async_cache_with_ttl
 
 from db.sql_models import User
 from other.config_reader import config
@@ -39,6 +40,7 @@ class MTLGrist:
     EURMTL_accounts = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Accounts")
     EURMTL_assets = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Assets")
     EURMTL_pools = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Pools")
+    EURMTL_secretaries = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Secretaries")
 
 
 class GristAPI:
@@ -174,6 +176,59 @@ grist_manager = GristAPI(grist_session_manager)
 grist_cash = {} #todo: use ttl cache
 
 
+
+@async_cache_with_ttl(ttl_seconds=36000)  # Кеш на 10 часов
+async def get_secretaries() -> Dict[str, List[int]]:
+    """
+    Получает список секретарей из Grist и возвращает словарь:
+    {
+        account_id: [telegram_ids]  # список telegram_id секретарей для аккаунта
+    }
+    """
+    secretaries = {}
+    
+    # Загружаем только необходимые данные
+    secretary_records = await grist_manager.load_table_data(
+        MTLGrist.EURMTL_secretaries
+    )
+    
+    if not secretary_records:
+        return secretaries
+
+    # Получаем account_id для всех записей
+    account_records = await grist_manager.load_table_data(
+        MTLGrist.EURMTL_accounts,
+        filter_dict={'id': [r['account'] for r in secretary_records if r.get('account')]}
+    )
+    account_id_map = {a['id']: a['account_id'] for a in account_records} if account_records else {}
+
+    # Получаем telegram_id для всех пользователей
+    all_user_ids = list({u for r in secretary_records for u in r.get('users', []) if isinstance(u, int)})
+    user_records = await grist_manager.load_table_data(
+        MTLGrist.EURMTL_users,
+        filter_dict={'id': all_user_ids}
+    ) if all_user_ids else []
+    user_telegram_map = {u['id']: u['telegram_id'] for u in user_records if u.get('telegram_id')} if user_records else {}
+
+    # Формируем итоговую структуру
+    for record in secretary_records:
+        account_record_id = record.get('account')
+        if not account_record_id or account_record_id not in account_id_map:
+            continue
+            
+        account_id = account_id_map[account_record_id]
+        telegram_ids = [
+            user_telegram_map[user_id]
+            for user_id in record.get('users', [])
+            if user_id in user_telegram_map
+        ]
+        
+        if telegram_ids:
+            secretaries[account_id] = telegram_ids
+
+    return secretaries
+
+
 async def load_user_from_grist(account_id: Optional[str] = None, telegram_id: Optional[int] = None) -> Optional[User]:
     if account_id and account_id in grist_cash:
         return grist_cash[account_id]
@@ -202,6 +257,7 @@ async def load_user_from_grist(account_id: Optional[str] = None, telegram_id: Op
 
     return None
 
+
 async def main():
     # Пример загрузки данных
     assets = await grist_manager.load_table_data(MTLGrist.EURMTL_pools)
@@ -217,4 +273,5 @@ async def main():
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    #asyncio.run(main())
+    print(asyncio.run(get_secretaries()))

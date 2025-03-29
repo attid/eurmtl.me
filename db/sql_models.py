@@ -40,6 +40,9 @@ class Transactions(Base):
     uuid = Column('uuid', String(32), default=lambda: uuid.uuid4().hex)
     json = Column('json', Text(), nullable=True)
     state = Column('state', Integer(), default=0)  # 0-new 1-need_sent 2-was_send 3-cancel
+    stellar_sequence = Column('stellar_sequence', BigInteger(), nullable=True)
+    source_account = Column('source_account', String(56), nullable=True)
+    owner_id = Column('owner_id', BigInteger(), nullable=True)
 
 
 class Signers(Base):
