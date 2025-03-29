@@ -19,7 +19,7 @@ from stellar_sdk import (
 )
 from stellar_sdk.sep import stellar_uri
 from other.cache_tools import async_cache_with_ttl
-from other.grist_tools import grist_manager, MTLGrist, load_user_from_grist
+from other.grist_tools import grist_manager, MTLGrist, load_user_from_grist, get_secretaries
 from db.sql_models import Signers, Transactions, Signatures
 from db.sql_pool import db_pool
 from other.config_reader import config
@@ -351,7 +351,31 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
         transaction = fee_transaction.transaction.inner_transaction_envelope
     else:
         transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-    result.append(f"Sequence Number {transaction.transaction.sequence}")
+    sequence = transaction.transaction.sequence
+    result.append(f"Sequence Number {sequence}")
+    
+    # Проверяем наличие других транзакций с таким же sequence
+    with db_pool() as db_session:
+        same_sequence_txs = db_session.query(Transactions).filter(
+            Transactions.stellar_sequence == sequence,
+            Transactions.hash != transaction.hash_hex() if hasattr(transaction, 'hash_hex') else None
+        ).all()
+        
+        if same_sequence_txs:
+            links = [f'<a href="https://eurmtl.me/sign_tools/{tx.hash}">{tx.description[:10]}...</a>'
+                    for tx in same_sequence_txs]
+            result.append(f"<div style=\"color: orange;\">Другие транзакции с этим sequence: {', '.join(links)} </div>")
+
+    server_sequence = int(get_account(transaction.transaction.source.account_id, cash)['sequence'])
+    expected_sequence = server_sequence + 1
+    
+    if sequence != expected_sequence:
+        diff = sequence - expected_sequence
+        if diff < 0:
+            result.append(f"<div style=\"color: red;\">Пропущено Sequence {-diff} номеров (current: {sequence}, expected: {expected_sequence})</div>")
+        else:
+            result.append(f"<div style=\"color: orange;\">Номер Sequence больше на {diff} (current: {sequence}, expected: {expected_sequence})</div>")
+ 
     if transaction.transaction.fee < 5000:
         result.append(f"<div style=\"color: orange;\">Bad Fee {transaction.transaction.fee}! </div>")
     else:
@@ -363,9 +387,6 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             transaction.transaction.preconditions.time_bounds.max_time).strftime('%d.%m.%Y %H:%M:%S')
         result.append(f"MaxTime ! {human_readable_time} UTC")
 
-    server_sequence = int(get_account(transaction.transaction.source.account_id, cash)['sequence'])
-    if server_sequence + 1 != transaction.transaction.sequence:
-        result.append(f"<div style=\"color: red;\">Bad Sequence ! </div>")
     result.append(f"Операции с аккаунта {address_id_to_link(transaction.transaction.source.account_id)}")
     #    if transaction.transaction.memo.__class__ == TextMemo:
     #        memo: TextMemo = transaction.transaction.memo
@@ -805,6 +826,19 @@ async def check_user_in_sign(tr_hash):
             return True
 
         with db_pool() as db_session:
+            # Check if user is owner of transaction
+            transaction = db_session.query(Transactions).filter(Transactions.hash == tr_hash).first()
+            if transaction and transaction.owner_id and int(transaction.owner_id) == int(user_id):
+                return True
+
+            # Check if user is secretary for transaction account
+            secretaries = await get_secretaries()
+            if transaction and transaction.source_account in secretaries:
+                secretary_users = secretaries[transaction.source_account]
+                if any(int(user_id) == int(user) for user in secretary_users):
+                    return True
+
+            # Check if the user is a signer
             address = db_session.query(Signers).filter(Signers.tg_id == user_id).first()
             if address is None:
                 return False
@@ -1253,8 +1287,16 @@ async def add_transaction(tx_body, tx_description):
         if existing_transaction:
             return True, tx_hash
 
-        new_transaction = Transactions(hash=tx_hash, body=tr.to_xdr(), description=tx_description,
-                                       json=json.dumps(sources))
+        owner_id = int(session['userdata']['id']) if 'userdata' in session and 'id' in session['userdata'] else None
+        new_transaction = Transactions(
+            hash=tx_hash,
+            body=tr.to_xdr(),
+            description=tx_description,
+            json=json.dumps(sources),
+            stellar_sequence=tr.transaction.sequence,
+            source_account=tr.transaction.source.account_id,
+            owner_id=owner_id
+        )
         db_session.add(new_transaction)
 
         if len(tr_full.signatures) > 0:
