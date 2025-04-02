@@ -123,6 +123,11 @@ async def logout():
     return redirect('/lab')
 
 
+@blueprint.route('/verification')
+async def verification():
+    return await render_template('verification.html')
+
+
 @blueprint.route('/bor', methods=('GET', 'POST'))
 @blueprint.route('/bsn', methods=('GET', 'POST'))
 @blueprint.route('/bsn/', methods=('GET', 'POST'))

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MTLA Verification Lite</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+</head>
+<body>
+  <section class="section">
+    <div class="container">
+      <h1 class="title">MTLA Verification</h1>
+      <h2 class="subtitle">Lite Version</h2>
+
+      <form id="verificationForm" class="box">
+        <div class="field">
+          <label class="label">First Name (e.g. Ivan/John/Hans)</label>
+          <div class="control">
+            <input class="input" type="text" id="firstName" placeholder="Ivan">
+          </div>
+          <p class="help">Examples: Russia - Ivan, Anna, Mikhail | USA - John, Emily, Michael | Germany - Hans, Anna, Peter</p>
+        </div>
+
+        <div class="field">
+          <label class="label">Last Name (e.g. Ivanov/Smith/Müller)</label>
+          <div class="control">
+            <input class="input" type="text" id="lastName" placeholder="Ivanov">
+          </div>
+          <p class="help">Examples: Russia - Ivanov, Smirnova, Petrov | USA - Smith, Johnson, Williams | Germany - Müller, Schmidt, Schneider</p>
+        </div>
+
+        <div class="field">
+          <label class="label">Date of Birth (YYYY-MM-DD)</label>
+          <div class="field has-addons">
+            <div class="control is-expanded">
+              <input class="input" type="text" id="dateInput" placeholder="1981-12-31" oninput="formatDate(this.value)">
+            </div>
+            <div class="control">
+              <button type="button" id="datePickerBtn" class="button is-primary" onclick="event.preventDefault(); return false;">
+                <span class="icon">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5zM1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4H1z"/>
+                  </svg>
+                </span>
+              </button>
+            </div>
+          </div>
+          <p id="dateFormatted" class="help is-hidden">November 14, 1982</p>
+          <p id="dateError" class="help is-danger is-hidden">Date parsing error</p>
+        </div>
+
+        <div class="field">
+          <div class="control">
+            <button type="button" id="generateBtn" class="button is-primary" onclick="generateHash()">Generate Hash</button>
+          </div>
+        </div>
+      </form>
+
+      <div id="resultContainer" class="box is-hidden">
+        <h3 class="title is-4">SHA256 Hash</h3>
+        <div class="field">
+          <label class="label">Result:</label>
+          <div class="control">
+            <textarea id="hashResult" class="textarea" readonly></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Toast notification -->
+  <div id="toast" class="notification is-danger is-hidden" style="position: fixed; bottom: 20px; right: 20px; z-index: 100;">
+    <button class="delete" onclick="closeToast()"></button>
+    <div id="toastMessage"></div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <script>
+    // Global functions
+    function formatDate(dateStr) {
+      const dateFormatted = document.getElementById('dateFormatted');
+      const dateError = document.getElementById('dateError');
+
+      try {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        const date = new Date(Date.UTC(year, month - 1, day));
+        if (isNaN(date.getTime())) throw new Error('Invalid date');
+
+        const options = { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' };
+        const formatted = date.toLocaleDateString('en-US', options);
+
+        dateFormatted.textContent = formatted;
+        dateFormatted.classList.remove('is-hidden');
+        dateError.classList.add('is-hidden');
+        window.datePicker.setDate(dateStr);
+      } catch (e) {
+        dateFormatted.classList.add('is-hidden');
+        dateError.classList.remove('is-hidden');
+      }
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      const toastMessage = document.getElementById('toastMessage');
+
+      toastMessage.textContent = message;
+      toast.classList.remove('is-hidden');
+
+      setTimeout(() => {
+        toast.classList.add('is-hidden');
+      }, 3000);
+    }
+
+    function closeToast() {
+      document.getElementById('toast').classList.add('is-hidden');
+    }
+
+    function generateHash() {
+      const firstName = document.getElementById('firstName').value.trim();
+      const lastName = document.getElementById('lastName').value.trim();
+      const date = document.getElementById('dateInput').value.trim();
+
+      if (!firstName || !lastName || !date) {
+        showToast('Please fill all fields');
+        return;
+      }
+
+      const data = `${firstName} ${lastName} ${date}`;
+      const hash = CryptoJS.SHA256(data).toString(CryptoJS.enc.Hex);
+
+      document.getElementById('hashResult').value = hash;
+      document.getElementById('resultContainer').classList.remove('is-hidden');
+    }
+
+    // Initialize date picker
+    window.datePicker = flatpickr("#datePickerBtn", {
+      dateFormat: "Y-m-d",
+      maxDate: "today",
+      defaultDate: document.getElementById('dateInput').value ?
+        new Date(document.getElementById('dateInput').value) : "today",
+      onChange: function(selectedDates, dateStr) {
+        document.getElementById('dateInput').value = dateStr;
+        formatDate(dateStr);
+      }
+    });
+  </script>
+</body>
+</html>
