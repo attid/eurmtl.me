@@ -11,10 +11,12 @@ from other.grist_tools import grist_manager, MTLGrist
 from routers.sign_tools import parse_xdr_for_signatures
 from other.stellar_tools import decode_xdr_to_text, is_valid_base64, add_transaction
 from other.web_tools import cors_jsonify
+from routers.remote_sep07_auth import blueprint as sep07_blueprint_auth
 from routers.remote_sep07 import blueprint as sep07_blueprint
 
 blueprint = Blueprint('remote', __name__)
 blueprint.register_blueprint(sep07_blueprint)
+blueprint.register_blueprint(sep07_blueprint_auth)
 
 
 @blueprint.route('/remote/need_sign/<public_key>', methods=('GET',))
@@ -64,60 +66,6 @@ async def remote_update_signature():
         return jsonify(result), 200  # OK
     else:
         return jsonify(result), 404  # Not Found
-
-
-@blueprint.route('/remote/sep07', methods=('POST', 'OPTIONS'))
-async def remote_sep07():
-    """
-    Обработчик для SEP-0007 колбека.
-    
-    Принимает параметры:
-    - xdr: XDR транзакции для подписи
-    
-    Возвращает:
-    - JSON с полями status и hash при успешной обработке
-    - Код 200 при успехе, не 200 при ошибке
-    States
-    failed = "failed",
-    pending = "pending",
-    ready = "ready",
-    submitted = "submitted"
-    """
-    # Обработка OPTIONS запроса для CORS preflight
-    if request.method == 'OPTIONS':
-        return cors_jsonify({})
-    
-    form_data = await request.form
-    xdr = form_data.get("xdr")
-    
-    if not xdr or not is_valid_base64(xdr):
-        return cors_jsonify({
-            "status": "failed",
-            "hash": "",
-            "error": {
-                "message": "Invalid or missing base64 data",
-                "details": None
-            }
-        }, 400)  # Bad Request
-    
-    # Обрабатываем XDR и получаем результат
-    result = await parse_xdr_for_signatures(xdr)
-    
-    # Формируем ответ на основе результата parse_xdr_for_signatures
-    if result["SUCCESS"]:
-        return cors_jsonify({
-            "status": "pending",  # Если SUCCESS=True
-            "hash": result.get("hash", "")  # Получаем хеш из результата
-        })  # OK (200 по умолчанию)
-    else:
-        return cors_jsonify({
-            "status": "failed",
-            "hash": result.get("hash", ""),
-            "error": {
-                "message": "; ".join(result.get("MESSAGES", [])),
-                "details": None
-            }
-        }, 404)  # Not Found
 
 
 @blueprint.route('/remote/decode', methods=('GET', 'POST'))
@@ -173,7 +121,7 @@ async def remote_good_assets():
     # Получаем активы, xz
     assets = await grist_manager.load_table_data(
         MTLGrist.EURMTL_assets,
-        #filter_dict={"need_dropdown": [True]}
+        # filter_dict={"need_dropdown": [True]}
     )
 
     # Переструктурируем данные, группируя активы по issuer (это аналогично account)
@@ -236,32 +184,6 @@ async def remote_add_transaction():
         return jsonify({"message": "Transaction added successfully", "hash": result}), 201
     else:
         return jsonify({"message": result}), 400
-
-
-@blueprint.route('/remote/add_uri', methods=['POST'])
-async def remote_add_uri():
-    api_key = request.headers.get('Authorization')
-    if api_key != f"Bearer {config.eurmtl_key.get_secret_value()}":
-        return jsonify({"message": "Unauthorized"}), 401
-
-    data = await request.json
-    uri = data.get('URI')
-
-    if not uri:
-        return jsonify({"message": "Missing URI"}), 400
-
-    # Print the received URI
-    print(f"Received URI: {uri}")
-
-    # TODO: Add code to save the URI
-
-    # Generate a random URL (this is a placeholder)
-    random_url = f"https://example.com/{uuid.uuid4().hex}"
-
-    return jsonify({
-        "SUCCESS": True,
-        "url": random_url
-    }), 200
 
 
 if __name__ == '__main__':

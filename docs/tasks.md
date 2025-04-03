@@ -148,3 +148,15 @@
   - Проверка и валидация новых полей
 
 - Все изменения синхронизированы между компонентами системы
+
+---
+
+# Задача 8: Реализация работы с Stellar URI
+
+- Добавлены функции в routers/remote_sep07.py:
+  * remote_add_uri: принимает TransactionStellarUri, сохраняет в MMWBTransactions
+  * get: получает сохраненный URI по UUID
+- Особенности:
+  * Ключ: sha1(XDR) в base64url (обрезается до 32 символов)
+  * Возвращает Telegram URL формата: https://t.me/MyMTLWalletBot?start=uri_{key}
+  * Поддержка CORS как в других функциях модуля

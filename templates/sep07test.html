@@ -29,11 +29,38 @@
 
         const { qr_path, uri, status_url } = await response.json();
 
-        // Отображаем QR-код **
+        // Отображаем QR-код и кнопку для ММВБ
         document.getElementById("qrcode").innerHTML = `
           <img src="${qr_path}" alt="QR Code">
           <p>Или используйте ссылку: <a href="${uri}">SEP-07</a></p>
+          <button id="mmwbButton" onclick="openInMMWB('${uri}')">Открыть в ММВБ</button>
         `;
+
+        async function openInMMWB(uri) {
+          try {
+            const response = await fetch('/remote/sep07/add', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ uri })
+            });
+
+            if (!response.ok) {
+              throw new Error('Ошибка обработки URI');
+            }
+
+            const { SUCCESS, url } = await response.json();
+            if (SUCCESS) {
+              window.location.href = url;
+            } else {
+              alert('Не удалось открыть в ММВБ');
+            }
+          } catch (err) {
+            console.error('Ошибка:', err);
+            alert('Произошла ошибка при открытии в ММВБ');
+          }
+        }
 
         // Запускаем опрос статуса
         async function pollStatus() {
