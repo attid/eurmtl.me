@@ -1,177 +1,193 @@
-import secrets
-from datetime import datetime, timedelta
-from urllib.parse import quote
-from loguru import logger
+import asyncio
+import json
+import uuid
+import hashlib
+import base64
 
-from quart import Blueprint, jsonify, request, render_template
+from stellar_sdk.sep import stellar_uri
+from quart import Blueprint, request, jsonify, abort
 
 from other.config_reader import config
-from other.qr_tools import create_beautiful_code
-from other.stellar_tools import create_sep7_auth_transaction, process_xdr_transaction, is_valid_base64
+from db.sql_models import Transactions, Signers, Signatures, WebEditorMessages, MMWBTransactions
+from db.sql_pool import db_pool
+from other.grist_tools import grist_manager, MTLGrist
+from routers.sign_tools import parse_xdr_for_signatures
+from other.stellar_tools import decode_xdr_to_text, is_valid_base64, add_transaction
 from other.web_tools import cors_jsonify
 
-blueprint = Blueprint('sep07', __name__, url_prefix='/remote/sep07/auth')
+blueprint = Blueprint('sep07', __name__, url_prefix='/remote/sep07')
 
-# Хранилище nonce
-nonce_store = {}
-MAX_NONCE_STORE_SIZE = 1000
-NONCE_LIFETIME = timedelta(minutes=5)
-
-
-def cleanup_nonce_store():
-    """Очистка устаревших nonce"""
-    now = datetime.now()
-    expired = [n for n, t in nonce_store.items() if now - t['created'] > NONCE_LIFETIME]
-    for n in expired:
-        del nonce_store[n]
-
-    # Если хранилище переполнено, удаляем самые старые записи
-    if len(nonce_store) > MAX_NONCE_STORE_SIZE:
-        oldest = sorted(nonce_store.items(), key=lambda x: x[1]['created'])[:len(nonce_store) - MAX_NONCE_STORE_SIZE]
-        for n, _ in oldest:
-            del nonce_store[n]
-
-
-@blueprint.route("/test")
-@blueprint.route("/test/")
-async def auth_test():
-    return await render_template('sep07test.html')
-
-
-@blueprint.route('/init', methods=['POST', 'OPTIONS'])
-async def auth_init():
-    if request.method == 'OPTIONS':
-        return cors_jsonify({})  # пустой ответ, но с CORS-заголовками
-    # Очищаем хранилище от старых nonce
-    cleanup_nonce_store()
-
-    data = await request.json
-    domain = data.get('domain')
-    nonce = data.get('nonce')
-    salt = data.get('salt', secrets.token_hex(4))
-
-    if not domain or not nonce:
-        return jsonify({'error': 'domain and nonce are required'}), 400
-
-    # Проверяем длину nonce и salt
-    if len(nonce) > 64:
-        return jsonify({'error': 'nonce length should not exceed 64 characters'}), 400
-
-    if len(salt) > 64:
-        return jsonify({'error': 'salt length should not exceed 64 characters'}), 400
-
-    # Сохраняем nonce в хранилище
-    nonce_store[nonce] = {
-        "created": datetime.now(),
-        "domain": domain,
-        "salt": str(salt),  # Преобразуем в строку для корректной сериализации
-        "tx_info": None
-    }
-
-    callback_url = f'https://{config.domain}/remote/sep07/auth/callback'
-
-    # Generate transaction URI
-    uri = await create_sep7_auth_transaction(domain, nonce, callback=callback_url)
-
-    # Generate QR code
-    qr_uuid = secrets.token_hex(8)
-    qr_path = f'/static/qr/{qr_uuid}.png'
-    create_beautiful_code(file_name=qr_path, logo_text=domain, qr_text=uri)
-
-    return cors_jsonify({
-        'qr_path': qr_path,
-        'uri': uri,
-        'status_url': f'/remote/sep07/auth/status/{nonce}/{salt}'
-    })
-
-
-@blueprint.route('/status/<nonce>/<salt>', methods=['GET', 'OPTIONS'])
-async def auth_status(nonce, salt):
-    if request.method == 'OPTIONS':
-        return cors_jsonify({})  # пустой ответ, но с CORS-заголовками
-    # Ищем nonce в хранилище
-    if nonce not in nonce_store:
-        return jsonify({"error": "nonce not found"}), 400
-
-    # Проверяем соль
-    nonce_data = nonce_store[nonce]
-    if nonce_data["salt"] != salt:
-        return jsonify({"error": "nonce not found"}), 400
-
-    # Если есть информация о транзакции
-    if nonce_data["tx_info"]:
-        del nonce_store[nonce]
-        return cors_jsonify({
-            "authenticated": True,
-            "nonce": nonce,
-            "hash": nonce_data["tx_info"]["hash"],
-            "client_address": nonce_data["tx_info"]["client_address"],
-            "timestamp": nonce_data["tx_info"]["timestamp"],
-            "domain": nonce_data["tx_info"]["domain"]
-        })
-
-    return cors_jsonify({
-        "authenticated": False,
-        "nonce": nonce
-    })
-
-
-@blueprint.route('/callback', methods=['POST', 'OPTIONS'])
-async def auth_callback():
+@blueprint.route('', methods=('POST', 'OPTIONS'))
+async def remote_sep07():
+    """
+    Обработчик для SEP-0007 колбека.
+    
+    Принимает параметры:
+    - xdr: XDR транзакции для подписи
+    
+    Возвращает:
+    - JSON с полями status и hash при успешной обработке
+    - Код 200 при успехе, не 200 при ошибке
+    States
+    failed = "failed",
+    pending = "pending",
+    ready = "ready",
+    submitted = "submitted"
+    """
     # Обработка OPTIONS запроса для CORS preflight
     if request.method == 'OPTIONS':
         return cors_jsonify({})
-
+    
     form_data = await request.form
-    logger.info(f"Callback request received. Form keys: {form_data.keys()}")
+    xdr = form_data.get("xdr")
+    
+    if not xdr or not is_valid_base64(xdr):
+        return cors_jsonify({
+            "status": "failed",
+            "hash": "",
+            "error": {
+                "message": "Invalid or missing base64 data",
+                "details": None
+            }
+        }, 400)  # Bad Request
+    
+    # Обрабатываем XDR и получаем результат
+    result = await parse_xdr_for_signatures(xdr)
+    
+    # Формируем ответ на основе результата parse_xdr_for_signatures
+    if result["SUCCESS"]:
+        return cors_jsonify({
+            "status": "pending",  # Если SUCCESS=True
+            "hash": result.get("hash", "")  # Получаем хеш из результата
+        })  # OK (200 по умолчанию)
+    else:
+        return cors_jsonify({
+            "status": "failed",
+            "hash": result.get("hash", ""),
+            "error": {
+                "message": "; ".join(result.get("MESSAGES", [])),
+                "details": None
+            }
+        }, 404)  # Not Found
 
-    if "xdr" not in form_data:
-        logger.warning("No xdr in callback request")
-        return jsonify({"error": "Нет данных"}), 400
 
-    signed_xdr = form_data["xdr"]
-    logger.debug(f"Processing signed xdr: {signed_xdr[:50]}...")
-    logger.debug(signed_xdr)
+@blueprint.route('/add', methods=['POST', 'OPTIONS'])
+@blueprint.route('/add/', methods=['POST', 'OPTIONS'])
+async def remote_add_uri():
+    """
+    Handles saving a Stellar URI and generating a URL for it.
+    
+    Accepts:
+    - URI: A Stellar URI string
+    
+    Returns:
+    - JSON with SUCCESS flag and generated URL
+    - 200 status code on success, error code otherwise
+    """
+    # Handle OPTIONS request for CORS preflight
+    if request.method == 'OPTIONS':
+        return cors_jsonify({})
+    
+    data = await request.json
+    uri = data.get('uri')
 
-    # Проверяем, что полученные данные - валидный XDR
-    if not is_valid_base64(signed_xdr):
-        logger.warning(f"Invalid XDR format: {signed_xdr[:50]}...")
-        return jsonify({"error": "Неверный формат XDR"}), 400
+    if not uri:
+        return cors_jsonify({"SUCCESS": False, "message": "Missing URI"}), 400
 
     try:
-        logger.info("Starting transaction processing")
-
-        # Обрабатываем XDR
-        tx_info = await process_xdr_transaction(signed_xdr)
-
-        nonce_value = tx_info["nonce"]
-        logger.debug(f"Checking nonce: {nonce_value}")
-
-        if nonce_value not in nonce_store:
-            logger.warning(f"Invalid nonce: {nonce_value}")
-            return jsonify({"error": "Неверный nonce"}), 400
-
-        # Проверяем время жизни nonce
-        nonce_age = datetime.now() - nonce_store[nonce_value]["created"]
-        logger.debug(f"Nonce age: {nonce_age}")
-        if nonce_age > NONCE_LIFETIME:
-            logger.warning(f"Expired nonce: {nonce_value}, age: {nonce_age}")
-            del nonce_store[nonce_value]
-            return jsonify({"error": "Истек срок действия nonce"}), 400
-
-        # Сохраняем информацию о транзакции
-        nonce_store[nonce_value]["tx_info"] = {
-            "hash": tx_info["hash"],
-            "client_address": tx_info["client_address"],
-            "timestamp": tx_info["timestamp"],
-            "domain": tx_info["domain"]
-        }
-        logger.info(f"Nonce {nonce_value} validated and tx info saved")
-
+        # Parse the URI to verify it's valid
+        transaction_uri = stellar_uri.parse(uri)
+        
+        # Check that this is an XDR URI (not a payment)
+        if not isinstance(transaction_uri, stellar_uri.TransactionStellarUri):
+            return cors_jsonify({
+                "SUCCESS": False,
+                "message": "Invalid URI type. Expected transaction URI."
+            }), 400
+        
+        # Get the transaction XDR
+        xdr = transaction_uri.xdr
+        
+        # Generate a key using SHA1 of the transaction hash, encoded as base64url
+        hash_obj = hashlib.sha1(xdr.encode('utf-8'))
+        hash_digest = hash_obj.digest()
+        key = base64.urlsafe_b64encode(hash_digest).decode('utf-8')
+        
+        # Ensure the key is not longer than 32 characters
+        if len(key) > 32:
+            key = key[:32]
+        
+        # Save the URI in the database
+        with db_pool() as db_session:
+            transaction = MMWBTransactions(
+                uuid=key,
+                json=json.dumps({'uri': uri})
+            )
+            db_session.add(transaction)
+            db_session.commit()
+        
+        # Generate the URL
+        url = f"https://t.me/MyMTLWalletBot?start=uri_{key}"
+        
         return cors_jsonify({
-            "status": "pending",
-            "hash": tx_info["hash"]
-        })
+            "SUCCESS": True,
+            "url": url
+        }), 200
     except Exception as e:
-        logger.error(f"Error processing callback: {str(e)}", exc_info=True)
-        return jsonify({"error": str(e)}), 400
+        return cors_jsonify({
+            "SUCCESS": False,
+            "message": f"Error processing URI: {str(e)}"
+        }), 500
+
+
+@blueprint.route('/get/<uuid_key>', methods=['GET', 'OPTIONS'])
+async def get(uuid_key):
+    """
+    Retrieves a saved URI by its UUID key.
+    
+    Parameters:
+    - uuid_key: The UUID key of the saved URI
+    
+    Returns:
+    - JSON with the URI if found
+    - 404 if not found
+    """
+    # Handle OPTIONS request for CORS preflight
+    if request.method == 'OPTIONS':
+        return cors_jsonify({})
+    
+    try:
+        with db_pool() as db_session:
+            transaction = db_session.query(MMWBTransactions).filter(
+                MMWBTransactions.uuid == uuid_key
+            ).first()
+            
+            if not transaction:
+                return cors_jsonify({
+                    "SUCCESS": False,
+                    "message": "URI not found"
+                }), 404
+            
+            # Parse the JSON to get the URI
+            data = json.loads(transaction.json)
+            uri = data.get('uri')
+            
+            if not uri:
+                return cors_jsonify({
+                    "SUCCESS": False,
+                    "message": "URI data is corrupted"
+                }), 500
+            
+            return cors_jsonify({
+                "SUCCESS": True,
+                "uri": uri
+            }), 200
+    except Exception as e:
+        return cors_jsonify({
+            "SUCCESS": False,
+            "message": f"Error retrieving URI: {str(e)}"
+        }), 500
+
+
+if __name__ == '__main__':
+    print(asyncio.run(print('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI')))
