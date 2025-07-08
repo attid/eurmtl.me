@@ -3,9 +3,12 @@ import json
 import uuid
 import hashlib
 import base64
+from loguru import logger
 
 from stellar_sdk.sep import stellar_uri
+from stellar_sdk import Network, TransactionEnvelope
 from quart import Blueprint, request, jsonify, abort
+import traceback
 
 from other.config_reader import config
 from db.sql_models import Transactions, Signers, Signatures, WebEditorMessages, MMWBTransactions
@@ -70,7 +73,6 @@ async def remote_sep07():
             }
         }, 404)  # Not Found
 
-
 @blueprint.route('/add', methods=['POST', 'OPTIONS'])
 @blueprint.route('/add/', methods=['POST', 'OPTIONS'])
 async def remote_add_uri():
@@ -92,53 +94,110 @@ async def remote_add_uri():
     uri = data.get('uri')
 
     if not uri:
-        return cors_jsonify({"SUCCESS": False, "message": "Missing URI"}), 400
+        return cors_jsonify({"SUCCESS": False, "message": "Missing URI"}, 400)
 
     try:
-        # Parse the URI to verify it's valid
-        transaction_uri = stellar_uri.parse(uri)
+        logger.info(f"Processing URI: {uri[:100]}...")
         
-        # Check that this is an XDR URI (not a payment)
+        # Try to parse URI as-is first
+        try:
+            transaction_uri = stellar_uri.TransactionStellarUri.from_uri(uri, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+            logger.debug(f"Successfully parsed URI without decoding: {transaction_uri}")
+        except Exception as e:
+            logger.warning(f"Failed to parse URI directly: {str(e)}")
+            # If parsing fails, try URL-decoding the URI first
+            from urllib.parse import unquote
+            decoded_uri = unquote(uri)
+            logger.debug(f"Trying decoded URI: {decoded_uri[:100]}...")
+            try:
+                transaction_uri = stellar_uri.TransactionStellarUri.from_uri(decoded_uri, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
+                logger.debug(f"Successfully parsed URI after decoding: {transaction_uri}")
+            except Exception as e:
+                logger.error(f"Failed to parse URI after decoding: {str(e)}")
+                return cors_jsonify({
+                    "SUCCESS": False,
+                    "message": f"Invalid URI: {str(e)}"
+                }, 400)
+        
+        # Check that we have a valid transaction URI
         if not isinstance(transaction_uri, stellar_uri.TransactionStellarUri):
             return cors_jsonify({
                 "SUCCESS": False,
                 "message": "Invalid URI type. Expected transaction URI."
-            }), 400
-        
-        # Get the transaction XDR
-        xdr = transaction_uri.xdr
-        
+            }, 400)
+
+        # Get the transaction XDR from envelope
+        try:
+            xdr = transaction_uri.transaction_envelope.to_xdr()
+            logger.debug(f"Extracted XDR: {xdr[:50]}...")
+        except Exception as e:
+            logger.error(f"Failed to get XDR from URI: {str(e)}")
+            return cors_jsonify({
+                "SUCCESS": False,
+                "message": f"Failed to extract transaction from URI: {str(e)}"
+            }, 400)
+
         # Generate a key using SHA1 of the transaction hash, encoded as base64url
         hash_obj = hashlib.sha1(xdr.encode('utf-8'))
         hash_digest = hash_obj.digest()
-        key = base64.urlsafe_b64encode(hash_digest).decode('utf-8')
-        
+        key = base64.urlsafe_b64encode(hash_digest).decode('utf-8').rstrip('=')
+
         # Ensure the key is not longer than 32 characters
         if len(key) > 32:
             key = key[:32]
-        
+
+        logger.debug(f"Generated key: {key}")
+
         # Save the URI in the database
-        with db_pool() as db_session:
-            transaction = MMWBTransactions(
-                uuid=key,
-                json=json.dumps({'uri': uri})
-            )
-            db_session.add(transaction)
-            db_session.commit()
-        
+        try:
+            with db_pool() as db_session:
+                existing_transaction = db_session.query(MMWBTransactions).filter_by(uuid=key).first()
+                if existing_transaction:
+                    existing_data = json.loads(existing_transaction.json)
+                    if existing_data.get('uri') == uri:
+                        logger.info("Transaction already exists in database")
+                        url = f"https://t.me/MyMTLWalletBot?start=uri_{key}"
+                        return cors_jsonify({
+                            "SUCCESS": True,
+                            "message": "Transaction already exists in database",
+                            "url": url
+                        }, 200)
+                    else:
+                        logger.error("Transaction with same UUID but different URI already exists")
+                        return cors_jsonify({
+                            "SUCCESS": False,
+                            "message": "Transaction with same UUID but different URI already exists"
+                        }, 500)
+                else:
+                    transaction = MMWBTransactions(
+                        uuid=key,
+                        json=json.dumps({'uri': uri})
+                    )
+                    db_session.add(transaction)
+                    db_session.commit()
+                    logger.info("Successfully saved transaction to database")
+        except Exception as e:
+            logger.error(f"Failed to save transaction: {str(e)}")
+            return cors_jsonify({
+                "SUCCESS": False,
+                "message": f"Database error: {str(e)}"
+            }, 500)
+
         # Generate the URL
         url = f"https://t.me/MyMTLWalletBot?start=uri_{key}"
-        
+        logger.info(f"Generated URL: {url}")
+
         return cors_jsonify({
             "SUCCESS": True,
             "url": url
-        }), 200
+        }, 200)
     except Exception as e:
+        logger.error(f"Unexpected error processing URI: {str(e)}", exc_info=True)
         return cors_jsonify({
             "SUCCESS": False,
-            "message": f"Error processing URI: {str(e)}"
-        }), 500
-
+            "message": f"Error processing URI: {str(e)}",
+            "traceback": traceback.format_exc()
+        }, 500)
 
 @blueprint.route('/get/<uuid_key>', methods=['GET', 'OPTIONS'])
 async def get(uuid_key):
@@ -148,7 +207,7 @@ async def get(uuid_key):
     Parameters:
     - uuid_key: The UUID key of the saved URI
     
-    Returns:
+    Returns :
     - JSON with the URI if found
     - 404 if not found
     """
@@ -166,7 +225,7 @@ async def get(uuid_key):
                 return cors_jsonify({
                     "SUCCESS": False,
                     "message": "URI not found"
-                }), 404
+                }, 404)
             
             # Parse the JSON to get the URI
             data = json.loads(transaction.json)
@@ -176,18 +235,17 @@ async def get(uuid_key):
                 return cors_jsonify({
                     "SUCCESS": False,
                     "message": "URI data is corrupted"
-                }), 500
+                }, 500)
             
             return cors_jsonify({
                 "SUCCESS": True,
                 "uri": uri
-            }), 200
+            }, 200)
     except Exception as e:
         return cors_jsonify({
             "SUCCESS": False,
             "message": f"Error retrieving URI: {str(e)}"
-        }), 500
-
+        }, 500)
 
 if __name__ == '__main__':
     print(asyncio.run(print('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI')))
