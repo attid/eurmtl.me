@@ -5,14 +5,38 @@ import uuid
 
 from quart import Blueprint, send_file, request, session, redirect, render_template
 
-from other.config_reader import config
+from other.config_reader import config, start_path
 from db.sql_models import Signers
 from db.sql_pool import db_pool
 from other.stellar_tools import check_user_weight
 from other.telegram_tools import check_response
 from other.quart_tools import get_ip
+from other.tailscale import get_latest_version_package
+from loguru import logger
 
 blueprint = Blueprint('index', __name__)
+
+
+@blueprint.route('/tailscale', methods=('GET', 'POST'))
+@blueprint.route('/ts', methods=('GET', 'POST'))
+@blueprint.route('/ts.deb', methods=('GET', 'POST'))
+async def tailscale_static_redirect_route():
+    try:
+        file_name = await get_latest_version_package()
+        if file_name:
+            # Ensure the file exists in the static directory after the call
+            static_file_path = os.path.join(start_path, "static", file_name)
+            if os.path.exists(static_file_path):
+                # Redirect to the static file URL
+                return redirect(f"/static/{file_name}", code=302)
+            else:
+                logger.error(f"File {file_name} not found in static directory after get_latest_version_package call: {static_file_path}")
+                return "File not found on server after check.", 404
+        else:
+            return "Could not retrieve package information.", 500
+    except Exception as e:
+        logger.info(f"Error in /tailscale static redirect route: {e}")
+        return f"An error occurred: {e}", 500
 
 
 @blueprint.route('/')
