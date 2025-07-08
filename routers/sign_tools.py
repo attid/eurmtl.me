@@ -293,6 +293,13 @@ async def parse_xdr_for_signatures(tx_body):
 @blueprint.route('/sign_all', methods=('GET', 'POST'))
 @blueprint.route('/sign_all/', methods=('GET', 'POST'))
 async def start_show_all_transactions():
+    # Получаем параметры фильтрации из запроса
+    search_text = request.args.get('text', default='', type=str)
+    status = request.args.get('status', default=-1, type=int)
+    source_account = request.args.get('source_account', default='', type=str)
+    my_transactions = request.args.get('my_transactions', default=False, type=lambda v: v.lower() == 'on')
+    signer_address = request.args.get('signer_address', default='', type=str)
+    
     next_page = request.args.get('next', default=0, type=int)
     limit = 100
     offset = next_page * limit
@@ -306,12 +313,36 @@ async def start_show_all_transactions():
             func.count(Signatures.signature_xdr).label('signature_count')
         ).outerjoin(
             Signatures, Transactions.hash == Signatures.transaction_hash
-        ).group_by(Transactions).order_by(Transactions.add_dt.desc())
+        )
 
+        # Применяем фильтры, если они заданы
+        if search_text:
+            transactions_query = transactions_query.filter(Transactions.description.ilike(f'%{search_text}%'))
+        if status != -1:
+            transactions_query = transactions_query.filter(Transactions.state == status)
+        if source_account:
+            transactions_query = transactions_query.filter(Transactions.source_account == source_account)
+        if my_transactions and 'user_id' in session:
+            transactions_query = transactions_query.filter(Transactions.owner_id == session['user_id'])
+        if signer_address:
+            transactions_query = transactions_query.join(Signers, Signatures.signer_id == Signers.id).filter(
+                Signers.public_key == signer_address)
+
+        transactions_query = transactions_query.group_by(Transactions).order_by(Transactions.add_dt.desc())
+        
         transactions = transactions_query.offset(offset).limit(limit).all()
         next_page = next_page + 1 if len(transactions) == limit else None
 
-        return await render_template('tabler_sign_all.html', transactions=transactions, next_page=next_page)
+        # Передаем параметры фильтров в шаблон
+        filters = {
+            'text': search_text,
+            'status': status,
+            'source_account': source_account,
+            'my_transactions': my_transactions,
+            'signer_address': signer_address
+        }
+
+        return await render_template('tabler_sign_all.html', transactions=transactions, next_page=next_page, filters=filters)
 
 
 @blueprint.route('/decode/<tr_hash>', methods=('GET', 'POST'))
