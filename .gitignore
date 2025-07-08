@@ -133,3 +133,4 @@ dmypy.json
 *.sh
 /*/mtl-google-doc.json
 /static/qr/*
+/static/tailscale*.deb
