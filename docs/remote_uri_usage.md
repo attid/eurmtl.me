@@ -6,7 +6,7 @@
 ## API Endpoints
 
 ### Добавление URI
-`POST /remote/add`
+`POST /remote/sep07/add`
 - Параметры:
   - `uri`: Stellar URI (только TransactionStellarUri)
 - Ответ:
@@ -17,7 +17,7 @@
 ```
 
 ### Получение URI
-`GET /remote/get/{uuid}`
+`GET /remote/sep07/get/{uuid}`
 - Возвращает сохраненный URI
 
 ## Примеры
@@ -27,7 +27,7 @@
 import requests
 
 response = requests.post(
-    "https://example.com/remote/add",
+    "https://example.com/remote/sep07/add",
     data={"uri": "web+stellar:tx?..."}
 )
 print(response.json()["url"])
@@ -38,8 +38,3 @@ print(response.json()["url"])
 /start uri_abc123...
 ```
 
-Требования:
-- Создать новый файл с указанным содержимым
-- Использовать write_to_file
-- После завершения использовать attempt_completion
-- Выполнять ТОЛЬКО эту задачу
