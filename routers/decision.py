@@ -13,7 +13,7 @@ from other.telegram_tools import skynet_bot
 
 blueprint = Blueprint('decision', __name__)
 
-statuses = ("❗️ #active", "☑️ #next", "✅ #done", "🔂 #resign", "🔇 #canceled")
+statuses = ("❗️ #active", "☑️ #next", "✅ #done", "🔂 #resign", "‼️ #control", "🔇 #canceled")
 
 if config.test_mode:
     chat_ids = (0, 1837984392, 1837984392, 1837984392)  # -100 test
