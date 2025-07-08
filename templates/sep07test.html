@@ -36,32 +36,6 @@
           <button id="mmwbButton" onclick="openInMMWB('${uri}')">Открыть в ММВБ</button>
         `;
 
-        async function openInMMWB(uri) {
-          try {
-            const response = await fetch('/remote/sep07/add', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({ uri })
-            });
-
-            if (!response.ok) {
-              throw new Error('Ошибка обработки URI');
-            }
-
-            const { SUCCESS, url } = await response.json();
-            if (SUCCESS) {
-              window.location.href = url;
-            } else {
-              alert('Не удалось открыть в ММВБ');
-            }
-          } catch (err) {
-            console.error('Ошибка:', err);
-            alert('Произошла ошибка при открытии в ММВБ');
-          }
-        }
-
         // Запускаем опрос статуса
         async function pollStatus() {
           try {
@@ -83,6 +57,32 @@
       } catch (err) {
         console.error('Ошибка:', err);
         alert('Произошла ошибка при инициализации аутентификации');
+      }
+    }
+  
+    async function openInMMWB(uri) {
+      try {
+        const response = await fetch('/remote/sep07/add', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ uri })
+        });
+  
+        if (!response.ok) {
+          throw new Error('Ошибка обработки URI');
+        }
+  
+        const { SUCCESS, url } = await response.json();
+        if (SUCCESS) {
+          window.open(url, '_blank');
+        } else {
+          alert('Не удалось открыть в ММВБ');
+        }
+      } catch (err) {
+        console.error('Ошибка:', err);
+        alert('Произошла ошибка при открытии в ММВБ');
       }
     }
 </script>
