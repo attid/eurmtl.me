@@ -51,7 +51,7 @@ class HTTPSessionManager:
             json: Optional[Dict[str, Any]] = None,
             headers: Optional[Dict[str, str]] = None,
             data: Optional[Union[Dict[str, Any], str]] = None,
-            return_type: Optional[str] = None,
+            return_type: Optional[str] = None,  # 'json', 'text', or 'bytes'
     ) -> WebResponse:
         """
         Выполняет HTTP-запрос с использованием текущей сессии.
@@ -61,7 +61,7 @@ class HTTPSessionManager:
         :param json: JSON-данные для отправки (для POST/PUT).
         :param headers: Заголовки запроса.
         :param data: Данные для отправки (для GET/POST).
-        :param return_type: Ожидаемый тип ответа ('json' или None).
+        :param return_type: Ожидаемый тип ответа ('json', 'text' или 'bytes').
         :return: Экземпляр WebResponse.
         """
         session = await self.get_session()
@@ -75,14 +75,16 @@ class HTTPSessionManager:
                 elapsed_time = time.monotonic() - start_time
 
                 # Определяем, как обрабатывать ответ
-                if "application/json" in content_type or return_type == "json":
-                    data = await response.json()
-                else:
-                    data = await response.text()
+                if return_type == "bytes":
+                    response_data = await response.read()
+                elif "application/json" in content_type or return_type == "json":
+                    response_data = await response.json()
+                else: # Default to text
+                    response_data = await response.text()
 
                 return WebResponse(
                     status=response.status,
-                    data=data,
+                    data=response_data,
                     headers=dict(response.headers),
                     elapsed_time=elapsed_time,
                 )

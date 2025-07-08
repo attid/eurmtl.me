@@ -2,6 +2,8 @@ import asyncio
 import base64
 import json
 from datetime import datetime
+
+import jsonpickle
 import requests
 from loguru import logger
 from quart import session, flash
@@ -15,8 +17,10 @@ from stellar_sdk import (
     PathPaymentStrictSend,
     ManageSellOffer, Transaction, Keypair, Server, Asset, TransactionBuilder, ServerAsync, AiohttpClient,
     CreatePassiveSellOffer, ManageBuyOffer, Clawback, SetTrustLineFlags, TrustLineFlags, LiquidityPoolWithdraw,
-    LiquidityPoolDeposit, LiquidityPoolAsset
+    LiquidityPoolDeposit, LiquidityPoolAsset,
+    StrKey
 )
+from stellar_sdk.xdr import SCAddress
 from stellar_sdk.sep import stellar_uri
 from other.cache_tools import async_cache_with_ttl
 from other.grist_tools import grist_manager, MTLGrist, load_user_from_grist, get_secretaries
@@ -341,6 +345,102 @@ def get_offers(account_id, cash):
     return r
 
 
+async def decode_invoke_host_function(operation):
+    result = []
+    print(jsonpickle.dumps(operation, indent=2))
+    try:
+        hf = operation.host_function
+        result.append(f"      Function Type: {hf.type}")
+
+        if hasattr(hf, 'invoke_contract') and hf.invoke_contract:
+            ic = hf.invoke_contract
+
+            # Decode contract address
+            contract_id_bytes = ic.contract_address.contract_id.hash
+            try:
+                contract_id_str = StrKey.encode_contract(contract_id_bytes)
+            except Exception:
+                contract_id_str = contract_id_bytes.hex()
+            result.append(f"      Contract: {contract_id_str}")
+
+            # Decode function name
+            fn = ic.function_name.sc_symbol.decode('utf-8') if hasattr(ic.function_name, 'sc_symbol') else str(
+                ic.function_name)
+            result.append(f"      Function: {fn}")
+
+            # Decode arguments with indexes
+            if ic.args:
+                result.append("      Arguments:")
+                for i, arg in enumerate(ic.args):
+                    decoded = decode_scval(arg)
+                    result.append(f"        [{i}] {decoded}")
+            else:
+                result.append("      No arguments")
+
+        elif hasattr(hf, 'create_contract') and hf.create_contract:
+            cc = hf.create_contract
+            result.append("      Create Contract:")
+            if cc.contract_id_preimage:
+                result.append(f"        Contract ID Preimage: {decode_scval(cc.contract_id_preimage)}")
+            if cc.executable:
+                result.append(f"        Executable Type: {cc.executable.type}")
+
+        elif hasattr(hf, 'install_contract_code') and hf.install_contract_code:
+            result.append(f"      Install Contract Code (Hash: {hf.install_contract_code.hash.hex()})")
+
+    except Exception as e:
+        result.append(f"      <error parsing HostFunction: {str(e)}>")
+
+    return result
+
+
+def decode_scval(val):
+    try:
+        # Void (пустой SCVal)
+        if val.type.value == 0:
+            return "Void"
+
+        # Адрес
+        if val.type.value == 18:
+            addr = val.address
+            if addr is None:
+                return "None (SCAddress missing)"
+            if addr.type.value == 0 and addr.account_id:
+                account_id_bytes = addr.account_id.account_id.ed25519.uint256
+                return StrKey.encode_ed25519_public_key(account_id_bytes)
+            elif addr.type.value == 1 and addr.contract_id:
+                return StrKey.encode_contract(addr.contract_id.hash)
+            else:
+                return "None (SCAddress error)"
+
+        # Символ
+        if hasattr(val, "sym") and val.sym:
+            return val.sym.sc_symbol.decode("utf-8")
+
+        # Строка
+        if hasattr(val, "str") and val.str:
+            return val.str
+
+        # Вектор
+        if hasattr(val, "vec") and val.vec and val.vec.sc_vec:
+            return "[" + ", ".join(decode_scval(v) for v in val.vec.sc_vec) + "]"
+
+        # u128
+        if hasattr(val, "u128") and val.u128:
+            return str(val.u128.lo.uint64 + (val.u128.hi.uint64 << 64))
+
+        # i128
+        if hasattr(val, "i128") and val.i128:
+            hi = val.i128.hi.int64
+            lo = val.i128.lo.uint64
+            return str((hi << 64) + lo)
+
+        return f"None (неизвестный SCVal) (<SCVal [type={val.type.value}, sym={getattr(val.sym, 'sc_symbol', None)}>])"
+
+    except Exception as e:
+        return f"<error decoding SCVal: {str(e)}>"
+
+
 async def decode_xdr_to_text(xdr, only_op_number=None):
     result = []
     cash = {}
@@ -353,29 +453,31 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
         transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     sequence = transaction.transaction.sequence
     result.append(f"Sequence Number {sequence}")
-    
+
     # Проверяем наличие других транзакций с таким же sequence
     with db_pool() as db_session:
         same_sequence_txs = db_session.query(Transactions).filter(
             Transactions.stellar_sequence == sequence,
             Transactions.hash != transaction.hash_hex() if hasattr(transaction, 'hash_hex') else None
         ).all()
-        
+
         if same_sequence_txs:
             links = [f'<a href="https://eurmtl.me/sign_tools/{tx.hash}">{tx.description[:10]}...</a>'
-                    for tx in same_sequence_txs]
+                     for tx in same_sequence_txs]
             result.append(f"<div style=\"color: orange;\">Другие транзакции с этим sequence: {', '.join(links)} </div>")
 
     server_sequence = int(get_account(transaction.transaction.source.account_id, cash)['sequence'])
     expected_sequence = server_sequence + 1
-    
+
     if sequence != expected_sequence:
         diff = sequence - expected_sequence
         if diff < 0:
-            result.append(f"<div style=\"color: red;\">Пропущено Sequence {-diff} номеров (current: {sequence}, expected: {expected_sequence})</div>")
+            result.append(
+                f"<div style=\"color: red;\">Пропущено Sequence {-diff} номеров (current: {sequence}, expected: {expected_sequence})</div>")
         else:
-            result.append(f"<div style=\"color: orange;\">Номер Sequence больше на {diff} (current: {sequence}, expected: {expected_sequence})</div>")
- 
+            result.append(
+                f"<div style=\"color: orange;\">Номер Sequence больше на {diff} (current: {sequence}, expected: {expected_sequence})</div>")
+
     if transaction.transaction.fee < 5000:
         result.append(f"<div style=\"color: orange;\">Bad Fee {transaction.transaction.fee}! </div>")
     else:
@@ -415,6 +517,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                 break
 
         result.append(f"Операция {idx} - {type(operation).__name__}")
+
         # print('bad xdr', idx, operation)
         if operation.source:
             result.append(f"*** для аккаунта {address_id_to_link(operation.source.account_id)}")
@@ -652,6 +755,21 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             result.append(
                 f"    LiquidityPoolWithdraw {pool_id_to_link(operation.liquidity_pool_id)} вывод {operation.amount} минимум {operation.min_amount_a}/{operation.min_amount_b} ")
             continue
+        if type(operation).__name__ == "InvokeHostFunction":
+            data_exist = True
+            result.append("    InvokeHostFunction Details:")
+            # Get detailed function info
+            hf_details = await decode_invoke_host_function(operation)
+            result.extend(hf_details)
+
+            # Add auth info if present
+            # if hasattr(operation, 'auth') and operation.auth:
+            #     result.append("      Auth Entries:")
+            #     for i, auth in enumerate(operation.auth):
+            #         result.append(f"        [{i}] {decode_scval(auth)}")
+
+            continue
+
         if type(operation).__name__ in ["PathPaymentStrictSend", "ManageBuyOffer", "ManageSellOffer", "AccountMerge",
                                         "PathPaymentStrictReceive", "ClaimClaimableBalance", "CreateAccount",
                                         "CreateClaimableBalance", "ChangeTrust", "SetOptions", "Payment", "ManageData",
@@ -1321,9 +1439,12 @@ def update_memo_in_xdr(xdr: str, new_memo: str) -> str:
 
 
 async def test():
-    a = await process_xdr_transaction(
-        'AAAAAgAAAADXM/FKYDkdJMoH7qR0azpDSfND7E9VelL2D5ys9ViskAAAAZACGVTNAAAHjwAAAAEAAAAAAAAAAAAAAABny7nTAAAAAAAAAAIAAAAAAAAACgAAAA5ldXJtdGwubWUgYXV0aAAAAAAAAQAAAAp0MHFiNTg2OWhoAAAAAAABAAAAAC6F6mrl0kGQk/bzZ60mRWIoAqzhhMgX7hjAF9yaZNIGAAAACgAAAA93ZWJfYXV0aF9kb21haW4AAAAAAQAAAAlldXJtdGwubWUAAAAAAAAAAAAAAfVYrJAAAABAiVfCKA3CfHxlcqJYITjM8ta2ljioPHROi7X9jKJrwdrME4jJ5QOpXsehZBUw/RI8r7sK+/ZvJcvBQBgUJN3ZBQ==')
-    print(a)
+    t1 = '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'
+    # t2 = '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'
+    a = await decode_xdr_to_text(t1)
+    print('\n'.join(a))
+    # a = await decode_xdr_to_text(t2)
+    # print('\n'.join(a))
 
 
 async def create_sep7_auth_transaction(domain: str, nonce: str, callback: str) -> str:
