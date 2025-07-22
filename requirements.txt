@@ -39,3 +39,6 @@ environs
 odmantic
 stellar-sdk[aiohttp]
 pip
+pytest
+pytest-asyncio
+aiohttp

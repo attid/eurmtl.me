@@ -25,10 +25,7 @@ class AsyncTTLCache:
             return None
 
     async def set(self, key: str, value: Any) -> None:
-        """Forcibly sets a key in the cache. Does nothing if the value is None."""
-        if value is None:
-            return
-
+        """Forcibly sets a key in the cache."""
         async with self._lock:
             if len(self.cache) >= self.maxsize and key not in self.cache:
                 self.cache.popitem(last=False)  # удаляем самый старый элемент
