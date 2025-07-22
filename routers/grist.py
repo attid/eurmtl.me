@@ -1,5 +1,7 @@
 from datetime import datetime
 from quart import Blueprint, jsonify, render_template, request
+
+from other.config_reader import config
 from other.grist_tools import grist_manager, MTLGrist
 from loguru import logger
 
@@ -190,6 +192,65 @@ async def grist_sky_test(user_id: str):
             "status": "error",
             "message": "Ошибка при проверке подписки"
         }), 500
+
+
+@blueprint.route('/grist/webhook', methods=('GET','POST'))
+async def grist_webhook():
+    logger.info(f"Grist webhook headers: {request.headers}")
+    data = await request.json
+    logger.info(f"Grist webhook: {data}")
+
+    # Получаем ключ из заголовка X-Auth-Key или Authorization, поддерживаем формат 'Bearer <ключ>'
+    auth_header = request.headers.get('X-Auth-Key') or request.headers.get('Authorization')
+    auth_key = None
+    if auth_header:
+        if auth_header.startswith('Bearer '):
+            auth_key = auth_header[7:].strip()
+        else:
+            auth_key = auth_header.strip()
+
+    # Проверка ключа
+    try:
+        grist_income = config.grist_income
+    except Exception as e:
+        logger.error(f"Grist webhook: не удалось получить grist_income: {e}")
+        grist_income = None
+    if not auth_key or not grist_income or auth_key != grist_income:
+        logger.warning('Grist webhook: неверный ключ')
+    else:
+        # Проверяем что пришёл список
+        if not isinstance(data, list) or not data:
+            logger.warning('Grist webhook: bad request, data is not list or empty')
+        else:
+            record = data[0]
+            # Проверка UPDATE
+            if not record.get('UPDATE'):
+                logger.info('Grist webhook: UPDATE is not True, skipping')
+            else:
+                # Обработка только если KEY == 'TEST'
+                if record.get('KEY') == 'TEST':
+                    rec_id = record.get('id')
+                    if not rec_id:
+                        logger.warning("Grist webhook: не найден id в data для обновления")
+                    else:
+                        from other.grist_tools import grist_manager, MTLGrist
+                        from datetime import datetime, timezone
+                        update_data = {
+                            "records": [{
+                                "id": rec_id,
+                                "fields": {
+                                    "DATE": datetime.now(timezone.utc).isoformat(),
+                                    "UPDATE": False
+                                }
+                            }]
+                        }
+                        try:
+                            await grist_manager.patch_data(MTLGrist.MTL_admin_panel, update_data)
+                            logger.info(f"Grist webhook: запись обновлена для id={rec_id}")
+                        except Exception as e:
+                            logger.error(f"Grist webhook: ошибка обновления: {e}")
+    # Всегда отвечаем 200 OK
+    return jsonify({"status": "accepted"})
 
 
 if __name__ == '__main__':
