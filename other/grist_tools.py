@@ -3,7 +3,7 @@ import json
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 from loguru import logger
-from other.cache_tools import async_cache_with_ttl
+from other.cache_tools import async_cache_with_ttl, AsyncTTLCache
 
 from db.sql_models import User
 from other.config_reader import config
@@ -41,6 +41,9 @@ class MTLGrist:
     EURMTL_assets = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Assets")
     EURMTL_pools = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Pools")
     EURMTL_secretaries = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Secretaries")
+
+    MTL_shareholders = GristTableConfig("cqmjqbs4e97hbKHyRADQ9N", "ShareHolders")
+    MTL_admin_panel = GristTableConfig("cqmjqbs4e97hbKHyRADQ9N", "AdminPanel")
 
 
 class GristAPI:
@@ -173,8 +176,41 @@ class GristAPI:
 # Конфигурация
 grist_session_manager = HTTPSessionManager()
 grist_manager = GristAPI(grist_session_manager)
-grist_cash = {} #todo: use ttl cache
+grist_cash = AsyncTTLCache(ttl_seconds=86400)  # Кеш для найденных пользователей на 24 часа
+not_found_cache = AsyncTTLCache(ttl_seconds=3600)  # Кеш для ненайденных пользователей на 1 час
+assets_cache = AsyncTTLCache(ttl_seconds=86400)  # Кеш для найденных активов на 24 часа
+assets_not_found_cache = AsyncTTLCache(ttl_seconds=3600)  # Кеш для ненайденных активов на 1 час
 
+
+async def get_grist_asset_by_code(asset_code: str) -> Optional[Dict[str, Any]]:
+    """
+    Получает данные об активе из Grist по его коду с двухуровневым кешированием.
+    """
+    # 1. Проверка основного кеша
+    cached_asset = await assets_cache.get(asset_code)
+    if cached_asset:
+        return cached_asset
+
+    # 2. Проверка кеша ненайденных активов
+    is_not_found = await assets_not_found_cache.get(asset_code)
+    if is_not_found:
+        return None
+
+    # 3. Запрос в Grist
+    asset_records = await grist_manager.load_table_data(
+        MTLGrist.EURMTL_assets,
+        filter_dict={"code": [asset_code]}
+    )
+
+    if asset_records:
+        asset_data = asset_records[0]
+        # 4. Сохранение в основной кеш
+        await assets_cache.set(asset_code, asset_data)
+        return asset_data
+    else:
+        # 5. Сохранение в кеш ненайденных
+        await assets_not_found_cache.set(asset_code, True)
+        return None
 
 
 @async_cache_with_ttl(ttl_seconds=36000)  # Кеш на 10 часов
@@ -186,12 +222,12 @@ async def get_secretaries() -> Dict[str, List[int]]:
     }
     """
     secretaries = {}
-    
+
     # Загружаем только необходимые данные
     secretary_records = await grist_manager.load_table_data(
         MTLGrist.EURMTL_secretaries
     )
-    
+
     if not secretary_records:
         return secretaries
 
@@ -208,21 +244,22 @@ async def get_secretaries() -> Dict[str, List[int]]:
         MTLGrist.EURMTL_users,
         filter_dict={'id': all_user_ids}
     ) if all_user_ids else []
-    user_telegram_map = {u['id']: u['telegram_id'] for u in user_records if u.get('telegram_id')} if user_records else {}
+    user_telegram_map = {u['id']: u['telegram_id'] for u in user_records if
+                         u.get('telegram_id')} if user_records else {}
 
     # Формируем итоговую структуру
     for record in secretary_records:
         account_record_id = record.get('account')
         if not account_record_id or account_record_id not in account_id_map:
             continue
-            
+
         account_id = account_id_map[account_record_id]
         telegram_ids = [
             user_telegram_map[user_id]
             for user_id in record.get('users', [])
             if user_id in user_telegram_map
         ]
-        
+
         if telegram_ids:
             secretaries[account_id] = telegram_ids
 
@@ -230,8 +267,11 @@ async def get_secretaries() -> Dict[str, List[int]]:
 
 
 async def load_user_from_grist(account_id: Optional[str] = None, telegram_id: Optional[int] = None) -> Optional[User]:
-    if account_id and account_id in grist_cash:
-        return grist_cash[account_id]
+    if account_id:
+        cached_user = await grist_cash.get(account_id)
+        if cached_user:
+            return cached_user
+    # TODO: Добавить кеширование по telegram_id, если потребуется
 
     filter_dict = {}
     if account_id:
@@ -252,7 +292,7 @@ async def load_user_from_grist(account_id: Optional[str] = None, telegram_id: Op
         user = User(telegram_id=user_record["telegram_id"], account_id=user_record["account_id"],
                     username=user_record["username"])
         if user.account_id:
-            grist_cash[user.account_id] = user
+            await grist_cash.set(user.account_id, user)
         return user
 
     return None
@@ -272,6 +312,63 @@ async def main():
     #     logger.info("Данные успешно обновлены")
 
 
+async def load_users_from_grist(account_ids: List[str]) -> Dict[str, User]:
+    """
+    Загружает пользователей из Grist по списку account_id и возвращает словарь.
+    Использует два уровня кеширования: постоянный для найденных и временный для ненайденных.
+    """
+    if not account_ids:
+        return {}
+
+    # 1. Попытка получить пользователей из постоянного кеша
+    cached_users = {}
+    get_tasks = [asyncio.create_task(grist_cash.get(acc_id)) for acc_id in account_ids]
+    results = await asyncio.gather(*get_tasks)
+    for acc_id, user in zip(account_ids, results):
+        if user:
+            cached_users[acc_id] = user
+
+    # Определяем ID, которые нужно искать дальше
+    ids_to_check = [acc_id for acc_id in account_ids if acc_id not in cached_users]
+
+    # 2. Проверяем временный кеш ненайденных пользователей
+    not_found_ids = set()
+    tasks = [asyncio.create_task(not_found_cache.get(acc_id)) for acc_id in ids_to_check]
+    results = await asyncio.gather(*tasks)
+    for acc_id, result in zip(ids_to_check, results):
+        if result is not None:  # Если в кеше ненайденных есть запись
+            not_found_ids.add(acc_id)
+
+    # ID для запроса в Grist (те, что не в основном кеше и не в кеше ненайденных)
+    missing_ids = [acc_id for acc_id in ids_to_check if acc_id not in not_found_ids]
+
+    if not missing_ids:
+        return cached_users
+
+    # 3. Запрос в Grist для оставшихся ID
+    user_records = await grist_manager.load_table_data(
+        MTLGrist.EURMTL_users,
+        filter_dict={"account_id": missing_ids}
+    )
+
+    found_users_map = {}
+    if user_records:
+        for record in user_records:
+            user = User(telegram_id=record["telegram_id"], account_id=record["account_id"], username=record["username"])
+            if user.account_id:
+                await grist_cash.set(user.account_id, user)  # Добавляем в постоянный кеш
+                found_users_map[user.account_id] = user
+
+    # 4. Кешируем ненайденные ID
+    ids_actually_not_found = [acc_id for acc_id in missing_ids if acc_id not in found_users_map]
+    if ids_actually_not_found:
+        tasks = [asyncio.create_task(not_found_cache.set(acc_id, True)) for acc_id in ids_actually_not_found]
+        await asyncio.gather(*tasks)
+
+    # 5. Собираем итоговый результат
+    return {**cached_users, **found_users_map}
+
+
 if __name__ == '__main__':
-    #asyncio.run(main())
+    # asyncio.run(main())
     print(asyncio.run(get_secretaries()))
