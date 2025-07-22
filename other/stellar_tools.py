@@ -20,7 +20,7 @@ from stellar_sdk import (
     LiquidityPoolDeposit, LiquidityPoolAsset,
     StrKey
 )
-from stellar_sdk.xdr import SCAddress
+from stellar_sdk.operation import SetOptions, AccountMerge, Payment, PathPaymentStrictReceive, PathPaymentStrictSend, ManageSellOffer, ManageBuyOffer, CreatePassiveSellOffer, ChangeTrust, Inflation, ManageData, AllowTrust, BumpSequence
 from stellar_sdk.sep import stellar_uri
 from other.cache_tools import async_cache_with_ttl
 from other.grist_tools import grist_manager, MTLGrist, load_user_from_grist, get_secretaries
@@ -34,10 +34,36 @@ tools_cash = {}
 
 
 def get_key_sort(key, idx=1):
+    """
+    Returns an element from a tuple/list by index for use as a sort key.
+
+    Args:
+        key: The tuple or list.
+        idx: The index of the element to return. Defaults to 1.
+
+    Returns:
+        The element at the specified index.
+    """
     return key[idx]
 
 
 def check_publish_state(tx_hash: str) -> (int, str):
+    """
+    Checks the status of a transaction on the Horizon network.
+
+    It queries Horizon for the transaction hash and updates its state in the local
+    database if it has been successfully submitted.
+
+    Args:
+        tx_hash: The hexadecimal hash of the transaction to check.
+
+    Returns:
+        A tuple containing a status code and the creation date string.
+        Status codes:
+        - 0: Not found or error.
+        - 1: Found and successful.
+        - 10: Found but failed.
+    """
     rq = requests.get(f'https://horizon.stellar.org/transactions/{tx_hash}')
     if rq.status_code == 200:
         date = rq.json()['created_at'].replace('T', ' ').replace('Z', '')
@@ -1359,33 +1385,128 @@ async def add_signer(signer_key):
                 db_session.commit()
 
 
+def get_operation_threshold_level(operation) -> str:
+    """
+    Определяет уровень порога для одной операции.
+    Возвращает 'low', 'medium' или 'high'.
+    """
+    op_name = operation.__class__.__name__
+
+    HIGH_THRESHOLD_OPS = {'SetOptions',  # if signers or thresholds
+                          'AccountMerge'}
+
+    MEDIUM_THRESHOLD_OPS = {
+        'CreateAccount', 'Payment', 'PathPaymentStrictSend', 'PathPaymentStrictReceive',
+        'ManageBuyOffer', 'ManageSellOffer', 'CreatePassiveSellOffer',
+        'SetOptions',  # if not signers or thresholds
+        'ChangeTrust', 'ManageData', 'CreateClaimableBalance',
+        'BeginSponsoringFutureReserves', 'EndSponsoringFutureReserves',
+        'RevokeSponsorship', 'Clawback', 'ClawbackClaimableBalance',
+        'LiquidityPoolDeposit', 'LiquidityPoolWithdraw',
+        'InvokeHostFunction', 'ExtendFootprintTTL', 'RestoreFootprint'
+    }
+
+    LOW_THRESHOLD_OPS = {
+        'BumpSequence',
+        'AllowTrust',  # устаревшая операция (deprecated), но всё ещё низкого порога
+        'SetTrustLineFlags',  # замена AllowTrust
+        'ClaimClaimableBalance'
+    }
+
+    if op_name in HIGH_THRESHOLD_OPS:
+        if op_name == 'SetOptions':
+            # Только определенные изменения в SetOptions требуют высокого порога
+            if operation.signer is not None or \
+               operation.low_threshold is not None or operation.med_threshold is not None or \
+               operation.high_threshold is not None:
+                return 'high'
+            else:
+                # Другие изменения (например, home_domain) имеют средний порог
+                return 'med'
+        else:  # AccountMerge всегда высокий
+            return 'high'
+
+    if op_name in MEDIUM_THRESHOLD_OPS:
+        return 'med'
+
+    if op_name in LOW_THRESHOLD_OPS:
+        return 'low'
+
+    # Если операция не найдена в списках, по умолчанию используется высокий порог для безопасности
+    logger.warning(f"Неизвестный тип операции '{op_name}'. По умолчанию используется высокий порог.")
+    return 'high'
+
+
 async def extract_sources(xdr):
     tr = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-    sources = {tr.transaction.source.account_id: {}}
-    for operation in tr.transaction.operations:
-        if operation.source:
-            sources[operation.source.account_id] = {}
-    for source in sources:
+    
+    # 1. Собираем все уникальные source accounts
+    unique_sources = {tr.transaction.source.account_id}
+    for op in tr.transaction.operations:
+        if op.source:
+            unique_sources.add(op.source.account_id)
+
+    # 2. Определяем максимальный уровень порога для каждого source
+    source_max_levels = {}
+    level_map = {'low': 1, 'med': 2, 'high': 3}
+    tx_source_id = tr.transaction.source.account_id
+
+    for source_id in unique_sources:
+        max_level_for_source = 'low'
+        for op in tr.transaction.operations:
+            op_source_id = op.source.account_id if op.source else tx_source_id
+            if op_source_id == source_id:
+                op_level = get_operation_threshold_level(op)
+                if level_map[op_level] > level_map[max_level_for_source]:
+                    max_level_for_source = op_level
+        source_max_levels[source_id] = max_level_for_source
+
+    # 3. Формируем итоговый результат с правильными порогами
+    sources_data = {}
+    for source_id, max_level in source_max_levels.items():
         try:
             response = await http_session_manager.get_web_request(
-                "GET", 'https://horizon.stellar.org/accounts/' + source, return_type="json"
+                "GET", f'https://horizon.stellar.org/accounts/{source_id}', return_type="json"
             )
-
             data = response.data
+            account_thresholds = data['thresholds']
+            required_threshold_value = account_thresholds[f'{max_level}_threshold']
 
-            threshold = data['thresholds']['high_threshold']
             signers = []
             for signer in data['signers']:
                 signers.append([signer['key'], signer['weight'],
                                 Keypair.from_public_key(signer['key']).signature_hint().hex()])
                 await add_signer(signer['key'])
-            sources[source] = {'threshold': threshold, 'signers': signers}
-        except:
-            sources[source] = {'threshold': 0,
-                               'signers': [[source, 1, Keypair.from_public_key(source).signature_hint().hex()]]}
-            await add_signer(source)
-    # print(json.dumps(sources))
-    return sources
+            
+            sources_data[source_id] = {'threshold': required_threshold_value, 'signers': signers}
+
+        except Exception as e:
+            logger.warning(f"Failed to extract source {source_id}: {e}")
+            sources_data[source_id] = {'threshold': 0,
+                               'signers': [[source_id, 1, Keypair.from_public_key(source_id).signature_hint().hex()]]}
+            await add_signer(source_id)
+            
+    return sources_data
+
+
+async def update_transaction_sources(transaction: "Transactions") -> bool:
+    """Обновляет поле JSON в транзакции свежими данными из Horizon."""
+    try:
+        # Получаем самую свежую информацию о подписантах и порогах
+        fresh_sources = await extract_sources(transaction.body)
+        
+        # Обновляем поле json
+        transaction.json = json.dumps(fresh_sources)
+        
+        # Используем merge для безопасного обновления объекта в новой сессии
+        with db_pool() as db_session:
+            db_session.merge(transaction)
+            db_session.commit()
+        logger.info(f"Successfully updated sources for transaction {transaction.hash}")
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении источников для транзакции {transaction.hash}: {e}")
+        return False
 
 
 async def add_transaction(tx_body, tx_description):
@@ -1499,6 +1620,9 @@ async def create_sep7_auth_transaction(domain: str, nonce: str, callback: str) -
 
     # Возвращаем URI вместо XDR
     return t.to_uri()
+
+
+
 
 
 if __name__ == '__main__':

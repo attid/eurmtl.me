@@ -10,8 +10,9 @@ from quart import Blueprint, request, render_template, flash, session, jsonify
 
 from other.qr_tools import create_beautiful_code
 from other.config_reader import start_path
-from other.grist_tools import grist_manager, MTLGrist
-from other.stellar_tools import add_trust_line_uri, float2str, xdr_to_uri
+from other.grist_tools import grist_manager, MTLGrist, get_grist_asset_by_code
+from other.stellar_tools import check_asset, add_trust_line_uri, xdr_to_uri
+from other.stellar_tools import float2str
 
 blueprint = Blueprint('sellers', __name__)
 last_update_time = datetime.now() - timedelta(minutes=20)
@@ -62,35 +63,38 @@ async def cmd_seller(account_id):
 
 @blueprint.route('/asset/<asset_code>', methods=('GET', 'POST'))
 async def cmd_asset(asset_code):
+    # Инициализируем переменные по умолчанию
+    asset_issuer = None
+    qr_text = None
+    qr_img = None
+    asset_data = None
+
     if len(asset_code) < 3:
         await flash('BAD asset code')
-
-    # global last_update_time
-    # asset = await get_asset_by_code(asset_code, True)
-    asset = await grist_manager.load_table_data(
-        MTLGrist.EURMTL_assets,
-        filter_dict={"code": [asset_code]}
-    )
-
-    if asset:
-        asset_issuer = asset[0]['issuer']
-        asset_code = asset[0]['code']
-
-        qr_text = add_trust_line_uri(asset_issuer, asset_code, asset_issuer)
-        qr_img = f'/static/qr/{asset_code}.png'
-        # если файл не существует, то создаем его
-        if not os.path.exists(start_path + qr_img):
-            create_beautiful_code(qr_img, asset_code, qr_text)
-
-        resp = await render_template('tabler_asset.html', asset_code=asset_code,
-                                     asset_issuer=asset_issuer, qr_text=qr_text, qr_img=qr_img)
-        return resp
-
+        asset_code = None
     else:
-        await flash('BAD asset code')
+        # Используем кэширующую функцию вместо прямого обращения к Grist
+        asset_data = await get_grist_asset_by_code(asset_code)
 
-    resp = await render_template('tabler_asset.html')
-    return resp
+        if asset_data:
+            asset_issuer = asset_data['issuer']
+            asset_code = asset_data['code']
+
+            qr_text = add_trust_line_uri(asset_issuer, asset_code, asset_issuer)
+            qr_img = f'/static/qr/{asset_code}.png'
+            # если файл не существует, то создаем его
+            if not os.path.exists(start_path + qr_img):
+                create_beautiful_code(qr_img, asset_code, qr_text)
+        else:
+            await flash('BAD asset code')
+            asset_code = None
+
+    return await render_template('tabler_asset.html',
+                                 asset_code=asset_code,
+                                 asset_issuer=asset_issuer,
+                                 qr_text=qr_text,
+                                 qr_img=qr_img,
+                                 asset_data=asset_data)
 
 
 @blueprint.route('/uri', methods=('GET', 'POST'))
