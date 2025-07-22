@@ -16,9 +16,9 @@ from db.sql_models import Transactions, Signers, Signatures, Alerts
 from db.sql_pool import db_pool
 from other.cache_tools import async_cache_with_ttl
 from other.config_reader import start_path, config
-from other.grist_tools import load_user_from_grist
+from other.grist_tools import load_users_from_grist
 from other.stellar_tools import (decode_xdr_to_text, check_publish_state, check_user_in_sign,
-                                 add_transaction)
+                                 add_transaction, update_transaction_sources)
 from other.telegram_tools import skynet_bot
 
 blueprint = Blueprint('sign_tools', __name__)
@@ -76,6 +76,23 @@ async def show_transaction(tr_hash):
     if transaction is None:
         return 'Transaction not exist =('
 
+    # Проверяем, есть ли GET-параметр ?refresh
+    if 'refresh' in request.args:
+        # Проверяем права доступа
+        admin_weight_for_refresh = 2 if await check_user_in_sign(tr_hash) else 0
+        is_owner = 'userdata' in session and transaction.owner_id and int(transaction.owner_id) == int(session['userdata']['id'])
+
+        if admin_weight_for_refresh > 0 or is_owner:
+            success = await update_transaction_sources(transaction)
+            if success:
+                await flash('Информация о подписантах и порогах успешно обновлена!', 'good')
+            else:
+                await flash('Не удалось обновить информацию о подписантах.', 'error')
+            return redirect(url_for('sign_tools.show_transaction', tr_hash=tr_hash))
+        else:
+            await flash('У вас нет прав для выполнения этого действия.', 'error')
+            return redirect(url_for('sign_tools.show_transaction', tr_hash=tr_hash))
+
     transaction_env = TransactionEnvelope.from_xdr(transaction.body,
                                                    network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
 
@@ -128,6 +145,10 @@ async def show_transaction(tr_hash):
                 for msg in result["MESSAGES"]:
                     await flash(msg)
 
+    # Предзагрузка всех пользователей Grist для оптимизации
+    all_public_keys = [signer[0] for address in json_transaction for signer in json_transaction[address]['signers']]
+    user_map = await load_users_from_grist(all_public_keys)
+
     signers_table = []
     bad_signers = []
     signatures = []
@@ -146,8 +167,10 @@ async def show_transaction(tr_hash):
                 db_signer: Signers = db_session.query(Signers).filter(Signers.public_key == signer[0]).first()
                 signature_dt = db_session.query(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
                     Signers.public_key == signer[0]).order_by(Signatures.add_dt.desc()).first()
-                user = await load_user_from_grist(account_id=db_signer.public_key) if db_signer else None
+                
+                user = user_map.get(db_signer.public_key) if db_signer else None
                 username = user.username if user else None
+                
                 signature_days = (datetime.now() - signature_dt.add_dt).days if signature_dt else "Never"
             if signature:
                 if has_votes < int(json_transaction[address]['threshold']) or int(
@@ -176,11 +199,24 @@ async def show_transaction(tr_hash):
         db_signatures = db_session.query(Signatures) \
             .outerjoin(Signers, Signatures.signer_id == Signers.id) \
             .filter(Signatures.transaction_hash == transaction.hash).order_by(Signatures.id).all()
+        
+        # Оптимизация: предзагрузка всех пользователей для подписей
+        signer_ids = [s.signer_id for s in db_signatures if s.signer_id]
+        all_signers = db_session.query(Signers).filter(Signers.id.in_(signer_ids)).all() if signer_ids else []
+        signer_map = {s.id: s for s in all_signers}
+
+        # Загружаем пользователей для подписей одним запросом
+        signer_public_keys = [s.public_key for s in all_signers]
+        user_map_signatures = await load_users_from_grist(signer_public_keys)
+
         for signature in db_signatures:
-            signer:Signers = db_session.query(Signers).filter(
-                Signers.id == signature.signer_id).first()
-            user = await load_user_from_grist(account_id=signer.public_key) if signer else None
-            username = user.username if user else None
+            signer_instance = signer_map.get(signature.signer_id)
+            username = None
+            if signer_instance:
+                user = user_map_signatures.get(signer_instance.public_key)
+                if user:
+                    username = user.username
+            
             signatures.append([signature.id, signature.add_dt, username, signature.signature_xdr, signature.hidden])
     #    from stellar_sdk import DecoratedSignature
     #    from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
@@ -253,16 +289,24 @@ async def parse_xdr_for_signatures(tx_body):
         return result
 
     if len(tr_full.signatures) > 0:
+        # Оптимизация: предзагрузка всех пользователей Grist
+        all_signer_hints = [s.signature_hint.hex() for s in tr_full.signatures]
+        with db_pool() as db_session:
+            all_db_signers = db_session.query(Signers).filter(Signers.signature_hint.in_(all_signer_hints)).all()
+        
+        signer_map = {s.signature_hint: s for s in all_db_signers}
+        user_map = await load_users_from_grist([s.public_key for s in all_db_signers])
+
         with db_pool() as db_session:
             for signature in tr_full.signatures:
-                signer: Signers = db_session.query(Signers).filter(
-                    Signers.signature_hint == signature.signature_hint.hex()).first()
-                user = await load_user_from_grist(account_id=signer.public_key) if signer else None
+                db_signer = signer_map.get(signature.signature_hint.hex())
+                user = user_map.get(db_signer.public_key) if db_signer else None
                 username = user.username if user else None
+
                 if db_session.query(Signatures).filter(Signatures.transaction_hash == transaction.hash,
                                                        Signatures.signature_xdr == signature.to_xdr_object(
                                                        ).to_xdr()).first():
-                    result['MESSAGES'].append(f'Can`t add {username if signer else None}. '
+                    result['MESSAGES'].append(f'Can`t add {username if db_signer else None}. '
                                               f'Already was added.')
                 else:
                     # check is good ?
@@ -277,7 +321,7 @@ async def parse_xdr_for_signatures(tx_body):
                         try:
                             user_keypair.verify(data=tr_full.hash(), signature=signature.signature)
                             db_session.add(Signatures(signature_xdr=signature.to_xdr_object().to_xdr(),
-                                                      signer_id=signer.id if signer else None,
+                                                      signer_id=db_signer.id if db_signer else None,
                                                       transaction_hash=transaction.hash))
                             text = f'Added signature from {username}'
                             result['MESSAGES'].append(text)
@@ -310,6 +354,7 @@ async def start_show_all_transactions():
             Transactions.description.label('description'),
             Transactions.add_dt.label('add_dt'),
             Transactions.state.label('state'),
+            Transactions.source_account.label('source_account'),
             func.count(Signatures.signature_xdr).label('signature_count')
         ).outerjoin(
             Signatures, Transactions.hash == Signatures.transaction_hash
