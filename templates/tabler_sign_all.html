@@ -1,6 +1,6 @@
 {% extends 'tabler_base.html' %}
 
-{% block page_title %}All my transaction{% endblock %}
+{% block page_title %}All transactions{% endblock %}
 
 {% block content %}
 
@@ -60,6 +60,7 @@
             <th>Date</th>
             <th>Link</th>
             <th>Description</th>
+            <th>Source</th>
             <th>Signatures</th>
             <th>Status</th>
         </tr>
@@ -71,6 +72,13 @@
             <td>{{ transaction.add_dt.strftime('%Y-%m-%d') }}</td>
             <td><a href="/sign_tools/{{ transaction.hash }}" class="text-primary">View</a></td>
             <td class="description">{{ transaction.description[:30] }}</td>
+            <td>
+                {% if transaction.source_account and transaction.source_account|length > 8 %}
+                    <a href="https://stellar.expert/explorer/public/account/{{ transaction.source_account }}" target="_blank" title="{{ transaction.source_account }}">
+                        {{ transaction.source_account[:4] }}..{{ transaction.source_account[-4:] }}
+                    </a>
+                {% endif %}
+            </td>
             <td>{{ transaction.signature_count }}</td>
             <td>
                 {% if transaction.state == 0 %}

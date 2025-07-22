@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     test_user_id: int
     test_mode: bool = False
     grist_token: str
+    grist_income: str
 
     class Config:
         env_file = dotenv_path
