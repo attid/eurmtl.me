@@ -65,6 +65,48 @@ async def grist_tg_info_groups(user_id):
         }), 500
 
 
+async def _process_grist_key(key: str, record: dict):
+    """Обрабатывает запись из Grist в зависимости от ключа."""
+    rec_id = record.get('id')
+    if not rec_id:
+        logger.warning("Grist webhook: не найден id в data для обновления")
+        return
+
+    task_function = None
+    if key == 'TEST':
+        # Для 'TEST' нет дополнительной задачи, просто обновление
+        task_function = None
+    elif key == 'MTL':
+        from other.grist_tools import update_mtl_shareholders_balance
+        task_function = update_mtl_shareholders_balance
+    else:
+        logger.warning(f"Grist webhook: неизвестный ключ '{key}'")
+        return
+
+    try:
+        # Выполняем основную задачу, если она есть
+        if task_function:
+            await task_function()
+
+        # Обновляем запись в AdminPanel
+        from other.grist_tools import grist_manager, MTLGrist
+        from datetime import datetime, timezone
+        update_data = {
+            "records": [{
+                "id": rec_id,
+                "fields": {
+                    "DATE": datetime.now(timezone.utc).isoformat(),
+                    "UPDATE": False
+                }
+            }]
+        }
+        await grist_manager.patch_data(MTLGrist.MTL_admin_panel, update_data)
+        logger.info(f"Grist webhook: запись id={rec_id} для ключа '{key}' успешно обработана.")
+
+    except Exception as e:
+        logger.error(f"Grist webhook: ошибка при обработке ключа '{key}' для id={rec_id}: {e}")
+
+
 async def check_grist_key(key: str, log_info: str = None) -> dict:
     """Проверка ключа доступа к Grist"""
     if not key:
@@ -215,40 +257,24 @@ async def grist_webhook():
     except Exception as e:
         logger.error(f"Grist webhook: не удалось получить grist_income: {e}")
         grist_income = None
+
     if not auth_key or not grist_income or auth_key != grist_income:
         logger.warning('Grist webhook: неверный ключ')
+        # Всегда отвечаем 200 OK, чтобы Grist не повторял запросы
+        return jsonify({"status": "accepted"})
+
+    # Проверяем что пришёл список
+    if not isinstance(data, list) or not data:
+        logger.warning('Grist webhook: bad request, data is not list or empty')
+        return jsonify({"status": "accepted"})
+
+    record = data[0]
+    # Проверка UPDATE и KEY
+    if record.get('UPDATE') and record.get('KEY'):
+        await _process_grist_key(record.get('KEY'), record)
     else:
-        # Проверяем что пришёл список
-        if not isinstance(data, list) or not data:
-            logger.warning('Grist webhook: bad request, data is not list or empty')
-        else:
-            record = data[0]
-            # Проверка UPDATE
-            if not record.get('UPDATE'):
-                logger.info('Grist webhook: UPDATE is not True, skipping')
-            else:
-                # Обработка только если KEY == 'TEST'
-                if record.get('KEY') == 'TEST':
-                    rec_id = record.get('id')
-                    if not rec_id:
-                        logger.warning("Grist webhook: не найден id в data для обновления")
-                    else:
-                        from other.grist_tools import grist_manager, MTLGrist
-                        from datetime import datetime, timezone
-                        update_data = {
-                            "records": [{
-                                "id": rec_id,
-                                "fields": {
-                                    "DATE": datetime.now(timezone.utc).isoformat(),
-                                    "UPDATE": False
-                                }
-                            }]
-                        }
-                        try:
-                            await grist_manager.patch_data(MTLGrist.MTL_admin_panel, update_data)
-                            logger.info(f"Grist webhook: запись обновлена для id={rec_id}")
-                        except Exception as e:
-                            logger.error(f"Grist webhook: ошибка обновления: {e}")
+        logger.info('Grist webhook: UPDATE is not True or KEY is missing, skipping')
+
     # Всегда отвечаем 200 OK
     return jsonify({"status": "accepted"})
 
