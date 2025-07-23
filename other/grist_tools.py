@@ -3,6 +3,9 @@ import json
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 from loguru import logger
+from stellar_sdk import StrKey, ServerAsync
+from stellar_sdk.client.aiohttp_client import AiohttpClient
+
 from other.cache_tools import async_cache_with_ttl, AsyncTTLCache
 
 from db.sql_models import User
@@ -171,6 +174,63 @@ class GristAPI:
         except Exception as e:
             logger.warning(f"Ошибка при загрузке данных из таблицы {table.table_name}: {e}")
             return None
+
+
+async def update_mtl_shareholders_balance():
+    """
+    Обновляет балансы MTL и MTLRECT для всех акционеров в таблице MTL_shareholders.
+    """
+    logger.info("Запуск обновления балансов акционеров MTL.")
+    try:
+        shareholders = await grist_manager.load_table_data(MTLGrist.MTL_shareholders)
+        if not shareholders:
+            logger.info("В таблице MTL_shareholders не найдено акционеров.")
+            return
+
+        updates = []
+        async with ServerAsync("https://horizon.stellar.org", client=AiohttpClient()) as server:
+            for shareholder in shareholders:
+                stellar_address = shareholder.get('stellar')
+                current_balance = shareholder.get('MTL') or 0
+                new_balance = 0
+
+                if stellar_address and StrKey.is_valid_ed25519_public_key(stellar_address):
+                    try:
+                        # Используем server.accounts() для получения данных об аккаунте
+                        account_details = await server.accounts().account_id(stellar_address).call()
+                        balances = account_details.get('balances', [])
+
+                        mtl_balance = 0.0
+                        mtlrect_balance = 0.0
+                        for balance in balances:
+                            if balance.get('asset_code') == 'MTL':
+                                mtl_balance = float(balance.get('balance', 0.0))
+                            elif balance.get('asset_code') == 'MTLRECT':
+                                mtlrect_balance = float(balance.get('balance', 0.0))
+
+                        new_balance = round(mtl_balance + mtlrect_balance)
+
+                    except Exception as e:
+                        # Обработка случаев, когда аккаунт не найден (например, 404)
+                        logger.warning(f"Не удалось получить данные для {stellar_address}: {e}")
+                        new_balance = 0
+
+                if current_balance != new_balance:
+                    updates.append({
+                        "id": shareholder['id'],
+                        "fields": {"MTL": new_balance}
+                    })
+
+        if updates:
+            logger.info(f"Найдено {len(updates)} акционеров для обновления.")
+            update_data = {"records": updates}
+            await grist_manager.patch_data(MTLGrist.MTL_shareholders, update_data)
+            logger.info("Балансы акционеров MTL успешно обновлены.")
+        else:
+            logger.info("Обновление балансов акционеров MTL не требуется.")
+
+    except Exception as e:
+        logger.error(f"Произошла ошибка при обновлении балансов акционеров MTL: {e}")
 
 
 # Конфигурация
@@ -371,4 +431,4 @@ async def load_users_from_grist(account_ids: List[str]) -> Dict[str, User]:
 
 if __name__ == '__main__':
     # asyncio.run(main())
-    print(asyncio.run(get_secretaries()))
+    print(asyncio.run(update_mtl_shareholders_balance()))
