@@ -4,7 +4,6 @@ import json
 from datetime import datetime
 
 import jsonpickle
-import requests
 from loguru import logger
 from quart import session, flash
 from stellar_sdk import (
@@ -47,7 +46,7 @@ def get_key_sort(key, idx=1):
     return key[idx]
 
 
-def check_publish_state(tx_hash: str) -> (int, str):
+async def check_publish_state(tx_hash: str) -> (int, str):
     """
     Checks the status of a transaction on the Horizon network.
 
@@ -64,23 +63,27 @@ def check_publish_state(tx_hash: str) -> (int, str):
         - 1: Found and successful.
         - 10: Found but failed.
     """
-    rq = requests.get(f'https://horizon.stellar.org/transactions/{tx_hash}')
-    if rq.status_code == 200:
-        date = rq.json()['created_at'].replace('T', ' ').replace('Z', '')
-        with db_pool() as db_session:
-            transaction = db_session.query(Transactions).filter(Transactions.hash == tx_hash).first()
-            if transaction and transaction.state != 2:
-                transaction.state = 2
-                db_session.commit()
-        if rq.json()['successful']:
-            return 1, date
+    try:
+        response = await http_session_manager.get_web_request(
+            "GET", f'https://horizon.stellar.org/transactions/{tx_hash}', return_type="json"
+        )
+        if response.status == 200:
+            data = response.data
+            date = data['created_at'].replace('T', ' ').replace('Z', '')
+            with db_pool() as db_session:
+                transaction = db_session.query(Transactions).filter(Transactions.hash == tx_hash).first()
+                if transaction and transaction.state != 2:
+                    transaction.state = 2
+                    db_session.commit()
+            if data['successful']:
+                return 1, date
+            else:
+                return 10, date
         else:
-            return 10, date
-    else:
+            return 0, 'Unknown'
+    except Exception as e:
+        logger.warning(f"Error checking publish state: {e}")
         return 0, 'Unknown'
-
-    # !pip install urllib3 --upgrade
-    # !pip install requests --upgrade
 
 
 def decode_xdr_from_base64(xdr):
@@ -334,40 +337,66 @@ async def asset_to_link(operation_asset) -> str:
         return f'<a href="{start_url}/{operation_asset.code}-{operation_asset.issuer}" target="_blank">{operation_asset.code}{star}</a>'
 
 
-def check_asset(asset, cash: dict):
+async def check_asset(asset, cash: dict):
     try:
         if f"{asset.code}-{asset.issuer}" in cash.keys():
             r = cash[f"{asset.code}-{asset.issuer}"]
         else:
-            r = requests.get(
-                f'https://horizon.stellar.org/assets?asset_code={asset.code}&asset_issuer={asset.issuer}').json()
+            response = await http_session_manager.get_web_request(
+                "GET", f'https://horizon.stellar.org/assets?asset_code={asset.code}&asset_issuer={asset.issuer}',
+                return_type="json"
+            )
+            if response.status == 200:
+                r = response.data
+            else:
+                r = {"_embedded": {"records": []}}
             cash[f"{asset.code}-{asset.issuer}"] = r
         if r["_embedded"]["records"]:
             return ''
-    except:
+    except Exception as e:
+        logger.warning(f"Error checking asset: {e}")
         pass
     return f"<div style=\"color: red;\">Asset {asset.code} not exist ! </div>"
 
 
-def get_account(account_id, cash):
+async def get_account(account_id, cash):
     if account_id in cash.keys():
         r = cash[account_id]
     else:
-        r = requests.get('https://horizon.stellar.org/accounts/' + account_id).json()
-        if r.get('id'):
-            cash[account_id] = r
-        else:
+        try:
+            response = await http_session_manager.get_web_request(
+                "GET", 'https://horizon.stellar.org/accounts/' + account_id, return_type="json"
+            )
+            if response.status == 200:
+                r = response.data
+                cash[account_id] = r
+            else:
+                cash[account_id] = {'balances': []}
+                r = cash[account_id]
+        except Exception as e:
+            logger.warning(f"Error getting account {account_id}: {e}")
             cash[account_id] = {'balances': []}
             r = cash[account_id]
     return r
 
 
-def get_offers(account_id, cash):
+async def get_offers(account_id, cash):
     if f'{account_id}-offers' in cash.keys():
         r = cash[f'{account_id}-offers']
     else:
-        r = requests.get(f'https://horizon.stellar.org/accounts/{account_id}/offers').json()
-        cash[f'{account_id}-offers'] = r
+        try:
+            response = await http_session_manager.get_web_request(
+                "GET", f'https://horizon.stellar.org/accounts/{account_id}/offers', return_type="json"
+            )
+            if response.status == 200:
+                r = response.data
+            else:
+                r = {'_embedded': {'records': []}}
+            cash[f'{account_id}-offers'] = r
+        except Exception as e:
+            logger.warning(f"Error getting offers for {account_id}: {e}")
+            cash[f'{account_id}-offers'] = {'_embedded': {'records': []}}
+            r = cash[f'{account_id}-offers']
     return r
 
 
@@ -492,7 +521,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                      for tx in same_sequence_txs]
             result.append(f"<div style=\"color: orange;\">Другие транзакции с этим sequence: {', '.join(links)} </div>")
 
-    server_sequence = int(get_account(transaction.transaction.source.account_id, cash)['sequence'])
+    server_sequence = int((await get_account(transaction.transaction.source.account_id, cash))['sequence'])
     expected_sequence = server_sequence + 1
 
     if sequence != expected_sequence:
@@ -553,10 +582,10 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                 f"    Перевод {operation.amount} {await asset_to_link(operation.asset)} на аккаунт {address_id_to_link(operation.destination.account_id)}")
             if operation.asset.code != 'XLM':
                 # check valid asset
-                result.append(check_asset(operation.asset, cash))
+                result.append(await check_asset(operation.asset, cash))
                 # check trust line
                 if operation.destination.account_id != operation.asset.issuer:
-                    destination_account = get_account(operation.destination.account_id, cash)
+                    destination_account = await get_account(operation.destination.account_id, cash)
                     asset_found = any(
                         balance.get('asset_code') == operation.asset.code for balance in
                         destination_account['balances'])
@@ -565,14 +594,14 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                 source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
                 # check balance
                 if source_id != operation.asset.issuer:
-                    source_account = get_account(source_id, cash)
+                    source_account = await get_account(source_id, cash)
                     source_sum = sum(float(balance.get('balance')) for balance in source_account['balances'] if
                                      balance.get('asset_code') == operation.asset.code)
                     if source_sum < float(operation.amount):
                         result.append(f"<div style=\"color: red;\">Not enough balance ! </div>")
 
                 # check sale
-                source_sale = get_offers(source_id, cash)
+                source_sale = await get_offers(source_id, cash)
                 sale_found = any(
                     record['selling'].get('asset_code') == operation.asset.code for record in
                     source_sale['_embedded']['records'])
@@ -609,7 +638,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                         f"    Открываем линию доверия к пулу {pool_id_to_link(operation.asset.liquidity_pool_id)} {await asset_to_link(operation.asset.asset_a)}/{await asset_to_link(operation.asset.asset_b)}")
             else:
                 # check valid asset
-                result.append(check_asset(operation.asset, cash))
+                result.append(await check_asset(operation.asset, cash))
                 if operation.asset.issuer == source_id:
                     result.append(f"<div style=\"color: red;\">MELFORMET You can`t open trustline for yourself! </div>")
 
@@ -629,8 +658,8 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
         if type(operation).__name__ == "ManageSellOffer":
             data_exist = True
             # check valid asset
-            result.append(check_asset(operation.selling, cash))
-            result.append(check_asset(operation.buying, cash))
+            result.append(await check_asset(operation.selling, cash))
+            result.append(await check_asset(operation.buying, cash))
 
             result.append(
                 f"    Офер на продажу {operation.amount} {await asset_to_link(operation.selling)} по цене {operation.price.n / operation.price.d} {await asset_to_link(operation.buying)}")
@@ -639,7 +668,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                     f"    Номер офера <a href=\"https://stellar.expert/explorer/public/offer/{operation.offer_id}\">{operation.offer_id}</a>")
             # check balance тут надо проверить сумму
             source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
-            source_account = get_account(source_id, cash)
+            source_account = await get_account(source_id, cash)
             selling_asset_code = operation.selling.code if hasattr(operation.selling, 'code') else 'XLM'
             selling_sum = sum(
                 float(balance.get('balance')) for balance in source_account['balances']
@@ -657,7 +686,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             result.append(
                 f"    Пассивный офер на продажу {operation.amount} {await asset_to_link(operation.selling)} по цене {operation.price.n / operation.price.d} {await asset_to_link(operation.buying)}")
             source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
-            source_account = get_account(source_id, cash)
+            source_account = await get_account(source_id, cash)
             selling_asset_code = operation.selling.code if hasattr(operation.selling, 'code') else 'XLM'
             selling_sum = sum(
                 float(balance.get('balance')) for balance in source_account['balances']
@@ -672,8 +701,8 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
         if type(operation).__name__ == "ManageBuyOffer":
             data_exist = True
             # check valid asset
-            result.append(check_asset(operation.selling, cash))
-            result.append(check_asset(operation.buying, cash))
+            result.append(await check_asset(operation.selling, cash))
+            result.append(await check_asset(operation.buying, cash))
 
             result.append(
                 f"    Офер на покупку {operation.amount} {await asset_to_link(operation.buying)} по цене {operation.price.n / operation.price.d} {await asset_to_link(operation.selling)}")
@@ -682,7 +711,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                     f"    Номер офера <a href=\"https://stellar.expert/explorer/public/offer/{operation.offer_id}\">{operation.offer_id}</a>")
 
             source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
-            source_account = get_account(source_id, cash)
+            source_account = await get_account(source_id, cash)
             selling_asset_code = operation.selling.code if hasattr(operation.selling,
                                                                    'code') else 'XLM'  # Учитываем, что XLM не имеет code
             required_amount_to_spend = float(operation.amount) * (operation.price.n / operation.price.d)
@@ -702,8 +731,8 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
         if type(operation).__name__ == "PathPaymentStrictSend":
             data_exist = True
             # check valid asset
-            result.append(check_asset(operation.send_asset, cash))
-            result.append(check_asset(operation.dest_asset, cash))
+            result.append(await check_asset(operation.send_asset, cash))
+            result.append(await check_asset(operation.dest_asset, cash))
 
             result.append(
                 f"    Покупка {address_id_to_link(operation.destination.account_id)}, шлем {await asset_to_link(operation.send_asset)} {operation.send_amount} в обмен на {await asset_to_link(operation.dest_asset)} min {operation.dest_min} ")
@@ -711,8 +740,8 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
         if type(operation).__name__ == "PathPaymentStrictReceive":
             data_exist = True
             # check valid asset
-            result.append(check_asset(operation.send_asset, cash))
-            result.append(check_asset(operation.dest_asset, cash))
+            result.append(await check_asset(operation.send_asset, cash))
+            result.append(await check_asset(operation.dest_asset, cash))
             result.append(
                 f"    Продажа {address_id_to_link(operation.destination.account_id)}, Получаем {await asset_to_link(operation.send_asset)} max {operation.send_max} в обмен на {await asset_to_link(operation.dest_asset)} {operation.dest_amount} ")
             continue
@@ -735,7 +764,8 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             #   "auth_immutable": false,
             #   "auth_clawback_enabled": true
             # },
-            if get_account(operation.asset.issuer, cash).get('flags', {}).get('auth_required'):
+            issuer_account = await get_account(operation.asset.issuer, cash)
+            if issuer_account.get('flags', {}).get('auth_required'):
                 pass
             else:
                 result.append(f"    <div style=\"color: red;\">issuer {address_id_to_link(operation.asset.issuer)} "
@@ -1620,9 +1650,6 @@ async def create_sep7_auth_transaction(domain: str, nonce: str, callback: str) -
 
     # Возвращаем URI вместо XDR
     return t.to_uri()
-
-
-
 
 
 if __name__ == '__main__':
