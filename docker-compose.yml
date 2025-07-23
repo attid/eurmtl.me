@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  eurmtl:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./log:/app/log
+      - ./static/qr:/app/static/qr
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Для разработки - монтируем код как volume
+  eurmtl-dev:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - DEBUG=1
+    volumes:
+      - .:/app
+    command: ["uv", "run", "python", "start.py"]
+    restart: "no"
+    profiles:
+      - dev
