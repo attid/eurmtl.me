@@ -5,7 +5,7 @@ from random import shuffle
 
 from loguru import logger
 from quart import Markup, jsonify, Blueprint, request, render_template, flash, session, redirect, abort, url_for
-from sqlalchemy import func
+from sqlalchemy import func, text
 from stellar_sdk import DecoratedSignature, Keypair, Network, TransactionEnvelope
 from stellar_sdk.exceptions import BadSignatureError
 from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr

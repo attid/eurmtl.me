@@ -18,7 +18,7 @@ async def grist_tg_info():  #
 # js points
 
 
-from db.mongo import get_all_chats_by_user
+#from db.mongo import get_all_chats_by_user
 
 
 @blueprint.route('/grist/groups/<user_id>', methods=('GET',))
@@ -37,7 +37,7 @@ async def grist_tg_info_groups(user_id):
     # Получаем данные о чатах пользователя
     try:
         user_id_int = int(user_id)
-        chats = await get_all_chats_by_user(user_id_int)
+        chats = [] # await get_all_chats_by_user(user_id_int)
 
         # Подготавливаем данные для шаблона
         chat_data = []

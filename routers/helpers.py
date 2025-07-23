@@ -4,7 +4,6 @@ import uuid
 from datetime import datetime, timedelta
 from urllib.parse import quote_plus
 
-import pyqrcode
 from loguru import logger
 from quart import Blueprint, request, render_template, flash, session, jsonify
 
@@ -49,9 +48,8 @@ async def cmd_seller(account_id):
                    f'&asset_code=EURMTL&asset_issuer=GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V'
                    f'{memo_text}')
 
-        qr_img = f'/static/qr/{uuid.uuid4().hex}.svg'
-        qr = pyqrcode.create(qr_text)
-        qr.svg(start_path + qr_img, scale=6)
+        qr_img = f'/static/qr/{uuid.uuid4().hex}.png'
+        create_beautiful_code(qr_img, f'EURMTL {sale_sum}', qr_text)
 
         resp = await render_template('seller.html', memo_text='', sale_sum='',
                                      qr_text=qr_text, qr_img=qr_img)
