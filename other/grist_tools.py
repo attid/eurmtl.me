@@ -208,7 +208,7 @@ async def update_mtl_shareholders_balance():
                             elif balance.get('asset_code') == 'MTLRECT':
                                 mtlrect_balance = float(balance.get('balance', 0.0))
 
-                        new_balance = round(mtl_balance + mtlrect_balance)
+                        new_balance = round(mtl_balance + mtlrect_balance, 2)
 
                     except Exception as e:
                         # Обработка случаев, когда аккаунт не найден (например, 404)
