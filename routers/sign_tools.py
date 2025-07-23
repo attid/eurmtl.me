@@ -3,7 +3,6 @@ import os
 from datetime import datetime
 from random import shuffle
 
-import requests
 from loguru import logger
 from quart import Markup, jsonify, Blueprint, request, render_template, flash, session, redirect, abort, url_for
 from sqlalchemy import func
@@ -20,6 +19,7 @@ from other.grist_tools import load_users_from_grist
 from other.stellar_tools import (decode_xdr_to_text, check_publish_state, check_user_in_sign,
                                  add_transaction, update_transaction_sources)
 from other.telegram_tools import skynet_bot
+from other.web_tools import http_session_manager
 
 blueprint = Blueprint('sign_tools', __name__)
 
@@ -232,13 +232,16 @@ async def show_transaction(tr_hash):
                 shuffle(transaction_env.signatures)
                 await flash('Signatures shuffled', 'good')
 
-            transaction_resp = requests.post('https://horizon.stellar.org/transactions/',
-                                             data={"tx": transaction_env.to_xdr()})
-            if transaction_resp.status_code == 200:
-                await flash(f'Successfully sent, accepted : {transaction_resp.json()["successful"]}', 'good')
+            transaction_resp = await http_session_manager.get_web_request(
+                'POST',
+                'https://horizon.stellar.org/transactions/',
+                data={"tx": transaction_env.to_xdr()}
+            )
+            if transaction_resp.status == 200:
+                await flash(f'Successfully sent, accepted : {transaction_resp.data["successful"]}', 'good')
             else:
-                await flash(f'Failed to send. {transaction_resp.json()["extras"]["result_codes"]}')
-                result_codes = transaction_resp.json().get("extras", {}).get("result_codes", {})
+                await flash(f'Failed to send. {transaction_resp.data["extras"]["result_codes"]}')
+                result_codes = transaction_resp.data.get("extras", {}).get("result_codes", {})
                 operation_results = result_codes.get("operations", [])
 
                 # Находим первую операцию, которая не является 'op_success'
@@ -261,7 +264,7 @@ async def show_transaction(tr_hash):
                                  bad_signers=set(bad_signers), signatures=signatures,
                                  signers_table=signers_table, uuid=transaction.uuid, alert=alert,
                                  tx_full=transaction_env.to_xdr(), admin_weight=admin_weight,
-                                 publish_state=check_publish_state(transaction.hash))
+                                 publish_state=await check_publish_state(transaction.hash))
     return resp
 
 

@@ -21,7 +21,7 @@ async def manage_data():
 
     if account_id:
         cash = {}
-        account = get_account(account_id, cash)
+        account = await get_account(account_id, cash)
         data = account.get('data', {})
 
         for key in data.keys():

@@ -2,7 +2,6 @@ import asyncio
 import json
 from loguru import logger
 
-import requests
 from quart import Blueprint, request, render_template, jsonify, session
 from stellar_sdk import Server
 from stellar_sdk.utils import is_valid_hash
@@ -10,8 +9,9 @@ from stellar_sdk.utils import is_valid_hash
 from db.sql_models import Transactions
 from db.sql_pool import db_pool
 from other.grist_tools import MTLGrist, grist_manager
-from other.stellar_tools import (decode_data_value, float2str, decode_xdr_to_base64,
-                                 stellar_build_xdr, decode_asset, is_valid_base64, update_memo_in_xdr)
+from other.stellar_tools import (decode_xdr_to_base64, stellar_build_xdr, decode_asset,
+                                 is_valid_base64, update_memo_in_xdr, decode_data_value, float2str)
+from other.web_tools import http_session_manager
 
 blueprint = Blueprint('lab', __name__)
 
@@ -50,13 +50,17 @@ async def cmd_mtl_accounts():
             result[f"{account['description']} {account_id[:4]}..{account_id[-4:]}"] = account_id
 
         return jsonify(result)
+    return None
 
 
 @blueprint.route('/lab/sequence/<account_id>')
 async def cmd_sequence(account_id):
     try:
-        r = requests.get('https://horizon.stellar.org/accounts/' + account_id).json()
-        sequence = int(r['sequence']) + 1
+        response = await http_session_manager.get_web_request('GET', f'https://horizon.stellar.org/accounts/{account_id}')
+        if response.status == 200:
+            sequence = int(response.data['sequence']) + 1
+        else:
+            sequence = 0
     except:
         sequence = 0
     return jsonify({'sequence': str(sequence)})
@@ -84,6 +88,7 @@ async def cmd_mtl_assets():
         result["XLM"] = "XLM"
 
         return jsonify(result)
+    return None
 
 
 @blueprint.route('/lab/mtl_pools', methods=['GET'])
@@ -106,6 +111,7 @@ async def cmd_mtl_pools():
             result[key] = value
 
         return jsonify(result)
+    return None
 
 
 @blueprint.route('/lab/build_xdr', methods=['POST'])
