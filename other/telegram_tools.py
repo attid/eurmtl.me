@@ -1,11 +1,11 @@
 import hashlib
 import hmac
 import urllib.parse
-import requests
 from aiogram import Bot
 from sulguk import AiogramSulgukMiddleware
 
 from other.config_reader import config
+from other.web_tools import http_session_manager
 
 skynet_bot = Bot(token=config.skynet_token.get_secret_value())
 mmwb_bot = Bot(token=config.mmwb_token.get_secret_value())
@@ -13,7 +13,7 @@ skynet_bot.session.middleware(AiogramSulgukMiddleware())
 mmwb_bot.session.middleware(AiogramSulgukMiddleware())
 
 
-def send_telegram_message_(chat_id, text, entities=None):
+async def send_telegram_message_(chat_id, text, entities=None):
     """
     Sends a Telegram message to the specified chat.
 
@@ -36,16 +36,20 @@ def send_telegram_message_(chat_id, text, entities=None):
     else:
         data['parse_mode'] = 'HTML'
 
-    response = requests.post(url, json=data)
-    if response.ok:
-        # print(f'Sending message: {data}')
-        # print(f'Message sent successfully: {response.json()}')
-        return response.json()['result']['message_id']
-    else:
-        print(f'Failed to send message: {response.content}')
+    try:
+        response = await http_session_manager.get_web_request('POST', url, json=data)
+        if response.status == 200:
+            # print(f'Sending message: {data}')
+            # print(f'Message sent successfully: {response.data}')
+            return response.data['result']['message_id']
+        else:
+            print(f'Failed to send message: {response.data}')
+    except Exception as e:
+        print(f'Error sending message: {e}')
+        return None
 
 
-def edit_telegram_message_(chat_id, message_id, text, reply_markup=None, entities=None,
+async def edit_telegram_message_(chat_id, message_id, text, reply_markup=None, entities=None,
                            config_token=config.skynet_token):
     """
     Edit a message in the Telegram chat.
@@ -78,27 +82,31 @@ def edit_telegram_message_(chat_id, message_id, text, reply_markup=None, entitie
     else:
         data['parse_mode'] = 'HTML'
 
-    response = requests.post(url, json=data)
-    if response.ok:
-        # print(f'Sending message: {data}')
-        # print(f'Message sent successfully: {response.json()}')
-        return True
-    else:
-        print(f'Failed to edit message: {response.content}')
+    try:
+        response = await http_session_manager.get_web_request('POST', url, json=data)
+        if response.status == 200:
+            # print(f'Sending message: {data}')
+            # print(f'Message sent successfully: {response.data}')
+            return True
+        else:
+            print(f'Failed to edit message: {response.data}')
+            return False
+    except Exception as e:
+        print(f'Error editing message: {e}')
         return False
 
 
-def is_bot_admin(chat_id):
+async def is_bot_admin(chat_id):
     """
     Проверяет, является ли бот администратором в чате.
     :param chat_id: ID чата.
     :return: True, если бот является администратором, иначе False.
     """
     # token = config.skynet_token.get_secret_value()
-    return is_user_admin(chat_id, skynet_bot.id)  # user_id бота можно получить из его токена
+    return await is_user_admin(chat_id, skynet_bot.id)  # user_id бота можно получить из его токена
 
 
-def is_user_admin(chat_id, user_id):
+async def is_user_admin(chat_id, user_id):
     """
     Проверяет, является ли пользователь администратором в чате.
     :param chat_id: ID чата.
@@ -115,12 +123,21 @@ def is_user_admin(chat_id, user_id):
         'chat_id': chat_id,
         'user_id': user_id
     }
-    response = requests.get(url, params=params)
-    if response.ok:
-        chat_member = response.json()['result']
-        return chat_member['status'] in ['administrator', 'creator']
-    else:
-        print(f'Ошибка при проверке статуса пользователя: {response.content}')
+
+    try:
+        # Формируем URL с параметрами для GET-запроса
+        query_string = '&'.join([f'{k}={v}' for k, v in params.items()])
+        full_url = f'{url}?{query_string}'
+
+        response = await http_session_manager.get_web_request('GET', full_url)
+        if response.status == 200:
+            chat_member = response.data['result']
+            return chat_member['status'] in ['administrator', 'creator']
+        else:
+            print(f'Ошибка при проверке статуса пользователя: {response.data}')
+            return False
+    except Exception as e:
+        print(f'Error checking user admin status: {e}')
         return False
 
 
