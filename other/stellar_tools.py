@@ -521,7 +521,11 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                      for tx in same_sequence_txs]
             result.append(f"<div style=\"color: orange;\">Другие транзакции с этим sequence: {', '.join(links)} </div>")
 
-    server_sequence = int((await get_account(transaction.transaction.source.account_id, cash))['sequence'])
+    account_info = await get_account(transaction.transaction.source.account_id, cash)
+    if 'sequence' not in account_info:
+        result.append('<div style="color: red;">Аккаунт не найден или не содержит sequence</div>')
+        return result
+    server_sequence = int(account_info['sequence'])
     expected_sequence = server_sequence + 1
 
     if sequence != expected_sequence:

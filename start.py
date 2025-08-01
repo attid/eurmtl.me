@@ -104,4 +104,14 @@ async def before_request():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
+    if config.test_mode:
+        app.run(host="0.0.0.0", port=8000, debug=True)
+    else:
+        import uvicorn
+        try:
+            import uvloop
+            uvloop.install()  # Заменяет стандартный event loop
+        except ImportError:
+            pass  # Если uvloop не установлен, используем стандартный
+        uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False)
+

@@ -77,7 +77,7 @@ class HTTPSessionManager:
                 # Определяем, как обрабатывать ответ
                 if return_type == "bytes":
                     response_data = await response.read()
-                elif "application/json" in content_type or return_type == "json":
+                elif ("json" in content_type) or return_type == "json":
                     response_data = await response.json()
                 else: # Default to text
                     response_data = await response.text()
