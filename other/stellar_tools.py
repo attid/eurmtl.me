@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 import jsonpickle
 from loguru import logger
@@ -544,9 +544,19 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
 
     if (transaction.transaction.preconditions and transaction.transaction.preconditions.time_bounds and
             transaction.transaction.preconditions.time_bounds.max_time > 0):
-        human_readable_time = datetime.utcfromtimestamp(
-            transaction.transaction.preconditions.time_bounds.max_time).strftime('%d.%m.%Y %H:%M:%S')
-        result.append(f"MaxTime ! {human_readable_time} UTC")
+        max_time_ts = transaction.transaction.preconditions.time_bounds.max_time
+        max_time_dt = datetime.fromtimestamp(max_time_ts, tz=timezone.utc)
+        now_dt = datetime.now(timezone.utc)
+        
+        human_readable_time = max_time_dt.strftime('%d.%m.%Y %H:%M:%S')
+        
+        color = ""
+        if max_time_dt < now_dt:
+            color = 'style="color: red;"' # Время прошло
+        elif max_time_dt.date() == now_dt.date():
+            color = 'style="color: orange;"' # Время сегодня
+            
+        result.append(f'<span {color}>MaxTime ! {human_readable_time} UTC</span>')
 
     result.append(f"Операции с аккаунта {address_id_to_link(transaction.transaction.source.account_id)}")
     #    if transaction.transaction.memo.__class__ == TextMemo:
