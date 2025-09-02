@@ -7,6 +7,8 @@ from typing import Optional, Dict, Any, Union, Tuple
 from loguru import logger
 from quart import jsonify as quart_jsonify
 
+DEFAULT_TIMEOUT = 10
+
 # Датакласс для ответа
 @dataclass
 class WebResponse:
@@ -33,7 +35,8 @@ class HTTPSessionManager:
             ):
                 if self.session and not self.session.closed:
                     await self.session.close()
-                self.session = aiohttp.ClientSession()
+                timeout = aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
+                self.session = aiohttp.ClientSession(timeout=timeout)
                 self.session_start_time = current_time
                 logger.info("Сессия создана или пересоздана.")
             return self.session
@@ -67,9 +70,16 @@ class HTTPSessionManager:
         session = await self.get_session()
         start_time = time.monotonic()
 
+        timeout = aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
+
         try:
             async with session.request(
-                    method.upper(), url, json=json, headers=headers, data=data
+                    method.upper(),
+                    url,
+                    json=json,
+                    headers=headers,
+                    data=data,
+                    timeout=timeout,
             ) as response:
                 content_type = response.headers.get("Content-Type", "")
                 elapsed_time = time.monotonic() - start_time
@@ -79,7 +89,7 @@ class HTTPSessionManager:
                     response_data = await response.read()
                 elif ("json" in content_type) or return_type == "json":
                     response_data = await response.json()
-                else: # Default to text
+                else:  # Default to text
                     response_data = await response.text()
 
                 return WebResponse(
@@ -88,6 +98,9 @@ class HTTPSessionManager:
                     headers=dict(response.headers),
                     elapsed_time=elapsed_time,
                 )
+        except asyncio.TimeoutError:
+            elapsed_time = time.monotonic() - start_time
+            return WebResponse(status=408, data="Request timed out", elapsed_time=elapsed_time)
         except aiohttp.ClientError as e:
             raise Exception(f"Ошибка при выполнении запроса: {e}")
 
