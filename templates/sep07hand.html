@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <title>Ручная авторизация SEP-07</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+            font-family: monospace;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .step {
+            margin-bottom: 30px;
+            padding: 15px;
+            border-left: 4px solid #007bff;
+            background-color: #f8f9fa;
+        }
+        .step h3 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        .hidden {
+            display: none;
+        }
+        .success {
+            color: #28a745;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .error {
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Ручная авторизация SEP-07</h1>
+        
+        <div id="step1" class="step">
+            <h3>Шаг 1: Введите Stellar URI</h3>
+            <div class="form-group">
+                <label for="uri">Stellar URI (ссылка типа web+stellar:tx?...):</label>
+                <textarea id="uri" placeholder="web+stellar:tx?xdr=AAAAAgAAAAA%2FHWyX8fwoUZSqStT7Am3ezdktyPTkutQ%2F%2B5GWy%2BTJAAAAAMgAAAAAAAAAAQAAAAEAAAAAaLra2gAAAABoutwGAAAAAAAAAAIAAAAAAAAACgAAAApic24uZXhwZXJ0AAAAAAABAAAAEGQ3YTQxYWYwODk5NjZjNmMAAAAAAAAACgAAAA93ZWJfYXV0aF9kb21haW4AAAAAAQAAAApic24uZXhwZXJ0AAAAAAAAAAAAAcvkyQAAAABAZY5Z3ZhDHm5iUSYMPNXoyWGY8mX3%2F61kxDrISzIzi1JkxTJDKPkkwKO7HBTH1XlagyMDunbItVJpG9JlvymMCw%3D%3D&replace=sourceAccount%3AX%3BX%3Aaccount+to+authenticate&callback=url%3Ahttps%3A%2F%2Fbsn.expert%2Flogin%2Fcallback&msg=bsn.expert+auth&origin_domain=bsn.expert&signature=JLTn2cxrZia3E6wfh07ltnXf5w05GrMxvIs7Pec5UHT7nnzI1mvAz5R6TwHduAjo2ThKOc8iWaMoQxcyScz%2FDw%3D%3D"></textarea>
+            </div>
+            <button onclick="parseURI()">Парсить URI</button>
+        </div>
+
+        <div id="step2" class="step hidden">
+            <h3>Шаг 2: Введите ваш адрес</h3>
+            <div class="form-group">
+                <label for="account">Ваш Stellar адрес (G...):</label>
+                <input type="text" id="account" placeholder="GABCD...XYZ">
+            </div>
+            <button onclick="generateXDR()">Сгенерировать XDR для подписи</button>
+        </div>
+
+        <div id="step3" class="step hidden">
+            <h3>Шаг 3: XDR для подписи</h3>
+            <div class="form-group">
+                <label for="xdrToSign">Скопируйте этот XDR и подпишите в Stellar Laboratory:</label>
+                <textarea id="xdrToSign" readonly></textarea>
+            </div>
+            <p><strong>Инструкция:</strong></p>
+            <ol>
+                <li>Скопируйте XDR выше</li>
+                <li>Перейдите в <a href="https://laboratory.stellar.org/#xdr-viewer?network=public" target="_blank">Stellar Laboratory</a></li>
+                <li>Вставьте XDR в поле "Transaction XDR"</li>
+                <li>Нажмите "Sign Transaction"</li>
+                <li>Введите ваш приватный ключ и нажмите "Sign"</li>
+                <li><strong>ВАЖНО:</strong> После подписи появится секция "Signed Transaction XDR" - скопируйте XDR оттуда</li>
+                <li>Либо нажмите "Copy Signed Transaction" если есть такая кнопка</li>
+            </ol>
+            <div class="form-group">
+                <label for="signedXdrPreview">Или вставьте подписанный XDR прямо здесь для проверки:</label>
+                <textarea id="signedXdrPreview" placeholder="Вставьте подписанный XDR из Stellar Laboratory..."></textarea>
+                <button onclick="previewSignedXDR()">Проверить подписанный XDR</button>
+            </div>
+        </div>
+
+        <div id="step4" class="step hidden">
+            <h3>Шаг 4: Введите подписанный XDR</h3>
+            <div class="form-group">
+                <label for="signedXdr">Подписанный XDR:</label>
+                <textarea id="signedXdr" placeholder="Вставьте подписанный XDR..."></textarea>
+            </div>
+            <button onclick="submitSigned()">Отправить на callback</button>
+        </div>
+
+        <div id="step5" class="step hidden">
+            <h3>Шаг 5: Результат</h3>
+            <div id="result"></div>
+        </div>
+    </div>
+
+    <script>
+        let callbackUrl = '';
+
+        async function parseURI() {
+            const uri = document.getElementById('uri').value.trim();
+            if (!uri) {
+                showError('Пожалуйста, введите Stellar URI');
+                return;
+            }
+
+            const currentStep = document.querySelector('.step:not(.hidden)');
+            showLoading(currentStep.id);
+            
+            try {
+                const response = await fetch('/remote/sep07/parse-uri', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ uri })
+                });
+
+                const data = await response.json();
+                
+                if (data.SUCCESS) {
+                    callbackUrl = data.callback_url;
+                    showStep('step2');
+                    showSuccess('URI успешно обработан. Введите ваш Stellar адрес.');
+                } else {
+                    showError(data.message || 'Ошибка при обработке URI');
+                }
+            } catch (error) {
+                showError('Ошибка сети: ' + error.message);
+            } finally {
+                const currentStep = document.querySelector('.step:not(.hidden)');
+                hideLoading(currentStep.id);
+            }
+        }
+
+        async function generateXDR() {
+            const account = document.getElementById('account').value.trim();
+            const uri = document.getElementById('uri').value.trim();
+            
+            if (!account) {
+                showError('Пожалуйста, введите ваш Stellar адрес');
+                return;
+            }
+
+            if (!account.startsWith('G')) {
+                showError('Stellar адрес должен начинаться с G');
+                return;
+            }
+
+            const currentStep = document.querySelector('.step:not(.hidden)');
+            showLoading(currentStep.id);
+            
+            try {
+                const response = await fetch('/remote/sep07/parse-uri', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ uri, account })
+                });
+
+                const data = await response.json();
+                
+                if (data.SUCCESS) {
+                    document.getElementById('xdrToSign').value = data.xdr;
+                    showStep('step3');
+                    showSuccess('XDR сгенерирован для вашего адреса');
+                } else {
+                    showError(data.message || 'Ошибка при генерации XDR');
+                }
+            } catch (error) {
+                showError('Ошибка сети: ' + error.message);
+            } finally {
+                const currentStep = document.querySelector('.step:not(.hidden)');
+                hideLoading(currentStep.id);
+            }
+        }
+
+        async function submitSigned() {
+            const signedXdr = document.getElementById('signedXdr').value.trim();
+            
+            if (!signedXdr) {
+                showError('Пожалуйста, введите подписанный XDR');
+                return;
+            }
+
+            if (!callbackUrl) {
+                showError('Callback URL не найден. Начните заново.');
+                return;
+            }
+
+            const currentStep = document.querySelector('.step:not(.hidden)');
+            showLoading(currentStep.id);
+            
+            try {
+                const response = await fetch('/remote/sep07/submit-signed', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        signed_xdr: signedXdr, 
+                        callback_url: callbackUrl 
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (data.SUCCESS) {
+                    showStep('step5');
+                    showSuccess('Успешно отправлено на callback!<br>Ответ сервера: ' + data.callback_response);
+                } else {
+                    showStep('step5');
+                    showError('Ошибка при отправке: ' + data.message + '<br>Ответ сервера: ' + (data.callback_response || ''));
+                }
+            } catch (error) {
+                showStep('step5');
+                showError('Ошибка сети: ' + error.message);
+            } finally {
+                const currentStep = document.querySelector('.step:not(.hidden)');
+                hideLoading(currentStep.id);
+            }
+        }
+
+        function showStep(stepId) {
+            // Hide all steps
+            document.querySelectorAll('.step').forEach(step => {
+                step.classList.add('hidden');
+            });
+            // Show specific step
+            document.getElementById(stepId).classList.remove('hidden');
+        }
+
+        function showLoading(stepId) {
+            const step = document.getElementById(stepId);
+            const button = step.querySelector('button');
+            if (button) {
+                button.disabled = true;
+                button.innerHTML = '<span class="loading"></span> Обработка...';
+            }
+        }
+
+        function hideLoading(stepId) {
+            const step = document.getElementById(stepId);
+            const button = step.querySelector('button');
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = button.innerHTML.replace('<span class="loading"></span> Обработка...', button.textContent);
+            }
+        }
+
+        function showSuccess(message) {
+            const currentStep = document.querySelector('.step:not(.hidden)');
+            let resultDiv = currentStep.querySelector('.success');
+            if (!resultDiv) {
+                resultDiv = document.createElement('div');
+                resultDiv.className = 'success';
+                currentStep.appendChild(resultDiv);
+            }
+            resultDiv.innerHTML = message;
+            setTimeout(() => resultDiv.remove(), 5000);
+        }
+
+        function showError(message) {
+            const currentStep = document.querySelector('.step:not(.hidden)');
+            let errorDiv = currentStep.querySelector('.error');
+            if (!errorDiv) {
+                errorDiv = document.createElement('div');
+                errorDiv.className = 'error';
+                currentStep.appendChild(errorDiv);
+            }
+            errorDiv.innerHTML = message;
+            setTimeout(() => errorDiv.remove(), 5000);
+        }
+
+        function previewSignedXDR() {
+            const signedXdr = document.getElementById('signedXdrPreview').value.trim();
+            if (!signedXdr) {
+                showError('Пожалуйста, вставьте подписанный XDR');
+                return;
+            }
+            
+            // Auto-fill the signed XDR in step 4
+            document.getElementById('signedXdr').value = signedXdr;
+            showSuccess('Подписанный XDR скопирован в шаг 4. Теперь можно перейти к шагу 4 и отправить.');
+            
+            // Optional: auto-advance to step 4
+            setTimeout(() => {
+                showStep('step4');
+            }, 2000);
+        }
+    </script>
+</body>
+</html>
