@@ -108,16 +108,14 @@ async def _process_grist_key(key: str, record: dict):
 
 
 async def check_grist_key(key: str, log_info: str = None) -> dict:
-    """Проверка ключа доступа к Grist"""
+    """Проверка ключа доступа к Grist с использованием кеша"""
     if not key:
         return {"status": "error", "message": "Необходимо указать ключ"}
 
     try:
-        # Получаем данные из таблицы GRIST_access
-        access_records = await grist_manager.load_table_data(MTLGrist.GRIST_access)
-
-        # Ищем запись по ключу
-        record = next((r for r in access_records if r.get('key') == key), None)
+        # Ищем запись в кеше по индексу
+        from other.grist_cache import grist_cache
+        record = grist_cache.find_by_index('GRIST_access', key)
 
         if not record:
             return {
@@ -236,11 +234,46 @@ async def grist_sky_test(user_id: str):
         }), 500
 
 
+@blueprint.route('/grist/webhook/<table_name>', methods=('GET','POST'))
+async def grist_webhook_table(table_name: str):
+    """Вебхук для обновления кеша конкретной таблицы"""
+    logger.info(f"Grist webhook для таблицы {table_name}")
+    
+    # Проверка ключа безопасности
+    auth_header = request.headers.get('X-Auth-Key') or request.headers.get('Authorization')
+    auth_key = None
+    if auth_header:
+        if auth_header.startswith('Bearer '):
+            auth_key = auth_header[7:].strip()
+        else:
+            auth_key = auth_header.strip()
+
+    try:
+        grist_income = config.grist_income
+    except Exception as e:
+        logger.error(f"Grist webhook: не удалось получить grist_income: {e}")
+        grist_income = None
+
+    if not auth_key or not grist_income or auth_key != grist_income:
+        logger.warning('Grist webhook: неверный ключ')
+        return jsonify({"status": "accepted"})
+
+    # Обновляем кеш для таблицы
+    try:
+        from other.grist_cache import grist_cache
+        await grist_cache.update_cache_by_webhook(table_name)
+    except Exception as e:
+        logger.error(f"Ошибка обновления кеша для таблицы {table_name}: {e}")
+    
+    return jsonify({"status": "accepted"})
+
+
 @blueprint.route('/grist/webhook', methods=('GET','POST'))
 async def grist_webhook():
-    logger.info(f"Grist webhook headers: {request.headers}")
+    """Старый вебхук для обратной совместимости"""
+    logger.info(f"Grist webhook (legacy) headers: {request.headers}")
     data = await request.json
-    logger.info(f"Grist webhook: {data}")
+    logger.info(f"Grist webhook (legacy): {data}")
 
     # Получаем ключ из заголовка X-Auth-Key или Authorization, поддерживаем формат 'Bearer <ключ>'
     auth_header = request.headers.get('X-Auth-Key') or request.headers.get('Authorization')

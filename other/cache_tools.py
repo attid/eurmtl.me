@@ -72,18 +72,18 @@ def async_cache_with_ttl(ttl_seconds: int, maxsize: int = 32):
 
 # С дефолтным maxsize=32
 @async_cache_with_ttl(ttl_seconds=3600)
-async def get_fund_signers():
+async def get_fund_signers_test():
     print('real call')
     return 'data'
 
 
 # Тестирование
 async def test():
-    result1 = await get_fund_signers()
+    result1 = await get_fund_signers_test()
     print(result1)
 
     # Повторный вызов должен взять из кэша
-    result2 = await get_fund_signers()
+    result2 = await get_fund_signers_test()
     print(result2)
 
 

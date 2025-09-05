@@ -34,16 +34,21 @@ class Settings(BaseSettings):
     class Config:
         env_file = dotenv_path
         env_file_encoding = 'utf-8'
+        extra='allow'
+
+
 
 
 config = Settings()
 
+if env.str('ENVIRONMENT', 'test') == 'production':
+    config.test_mode = False
+else:
+    config.test_mode = True
+
 
 def update_test_user():
-    if env.str('ENVIRONMENT', 'test') == 'production':
-        config.test_mode = False
-    else:
-        config.test_mode = True
+    if config.test_mode:
         data = {
             'id': config.test_user_id,
             'username': "itolstov",
