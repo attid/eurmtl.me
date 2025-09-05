@@ -95,10 +95,12 @@ async def cmd_mtl_assets():
 async def cmd_mtl_pools():
     if request.method == 'GET':
         result = {}
-        rows = await grist_manager.load_table_data(
-            MTLGrist.EURMTL_pools,
-            filter_dict={"need_dropdown": [True]}
-        )
+        # Используем кеш вместо прямого запроса к Grist
+        from other.grist_cache import grist_cache
+        all_pools = grist_cache.get_table_data('EURMTL_pools')
+        
+        # Фильтруем в памяти
+        rows = [pool for pool in all_pools if pool.get('need_dropdown') is True]
 
         for row in rows:
             print(row)
