@@ -103,6 +103,14 @@ async def before_request():
         update_test_user()
 
 
+@app.before_serving
+async def initialize_grist_cache():
+    """Инициализация кеша Grist при запуске приложения"""
+    from other.grist_cache import grist_cache
+    if not config.test_mode:
+        await grist_cache.initialize_cache()
+
+
 if __name__ == "__main__":
     if config.test_mode:
         app.run(host="0.0.0.0", port=8000, debug=True)
