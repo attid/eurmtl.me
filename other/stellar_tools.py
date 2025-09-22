@@ -22,7 +22,7 @@ from stellar_sdk import (
 from stellar_sdk.operation import SetOptions, AccountMerge, Payment, PathPaymentStrictReceive, PathPaymentStrictSend, ManageSellOffer, ManageBuyOffer, CreatePassiveSellOffer, ChangeTrust, Inflation, ManageData, AllowTrust, BumpSequence
 from stellar_sdk.sep import stellar_uri
 from other.cache_tools import async_cache_with_ttl
-from other.grist_tools import grist_manager, MTLGrist, load_user_from_grist, get_secretaries
+from other.grist_tools import grist_manager, MTLGrist, load_user_from_grist, get_secretaries, load_users_from_grist
 from db.sql_models import Signers, Transactions, Signatures
 from db.sql_pool import db_pool
 from other.config_reader import config
@@ -983,10 +983,20 @@ async def get_fund_signers():
     )
     if response.status == 200:
         data = response.data
-        # signers = [signer['key'] for signer in result.get('signers', [])]
+        signers = data.get('signers', [])
 
-        for signer in data['signers']:
-            user = await load_user_from_grist(account_id=signer['key'])
+        if not signers:
+            return data
+
+        # Extract all account IDs to fetch them in parallel
+        account_ids = [signer['key'] for signer in signers]
+
+        # Load all users from grist in parallel
+        users_map = await load_users_from_grist(account_ids)
+
+        # Update telegram_id for each signer
+        for signer in signers:
+            user = users_map.get(signer['key'])
             signer['telegram_id'] = user.telegram_id if user else 0
 
         return data
@@ -1443,7 +1453,7 @@ async def add_signer(signer_key):
 def get_operation_threshold_level(operation) -> str:
     """
     Определяет уровень порога для одной операции.
-    Возвращает 'low', 'medium' или 'high'.
+    Возвращает 'low', 'med' или 'high'.
     """
     op_name = operation.__class__.__name__
 

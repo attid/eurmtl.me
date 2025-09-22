@@ -30,7 +30,7 @@ def test_high_threshold_operations(operation):
     ManageSellOffer(selling=Asset.native(), buying=Asset("USD", Keypair.random().public_key), amount="100", price="1.2"),
 ])
 def test_medium_threshold_operations(operation):
-    assert get_operation_threshold_level(operation) == 'medium'
+    assert get_operation_threshold_level(operation) == 'med'
 
 # Операции с низким порогом
 @pytest.mark.parametrize("operation", [
