@@ -1,3 +1,4 @@
+import asyncio
 import os
 import signal
 import subprocess
@@ -116,11 +117,14 @@ async def authorize():
         session['userdata'] = data
         session["user_id"] = data["id"]
 
-        with db_pool() as db_session:
-            user = db_session.query(Signers).filter(Signers.username == data['username']).first()
-            if user and user.tg_id != data['id']:
-                user.tg_id = data['id']
-                db_session.commit()
+        async def update_user():
+            with db_pool() as db_session:
+                user = db_session.query(Signers).filter(Signers.username == data['username']).first()
+                if user and user.tg_id != data['id']:
+                    user.tg_id = data['id']
+                    db_session.commit()
+
+        await asyncio.to_thread(update_user)
         return_to_url = session.get('return_to', None)
         if return_to_url:
             return redirect(return_to_url)
