@@ -153,34 +153,40 @@ async def remote_add_uri():
 
         logger.debug(f"Generated key: {key}")
 
-        # Save the URI in the database
+        # Save the URI in the database without blocking event loop
         try:
-            with db_pool() as db_session:
-                existing_transaction = db_session.query(MMWBTransactions).filter_by(uuid=key).first()
-                if existing_transaction:
-                    existing_data = json.loads(existing_transaction.json)
-                    if existing_data.get('uri') == uri:
-                        logger.info("Transaction already exists in database")
-                        url = f"https://t.me/MyMTLWalletBot?start=uri_{key}"
-                        return cors_jsonify({
-                            "SUCCESS": True,
-                            "message": "Transaction already exists in database",
-                            "url": url
-                        }, 200)
-                    else:
-                        logger.error("Transaction with same UUID but different URI already exists")
-                        return cors_jsonify({
-                            "SUCCESS": False,
-                            "message": "Transaction with same UUID but different URI already exists"
-                        }, 500)
-                else:
+            def db_task():
+                with db_pool() as db_session:
+                    existing_transaction = db_session.query(MMWBTransactions).filter_by(uuid=key).first()
+                    if existing_transaction:
+                        existing_data = json.loads(existing_transaction.json)
+                        if existing_data.get('uri') == uri:
+                            return "exists_same"
+                        return "exists_different"
                     transaction = MMWBTransactions(
                         uuid=key,
                         json=json.dumps({'uri': uri})
                     )
                     db_session.add(transaction)
                     db_session.commit()
-                    logger.info("Successfully saved transaction to database")
+                    return "saved"
+
+            status = await asyncio.to_thread(db_task)
+            if status == "exists_same":
+                logger.info("Transaction already exists in database")
+                url = f"https://t.me/MyMTLWalletBot?start=uri_{key}"
+                return cors_jsonify({
+                    "SUCCESS": True,
+                    "message": "Transaction already exists in database",
+                    "url": url
+                }, 200)
+            if status == "exists_different":
+                logger.error("Transaction with same UUID but different URI already exists")
+                return cors_jsonify({
+                    "SUCCESS": False,
+                    "message": "Transaction with same UUID but different URI already exists"
+                }, 500)
+            logger.info("Successfully saved transaction to database")
         except Exception as e:
             logger.error(f"Failed to save transaction: {str(e)}")
             return cors_jsonify({
@@ -222,31 +228,33 @@ async def get(uuid_key):
         return cors_jsonify({})
 
     try:
-        with db_pool() as db_session:
-            transaction = db_session.query(MMWBTransactions).filter(
-                MMWBTransactions.uuid == uuid_key
-            ).first()
+        def db_task():
+            with db_pool() as db_session:
+                transaction = db_session.query(MMWBTransactions.json).filter(
+                    MMWBTransactions.uuid == uuid_key
+                ).first()
+                return transaction.json if transaction else None
 
-            if not transaction:
-                return cors_jsonify({
-                    "SUCCESS": False,
-                    "message": "URI not found"
-                }, 404)
-
-            # Parse the JSON to get the URI
-            data = json.loads(transaction.json)
-            uri = data.get('uri')
-
-            if not uri:
-                return cors_jsonify({
-                    "SUCCESS": False,
-                    "message": "URI data is corrupted"
-                }, 500)
-
+        transaction_json = await asyncio.to_thread(db_task)
+        if not transaction_json:
             return cors_jsonify({
-                "SUCCESS": True,
-                "uri": uri
-            }, 200)
+                "SUCCESS": False,
+                "message": "URI not found"
+            }, 404)
+
+        data = json.loads(transaction_json)
+        uri = data.get('uri')
+
+        if not uri:
+            return cors_jsonify({
+                "SUCCESS": False,
+                "message": "URI data is corrupted"
+            }, 500)
+
+        return cors_jsonify({
+            "SUCCESS": True,
+            "uri": uri
+        }, 200)
     except Exception as e:
         return cors_jsonify({
             "SUCCESS": False,
