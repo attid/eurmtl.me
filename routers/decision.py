@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 
 from loguru import logger
@@ -60,36 +61,40 @@ async def cmd_add_decision():
 
         user_weight = await check_user_weight()
         if user_weight > 0:
-            with db_pool() as db_session:
-                existing_decision = db_session.query(Decisions).filter(Decisions.num == question_number).first()
-                if existing_decision:
-                    await flash(f'Вопрос с номером {question_number} уже существует. '
-                                f'<a href="/d/{existing_decision.uuid}">Редактировать существующий вопрос</a> '
-                                f'или создайте новый с другим номером.')
+            def check_existing():
+                with db_pool() as db_session:
+                    return db_session.query(Decisions).filter(Decisions.num == question_number).first()
+
+            existing_decision = await asyncio.to_thread(check_existing)
+            if existing_decision:
+                await flash(f'Вопрос с номером {question_number} уже существует. '
+                            f'<a href="/d/{existing_decision.uuid}">Редактировать существующий вопрос</a> '
+                            f'или создайте новый с другим номером.')
+            else:
+                d_uuid = uuid.uuid4().hex
+
+                username = '@' + session['userdata']['username']
+
+                text = get_full_text(status, inquiry, [[], [], []], d_uuid, username)
+                try:
+                    msg = await skynet_bot.send_message(chat_id=int(f'-100{chat_ids[reading]}'),
+                                                        text=text,
+                                                        parse_mode=SULGUK_PARSE_MODE,
+                                                        disable_web_page_preview=True)
+                    message_id = msg.message_id
+                except Exception as e:
+                    logger.info(f"Error with telegram publishing: {e}")
+                    message_id = None
+
+                if message_id is None:
+                    await flash('Error with telegram publishing')
                 else:
-                    d_uuid = uuid.uuid4().hex
+                    url = f'https://t.me/c/{chat_ids[reading]}/{message_id}'
 
-                    username = '@' + session['userdata']['username']
+                    await gs_save_new_decision(decision_id=question_number, url=url, username=username,
+                                               short_name=short_subject)
 
-                    text = get_full_text(status, inquiry, [[], [], []], d_uuid, username)
-                    try:
-                        msg = await skynet_bot.send_message(chat_id=int(f'-100{chat_ids[reading]}'),
-                                                            text=text,
-                                                            parse_mode=SULGUK_PARSE_MODE,
-                                                            disable_web_page_preview=True)
-                        message_id = msg.message_id
-                    except Exception as e:
-                        logger.info(f"Error with telegram publishing: {e}")
-                        message_id = None
-
-                    if message_id is None:
-                        await flash('Error with telegram publishing')
-                    else:
-                        url = f'https://t.me/c/{chat_ids[reading]}/{message_id}'
-
-                        await gs_save_new_decision(decision_id=question_number, url=url, username=username,
-                                                   short_name=short_subject)
-
+                    def insert_decision():
                         with db_pool() as db_session:
                             des = Decisions()
                             des.uuid = d_uuid
@@ -102,8 +107,10 @@ async def cmd_add_decision():
                             des.status = status
                             db_session.add(des)
                             db_session.commit()
-                        await flash('Вопрос успешно добавлен.', 'good')
-                        return redirect(f'/d/{d_uuid}')
+
+                    await asyncio.to_thread(insert_decision)
+                    await flash('Вопрос успешно добавлен.', 'good')
+                    return redirect(f'/d/{d_uuid}')
 
     statuses_list = [(status, "") for status in statuses]
     return await render_template('tabler_decision.html', question_number=question_number,
@@ -117,19 +124,25 @@ async def cmd_show_decision(decision_id):
     if len(decision_id) != 32:
         abort(404)
 
-    with db_pool() as db_session:
-        decision: Decisions = db_session.query(Decisions).filter(Decisions.uuid == decision_id).first()
+    def fetch_decision():
+        with db_pool() as db_session:
+            decision = db_session.query(Decisions).filter(Decisions.uuid == decision_id).first()
+            if not decision:
+                return None
+            links_url = (
+                db_session.query(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 1).first(),
+                db_session.query(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 2).first(),
+                db_session.query(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 3).first(),
+            )
+            return decision, links_url
 
-    if decision is None:
+    result = await asyncio.to_thread(fetch_decision)
+    if not result:
         return 'Decision not exist =('
 
+    decision, links_url = result
     question_number, short_subject, inquiry, reading = decision.num, decision.description, decision.full_text, decision.reading
-
     status = decision.status
-
-    links_url = (db_session.query(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 1).first(),
-                 db_session.query(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 2).first(),
-                 db_session.query(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 3).first())
 
     user_weight = await check_user_weight(False)
     if request.method == 'POST':
@@ -146,17 +159,20 @@ async def cmd_show_decision(decision_id):
             # new or update
             # если не меняем чтение то обновление
             if reading == decision.reading:
-                with db_pool() as db_session:
-                    decision: Decisions = db_session.query(Decisions).filter(Decisions.uuid == decision_id).first()
-                    decision.full_text = inquiry
-                    decision.status = status
-                    db_session.commit()
-                    text = get_full_text(status, inquiry, links_url, decision.uuid, decision.username)
-                    await skynet_bot.edit_message_text(chat_id=int(f'-100{chat_ids[reading]}'),
-                                                       text=text,
-                                                       parse_mode=SULGUK_PARSE_MODE,
-                                                       disable_web_page_preview=True,
-                                                       message_id=decision.url.split('/')[-1])
+                def update_decision():
+                    with db_pool() as db_session:
+                        dec = db_session.query(Decisions).filter(Decisions.uuid == decision_id).first()
+                        dec.full_text = inquiry
+                        dec.status = status
+                        db_session.commit()
+
+                await asyncio.to_thread(update_decision)
+                text = get_full_text(status, inquiry, links_url, decision.uuid, decision.username)
+                await skynet_bot.edit_message_text(chat_id=int(f'-100{chat_ids[reading]}'),
+                                                   text=text,
+                                                   parse_mode=SULGUK_PARSE_MODE,
+                                                   disable_web_page_preview=True,
+                                                   message_id=decision.url.split('/')[-1])
 
             # если сменили чтение,
             if reading != decision.reading:
@@ -182,18 +198,21 @@ async def cmd_show_decision(decision_id):
                     else:
                         url = f'https://t.me/c/{chat_ids[reading]}/{message_id}'
 
-                        with db_pool() as db_session:
-                            des = Decisions()
-                            des.uuid = new_uuid
-                            des.num = decision.num
-                            des.description = short_subject
-                            des.reading = reading
-                            des.full_text = inquiry
-                            des.url = url
-                            des.username = username
-                            des.status = status
-                            db_session.add(des)
-                            db_session.commit()
+                        def insert_decision():
+                            with db_pool() as db_session:
+                                des = Decisions()
+                                des.uuid = new_uuid
+                                des.num = decision.num
+                                des.description = short_subject
+                                des.reading = reading
+                                des.full_text = inquiry
+                                des.url = url
+                                des.username = username
+                                des.status = status
+                                db_session.add(des)
+                                db_session.commit()
+
+                        await asyncio.to_thread(insert_decision)
 
                         # Nmbr	Name	Text	Author	First	Second	Vote	Sign	Decision
                         # 1     2       3       4       5       6       7       8       9
@@ -234,15 +253,20 @@ async def update_decision_text():
             return jsonify({"message": "Missing data"}), 400
 
         # Обновление текста в базе данных
-        with db_pool() as db_session:
-            decision = db_session.query(Decisions).filter(Decisions.url == msg_url).first()
+        def db_task():
+            with db_pool() as db_session:
+                decision = db_session.query(Decisions).filter(Decisions.url == msg_url).first()
+                if decision is not None:
+                    decision.full_text = msg_text
+                    db_session.commit()
+                    return True
+                return False
 
-            if decision is not None:
-                decision.full_text = msg_text
-                db_session.commit()
-                return jsonify({"message": "Text updated successfully"}), 200
-            else:
-                return jsonify({"message": "Decision not found"}), 404
+        updated = await asyncio.to_thread(db_task)
+        if updated:
+            return jsonify({"message": "Text updated successfully"}), 200
+        else:
+            return jsonify({"message": "Decision not found"}), 404
 
 
 if __name__ == "__main__":
