@@ -366,7 +366,8 @@ async def get_account(account_id):
 
 async def get_available_balance_str(account_id: str) -> str:
     """
-    Fetches account data, calculates available XLM balance, and returns it as a formatted string.
+    Loads account data, calculates the available XLM balance using the full reserve formula,
+    and returns it as a formatted string.
     Returns an empty string if the account is not found or an error occurs.
     """
     account_info = await get_account(account_id)
@@ -383,16 +384,22 @@ async def get_available_balance_str(account_id: str) -> str:
                 break
 
         subentry_count = int(account_info.get('subentry_count', 0))
+        num_sponsoring = int(account_info.get('num_sponsoring', 0))
+        num_sponsored = int(account_info.get('num_sponsored', 0))
 
-        # Formula: available = balance - (2 + subentries) * 0.5 - selling_liabilities
-        available_balance = native_balance - (2 + subentry_count) * 0.5 - selling_liabilities
+        # Full reserve formula: (2 + subentries + sponsoring - sponsored) * 0.5 XLM
+        total_reserve = (2 + subentry_count + num_sponsoring - num_sponsored) * 0.5
 
-        if available_balance > 0:
-            return f"(свободно {float2str(available_balance)} XLM)"
-        else:
-            return "(свободно 0 XLM)"
+        # Available balance: Balance - Reserve - Liabilities
+        available_balance = native_balance - total_reserve - selling_liabilities
+
+        if available_balance < 0:
+            available_balance = 0
+
+        return f"(свободно {float2str(available_balance)} XLM)"
+
     except (ValueError, KeyError) as e:
-        logger.warning(f"Could not calculate available balance for {account_id}: {e}")
+        logger.warning(f"Failed to calculate available balance for {account_id}: {e}")
         return ""
 
 
