@@ -156,7 +156,7 @@ def decode_xdr_to_base64(xdr, return_json=False):
         op_json = {'id': op_idx, 'attributes': {}, 'name': op_name}
 
         # Декодируем атрибуты операции в зависимости от её типа
-        from stellar_sdk import Payment, ChangeTrust, CreateAccount, SetOptions, ManageData
+        from stellar_sdk import Payment, ChangeTrust, CreateAccount, SetOptions, ManageData, ClaimClaimableBalance
         if isinstance(operation, Payment):
             # noinspection PyTypedDict
             op_json['attributes'] = {'destination': operation.destination.account_id,
@@ -191,6 +191,11 @@ def decode_xdr_to_base64(xdr, return_json=False):
                                      'setFlags': operation.set_flags.value if operation.set_flags else None,
                                      'clearFlags': operation.clear_flags.value if operation.clear_flags else None,
                                      'sourceAccount': operation.source.account_id if operation.source else None
+                                     }
+        elif isinstance(operation, ClaimClaimableBalance):
+            # noinspection PyTypedDict
+            op_json['attributes'] = {'balanceId': operation.balance_id,
+                                     'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, ManageSellOffer) or isinstance(operation, ManageBuyOffer):
             # noinspection PyTypedDict
@@ -1257,6 +1262,12 @@ async def stellar_build_xdr(data):
                                            asset=decode_asset(operation['asset']),
                                            amount=float2str(operation['amount']),
                                            source=source_account)
+        if operation['type'] == 'claim_claimable_balance':
+            balance_id = operation['balanceId']
+            if len(balance_id) == 64:
+                balance_id = balance_id.rjust(72, '0')
+            transaction.append_claim_claimable_balance_op(balance_id=balance_id,
+                                                          source=source_account)
         if operation['type'] == 'copy_multi_sign':
             public_key = source_account if source_account else data['publicKey']
             updated_signers = await stellar_copy_multi_sign(public_key_from=operation['from'],

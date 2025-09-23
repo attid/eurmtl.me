@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime, timedelta, timezone
 from loguru import logger
 
 from quart import Blueprint, request, render_template, jsonify, session
@@ -151,6 +152,93 @@ async def cmd_assets(account_id):
             result[f"{asset_code}-{asset_issuer[:4]}..{asset_issuer[-4:]}"] = f"{asset_code}-{asset_issuer}"
     except:
         pass
+
+    return jsonify(result)
+
+
+@blueprint.route('/lab/claimable_balances/<account_id>')
+async def cmd_claimable_balances(account_id):
+    result = {}
+
+    def predicate_allows_claim(predicate, created_at_dt):
+        now = datetime.now(timezone.utc)
+
+        if predicate is None:
+            return False
+
+        if 'unconditional' in predicate:
+            return predicate['unconditional'] is True
+
+        if 'abs_before' in predicate:
+            abs_before = predicate['abs_before']
+            if not abs_before:
+                return False
+            try:
+                deadline = datetime.fromisoformat(abs_before.replace('Z', '+00:00'))
+            except ValueError:
+                return False
+            return now < deadline
+
+        if 'rel_before' in predicate:
+            rel_before_seconds = predicate['rel_before']
+            try:
+                seconds = int(rel_before_seconds)
+            except (TypeError, ValueError):
+                return False
+            return now < created_at_dt + timedelta(seconds=seconds)
+
+        if 'and' in predicate:
+            return all(predicate_allows_claim(item, created_at_dt) for item in predicate['and'])
+
+        if 'or' in predicate:
+            return any(predicate_allows_claim(item, created_at_dt) for item in predicate['or'])
+
+        if 'not' in predicate:
+            return not predicate_allows_claim(predicate['not'], created_at_dt)
+
+        return False
+
+    try:
+        response = await http_session_manager.get_web_request(
+            'GET',
+            f'https://horizon.stellar.org/claimable_balances?claimant={account_id}&limit=200',
+            return_type="json"
+        )
+
+        if response.status == 200:
+            records = response.data.get('_embedded', {}).get('records', [])
+            for record in records:
+                created_at = record.get('created_at')
+                try:
+                    created_at_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00')) if created_at else datetime.now(timezone.utc)
+                except ValueError:
+                    created_at_dt = datetime.now(timezone.utc)
+
+                for claimant in record.get('claimants', []):
+                    if claimant.get('destination') != account_id:
+                        continue
+
+                    predicate = claimant.get('predicate')
+                    if not predicate_allows_claim(predicate, created_at_dt):
+                        continue
+
+                    balance_id_full = record.get('id', '')
+                    if not balance_id_full:
+                        continue
+
+                    balance_id_short = balance_id_full.lstrip('0') or balance_id_full
+
+                    asset_descriptor = record.get('asset', '')
+                    if asset_descriptor == 'native':
+                        asset_code = 'XLM'
+                    else:
+                        asset_code = asset_descriptor.split(':')[0] if ':' in asset_descriptor else asset_descriptor
+
+                    amount = record.get('amount', '0')
+                    label = f"{amount} {asset_code}"
+                    result[label] = balance_id_short
+    except Exception as ex:
+        logger.info(f"Failed to load claimable balances for {account_id}: {ex}")
 
     return jsonify(result)
 

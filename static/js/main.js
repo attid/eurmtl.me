@@ -26,6 +26,23 @@ function viewAsset(element) {
     }
 }
 
+function viewClaimableBalance(element) {
+    var balanceId = $(element).closest('.row').find('.account-input').val().trim();
+    var shortBalanceId = balanceId.replace(/^0+/, '');
+
+    if (!shortBalanceId.length) {
+        showToast('Claimable Balance ID пустой', 'warning');
+        return;
+    }
+
+    if ((balanceId.length === 64 || balanceId.length === 72) && /^[A-Fa-f0-9]+$/.test(balanceId)) {
+        window.open('https://stellar.expert/explorer/public/claimable-balance/' + shortBalanceId, '_blank');
+        return;
+    }
+
+    showToast('Claimable Balance ID должен содержать 64 или 72 hex-символа', 'warning');
+}
+
 function getSourceKey(buttonElement){
     var $button = $(buttonElement);
     var $inputField = $button.closest('.account-selector');
@@ -89,6 +106,19 @@ function fetchAssetsSrc(buttonElement) {
     var $input = $row.find('.account-input');
 
     fetchDataAndShowDropdown(`/lab/assets/${keyToUse}`, keyToUse, $row, $input);
+}
+
+function fetchClaimableBalances(buttonElement) {
+    var keyToUse = getSourceKey(buttonElement);
+    if (!keyToUse) {
+        return;
+    }
+
+    var $button = $(buttonElement);
+    var $row = $button.closest('.row');
+    var $input = $row.find('.account-input');
+
+    fetchDataAndShowDropdown(`/lab/claimable_balances/${keyToUse}`, `claimable_${keyToUse}`, $row, $input);
 }
 
 function showDropdown($row, $input, accounts) {
@@ -240,6 +270,32 @@ function generateAssetSelector(fieldName = "asset",
             </button>
             <button type="button" class="btn btn-icon btn-info" data-bs-toggle="tooltip"
                 title="Просмотреть в эксперте" onclick="viewAsset(this)">
+                <i class="ti ti-eye"></i>
+            </button>
+        </div>
+    </div>
+</div>
+    `;
+}
+
+function generateClaimableBalanceSelector(fieldName = "balanceId",
+                                          labelName = "Claimable Balance ID",
+                                          fieldValue = "") {
+    var uid = get_uid();
+    return `
+<!-- Claimable Balance Selector -->
+<div class="row mb-3">
+    <div class="col-12">
+        <label for="${fieldName}-${uid}" class="form-label">${labelName}</label>
+        <div class="input-group">
+            <input type="text" class="form-control account-input me-2" data-type="${fieldName}"
+                data-validation="claimable_balance_id" value="${fieldValue}" id="${fieldName}-${uid}">
+            <button type="button" class="btn btn-icon btn-primary me-2" data-bs-toggle="tooltip"
+                title="Выбрать из списка" onclick="fetchClaimableBalances(this)">
+                <i class="ti ti-list"></i>
+            </button>
+            <button type="button" class="btn btn-icon btn-info" data-bs-toggle="tooltip"
+                title="Просмотреть в эксперте" onclick="viewClaimableBalance(this)">
                 <i class="ti ti-eye"></i>
             </button>
         </div>
@@ -621,6 +677,21 @@ function generateCardClawback() {
     `;
 }
 
+function generateCardClaimClaimableBalance() {
+    var blockId = getBlockCounter();
+    return `
+<div class="card">
+    <div class="card-body gather-block" data-type="claim_claimable_balance" data-index="${blockId}">
+        ${generateCardHeader("Claim Claimable Balance", blockId)}
+
+        ${generateClaimableBalanceSelector("balanceId", "Claimable Balance ID")}
+
+        ${generateAccountSelector("sourceAccount")}
+    </div>
+</div>
+    `;
+}
+
 function generatePayDivs() {
     var blockId = getBlockCounter();
     return `
@@ -795,6 +866,10 @@ function getCardByName(selectedOperation){
         case 'clawback':
             newCardHTML = generateCardClawback();
             break;
+        case 'claim_claimable_balance':
+        case 'claimClaimableBalance':
+            newCardHTML = generateCardClaimClaimableBalance();
+            break;
         case 'copy_multi_sign':
         case 'copyMultiSign':
             newCardHTML = generateCardCopyMultiSign();
@@ -942,6 +1017,15 @@ function validateInput(value, validationType, dataType, type, index) {
                 }
             }
             break;
+        case 'claimable_balance_id': {
+            const trimmedBalanceId = value.trim();
+            if (!/^[A-Fa-f0-9]+$/.test(trimmedBalanceId) ||
+                (trimmedBalanceId.length !== 64 && trimmedBalanceId.length !== 72)) {
+                throw new Error(`Неверный Claimable Balance ID для ${dataType} в блоке ${type} #${index}. Должен быть 64 или 72 hex-символа`);
+            }
+            value = trimmedBalanceId;
+            break;
+        }
         case 'text':
             if (!value.trim()) {
                 throw new Error(`Текст не может быть пустым для ${dataType} в блоке ${type} #${index}`);
