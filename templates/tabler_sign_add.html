@@ -24,22 +24,37 @@
                    value="{{memo}}">
             <button class="btn btn-outline-secondary" type="button" onclick="saveMemo()" data-bs-toggle="tooltip"
                     title="This will change the memo in the transaction">
-                <i class="ti ti-device-floppy"></i> Save
+                <i class="ti ti-device-floppy"></i> Insert Memo Into XDR
             </button>
         </div>
     </div>
 
-    <div class="form-footer">
+    <div class="form-footer d-flex flex-wrap gap-2">
         <button type="submit" class="btn btn-primary">
-            <i class="ti ti-file-plus me-2"></i>Create
+            <i class="ti ti-file-plus me-2"></i>Submit XDR For Signing
+        </button>
+        <button id="decode-btn" class="btn btn-info" type="button" data-mode="text" onclick="decodeXdrPreview()">
+            <i class="ti ti-code me-2"></i><span data-role="decode-label">Decode to Text</span>
         </button>
     </div>
 </form>
+
+<div id="decodeResponseCard" class="card mt-3" style="display: none;">
+    <div class="card-body" id="decodeResponseDiv">
+        <!-- Decode output will appear here -->
+    </div>
+</div>
 {% endblock %}
 
 {% block bottom_scripts %}
+<script src="/static/js/xdr_decode_toggle.js"></script>
 <script src="/static/js/stellar-sdk.min.js"></script>
 <script>
+    const xdrInput = document.getElementById('xdr');
+    const decodeButton = document.getElementById('decode-btn');
+    const decodeResponseCard = document.getElementById('decodeResponseCard');
+    const decodeResponseDiv = document.getElementById('decodeResponseDiv');
+
     function extractMemoFromXdr(xdr) {
       try {
         const transaction = StellarSdk.TransactionBuilder.fromXDR(xdr, StellarSdk.Networks.PUBLIC);
@@ -123,6 +138,38 @@
         form.reportValidity();
       }
       return false;
+    }
+
+    function decodeXdrPreview() {
+      if (typeof toggleXdrDecode !== 'function') {
+        console.warn('toggleXdrDecode helper is unavailable');
+        return;
+      }
+
+      const emptyMessage = 'Transaction XDR is empty';
+
+      return toggleXdrDecode({
+        button: decodeButton,
+        responseCard: decodeResponseCard,
+        responseDiv: decodeResponseDiv,
+        getXdr: () => (xdrInput ? xdrInput.value : ''),
+        decodeText: async () => {
+          const xdr = xdrInput ? xdrInput.value : '';
+          if (!xdr.trim()) {
+            return '';
+          }
+          const response = await $.ajax({
+            url: '/remote/decode',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ xdr }),
+            dataType: 'json'
+          });
+          return response && response.text ? response.text : '';
+        },
+        onEmptyText: () => showToast(emptyMessage, 'danger'),
+        onMissingXdr: () => showToast(emptyMessage, 'danger')
+      });
     }
 
     document.addEventListener('DOMContentLoaded', function() {
