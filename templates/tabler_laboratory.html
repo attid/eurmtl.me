@@ -109,8 +109,8 @@
         <button class="btn btn-primary me-2" onclick="copy_tx()">
             <i class="ti ti-copy me-2"></i>Copy Transaction
         </button>
-        <button class="btn btn-info me-2" onclick="getDecode()">
-            <i class="ti ti-code me-2"></i>Decode
+        <button id="decode-btn" class="btn btn-info me-2" type="button" data-mode="text" onclick="getDecode()">
+            <i class="ti ti-code me-2"></i><span data-role="decode-label">Decode to Text</span>
         </button>
         <button type="button" class="btn btn-info me-2" onclick="sign_tx()" style="display: none;" id="signButton">
             <i class="ti ti-pencil me-2"></i>Sign
@@ -135,12 +135,15 @@
                 <textarea id="xdr-input" class="form-control" rows="5">{{import_xdr}}</textarea>
             </div>
 
-            <div class="d-flex btn-group mb-3">
-                <button type="button" class="btn btn-primary me-2" onclick="importTransaction()">
+            <div class="btn-group d-flex flex-wrap mb-3">
+                <button type="button" class="btn btn-primary me-2 mb-2" onclick="importTransaction()">
                     Импортировать транзакцию
                 </button>
-                <button type="button" class="btn btn-primary" onclick="importOperations()">
+                <button type="button" class="btn btn-primary me-2 mb-2" onclick="importOperations()">
                     Импортировать операции
+                </button>
+                <button id="decode-input-btn" class="btn btn-info mb-2" type="button" data-mode="text" onclick="decodeInputXdr()">
+                    <i class="ti ti-code me-2"></i><span data-role="decode-label">Decode to Text</span>
                 </button>
             </div>
         </div>
@@ -151,12 +154,88 @@
 
 {% block bottom_scripts %}
 <script src="/static/js/main.js?6_1"></script>
+<script src="/static/js/xdr_decode_toggle.js"></script>
 <script src="/static/js/stellar-sdk.min.js"></script>
 <script>
     $(document).ready(function() {
         initLab();
     });
     const defXdrDiv = document.querySelector(".tx-body");
+    const decodeButton = document.querySelector('#decode-btn');
+    const decodeInputButton = document.querySelector('#decode-input-btn');
+    const responseCard = document.querySelector('#responseCard');
+    const responseDiv = document.querySelector('#responseDiv');
+    const xdrInput = document.querySelector('#xdr-input');
+
+    function safeToast(message, level) {
+        if (typeof showToast === 'function') {
+            showToast(message, level);
+        }
+    }
+
+    function getDecode() {
+        if (typeof toggleXdrDecode !== 'function') {
+            console.warn('toggleXdrDecode helper is unavailable');
+            return;
+        }
+
+        const emptyMessage = 'Transaction body is empty';
+
+        return toggleXdrDecode({
+            button: decodeButton,
+            responseCard,
+            responseDiv,
+            getXdr: () => (defXdrDiv ? defXdrDiv.innerText : ''),
+            decodeText: async () => {
+                const xdr = defXdrDiv ? defXdrDiv.innerText : '';
+                if (!xdr.trim()) {
+                    return '';
+                }
+                const response = await $.ajax({
+                    url: '/remote/decode',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ xdr }),
+                    dataType: 'json'
+                });
+                return response && response.text ? response.text : '';
+            },
+            onEmptyText: () => safeToast(emptyMessage, 'danger'),
+            onMissingXdr: () => safeToast(emptyMessage, 'danger')
+        });
+    }
+
+    function decodeInputXdr() {
+        if (typeof toggleXdrDecode !== 'function') {
+            console.warn('toggleXdrDecode helper is unavailable');
+            return;
+        }
+
+        const emptyMessage = 'XDR input is empty';
+
+        return toggleXdrDecode({
+            button: decodeInputButton,
+            responseCard,
+            responseDiv,
+            getXdr: () => (xdrInput ? xdrInput.value : ''),
+            decodeText: async () => {
+                const xdr = xdrInput ? xdrInput.value : '';
+                if (!xdr.trim()) {
+                    return '';
+                }
+                const response = await $.ajax({
+                    url: '/remote/decode',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ xdr }),
+                    dataType: 'json'
+                });
+                return response && response.text ? response.text : '';
+            },
+            onEmptyText: () => safeToast(emptyMessage, 'danger'),
+            onMissingXdr: () => safeToast(emptyMessage, 'danger')
+        });
+    }
     async function copy_tx() {
         if (!navigator.clipboard) {
             showToast('Clipboard API не доступен', 'danger');
@@ -164,37 +243,6 @@
         }
         await navigator.clipboard.writeText(defXdrDiv.innerText);
         showToast('Transaction copied to clipboard', 'success');
-    }
-    async function getDecode() {
-        try {
-            // Получаем XDR из defXdrDiv
-            const xdr = defXdrDiv.innerText;
-
-            // Делаем POST-запрос к вашему серверному эндпоинту
-            let response = await $.ajax({
-                url: '/remote/decode',
-                method: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({ xdr: xdr }), // Передаем XDR в JSON формате
-                dataType: 'json'
-            });
-
-            // Обрабатываем ответ от сервера
-            const responseDiv = $("#responseDiv");
-            const responseCard = $("#responseCard");
-
-            if (response.text) {
-                responseDiv.html(response.text); // Вставляем декодированный текст в responseDiv
-                responseCard.hide();
-                responseCard.fadeIn(); // Плавное появление карточки с результатом
-            } else {
-                showToast('Декодированный текст отсутствует в ответе', 'warning');
-            }
-
-        } catch (error) {
-            console.error('There was a problem fetching the response:', error);
-            showToast('Произошла ошибка при получении ответа', 'danger');
-        }
     }
     function show_sign_div() {
         const signDiv = document.getElementById('signP');
