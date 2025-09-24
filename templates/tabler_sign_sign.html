@@ -98,8 +98,8 @@
     <button class="btn btn-primary me-2 mt-2" onclick="copy_tx()">
         <i class="ti ti-copy me-2"></i>Copy Transaction
     </button>
-    <button class="btn btn-info me-2 mt-2" onclick="getDecode()">
-        <i class="ti ti-code me-2"></i>Decode
+    <button id="decode-btn" class="btn btn-info me-2 mt-2" type="button" data-mode="text" onclick="getDecode(this)">
+        <i class="ti ti-code me-2"></i><span data-role="decode-label">Decode to Text</span>
     </button>
     {% if user_id > 0 %}
     <button class="btn btn-warning mt-2" onclick="add_alert()" id="alert-btn">
@@ -348,21 +348,130 @@
         showToast('Ignorants copied to clipboard', 'success');
     }
 
-    async function getDecode() {
+    const loadXdrJsonModule = (() => {
+        let modulePromise = null;
+        return async () => {
+            if (!modulePromise) {
+                modulePromise = (async () => {
+                    const module = await import('https://esm.sh/@stellar/stellar-xdr-json');
+                    const initFn = module.default || module.init;
+                    if (typeof initFn === 'function') {
+                        await initFn();
+                    }
+                    return module;
+                })().catch(error => {
+                    modulePromise = null;
+                    throw error;
+                });
+            }
+            return modulePromise;
+        };
+    })();
+
+    function updateDecodeButtonState(button, mode) {
+        if (!button) {
+            return;
+        }
+        button.dataset.mode = mode;
+        const labelNode = button.querySelector('[data-role="decode-label"]');
+        if (labelNode) {
+            labelNode.textContent = mode === 'text' ? 'Decode to Text' : 'Decode to JSON';
+        }
+    }
+
+    function highlightJson(jsonString) {
+        const escaped = jsonString
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+
+        const highlighted = escaped.replace(/("(?:\\.|[^"])*"\s*:|"(?:\\.|[^"])*"|\b(?:true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)/g, match => {
+            if (match.endsWith(':')) {
+                return `<span class="text-info">${match}</span>`;
+            }
+            if (match.startsWith('"')) {
+                return `<span class="text-success">${match}</span>`;
+            }
+            if (match === 'true' || match === 'false') {
+                return `<span class="text-warning">${match}</span>`;
+            }
+            if (match === 'null') {
+                return `<span class="text-muted">${match}</span>`;
+            }
+            return `<span class="text-primary">${match}</span>`;
+        });
+
+        return highlighted
+            .replace(/\n/g, '<br>')
+            .replace(/  /g, '&nbsp;&nbsp;');
+    }
+
+    async function getDecode(buttonElement) {
+        const button = buttonElement || document.querySelector('#decode-btn');
+        if (!button) {
+            return;
+        }
+        if (button.dataset.loading === 'true') {
+            return;
+        }
+
+        const responseDiv = $("#responseDiv");
+        const responseCard = $("#responseCard");
+        const currentMode = button.dataset.mode || 'text';
+
+        button.dataset.loading = 'true';
+        button.disabled = true;
+
         try {
-            let response = await $.ajax({
-                url: '/decode/{{tx_hash}}',
-                method: 'GET',
-                dataType: 'html'
-            });
-            const responseDiv = $("#responseDiv");
-            const responseCard = $("#responseCard");
-            responseDiv.html(response);
-            responseCard.hide();
-            responseCard.fadeIn();
+            if (currentMode === 'text') {
+                const response = await $.ajax({
+                    url: '/decode/{{tx_hash}}',
+                    method: 'GET',
+                    dataType: 'html'
+                });
+                responseDiv.html(response);
+                responseCard.hide();
+                responseCard.fadeIn();
+                updateDecodeButtonState(button, 'json');
+            } else {
+                if (!defXdrDiv || !defXdrDiv.innerText.trim()) {
+                    showToast('Transaction body is empty', 'danger');
+                    return;
+                }
+
+                const module = await loadXdrJsonModule();
+                const decodeFn = module.decode;
+                if (typeof decodeFn !== 'function') {
+                    throw new Error('Decode function is unavailable');
+                }
+
+                const decoded = decodeFn('TransactionEnvelope', defXdrDiv.innerText.trim());
+                let formattedJson;
+                if (typeof decoded === 'string') {
+                    try {
+                        formattedJson = JSON.stringify(JSON.parse(decoded), null, 2);
+                    } catch (parseError) {
+                        formattedJson = decoded;
+                    }
+                } else {
+                    formattedJson = JSON.stringify(decoded, null, 2);
+                }
+
+                const code = document.createElement('code');
+                code.className = 'json-output d-block tx-body text-break';
+                code.innerHTML = highlightJson(formattedJson);
+
+                responseDiv.empty().append(code);
+                responseCard.hide();
+                responseCard.fadeIn();
+                updateDecodeButtonState(button, 'text');
+            }
         } catch (error) {
-            console.error('There was a problem fetching the response:', error);
-            showToast('Произошла ошибка при получении ответа', 'danger');
+            console.error('There was a problem decoding the response:', error);
+            showToast('Произошла ошибка при декодировании транзакции', 'danger');
+        } finally {
+            button.disabled = false;
+            button.dataset.loading = 'false';
         }
     }
 
