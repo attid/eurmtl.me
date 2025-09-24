@@ -20,6 +20,7 @@ from stellar_sdk import (
     StrKey
 )
 from stellar_sdk.operation import SetOptions, AccountMerge, Payment, PathPaymentStrictReceive, PathPaymentStrictSend, ManageSellOffer, ManageBuyOffer, CreatePassiveSellOffer, ChangeTrust, Inflation, ManageData, AllowTrust, BumpSequence
+from stellar_sdk.operation.create_claimable_balance import ClaimPredicateType
 from stellar_sdk.sep import stellar_uri
 from other.cache_tools import async_cache_with_ttl
 from other.grist_tools import grist_manager, MTLGrist, load_user_from_grist, get_secretaries, load_users_from_grist
@@ -521,6 +522,70 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
     result = []
     data_exist = False
 
+    def humanize_relative_seconds(total_seconds: int) -> str:
+        days, remainder = divmod(int(total_seconds), 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        parts = []
+        if days:
+            parts.append(f"{days}д")
+        if hours:
+            parts.append(f"{hours}ч")
+        if minutes:
+            parts.append(f"{minutes}м")
+        if seconds or not parts:
+            parts.append(f"{seconds}с")
+
+        return ' '.join(parts)
+
+    def format_claim_predicate(predicate, level: int = 0):
+        if predicate is None:
+            return []
+
+        prefix = '  ' * level + '- '
+        predicate_type = predicate.claim_predicate_type
+
+        if predicate_type == ClaimPredicateType.CLAIM_PREDICATE_UNCONDITIONAL:
+            return [f"{prefix}Без ограничений"]
+
+        if predicate_type == ClaimPredicateType.CLAIM_PREDICATE_BEFORE_ABSOLUTE_TIME:
+            if predicate.abs_before is not None:
+                claim_until = datetime.fromtimestamp(predicate.abs_before, tz=timezone.utc)
+                formatted_time = claim_until.strftime('%d.%m.%Y %H:%M:%S')
+                return [f"{prefix}Можно получить до {formatted_time} UTC"]
+            return [f"{prefix}Ограничение по абсолютному времени не указано"]
+
+        if predicate_type == ClaimPredicateType.CLAIM_PREDICATE_BEFORE_RELATIVE_TIME:
+            if predicate.rel_before is not None:
+                human_readable = humanize_relative_seconds(predicate.rel_before)
+                return [
+                    f"{prefix}Можно получить в течение {predicate.rel_before} секунд (~{human_readable}) после создания"
+                ]
+            return [f"{prefix}Ограничение по относительному времени не указано"]
+
+        if predicate_type == ClaimPredicateType.CLAIM_PREDICATE_AND:
+            lines = [f"{prefix}Все перечисленные условия должны выполниться:"]
+            if predicate.and_predicates is not None:
+                lines.extend(format_claim_predicate(predicate.and_predicates.left, level + 1))
+                lines.extend(format_claim_predicate(predicate.and_predicates.right, level + 1))
+            return lines
+
+        if predicate_type == ClaimPredicateType.CLAIM_PREDICATE_OR:
+            lines = [f"{prefix}Достаточно выполнения любого из условий:"]
+            if predicate.or_predicates is not None:
+                lines.extend(format_claim_predicate(predicate.or_predicates.left, level + 1))
+                lines.extend(format_claim_predicate(predicate.or_predicates.right, level + 1))
+            return lines
+
+        if predicate_type == ClaimPredicateType.CLAIM_PREDICATE_NOT:
+            lines = [f"{prefix}Следующее условие НЕ должно выполниться:"]
+            if predicate.not_predicate is not None:
+                lines.extend(format_claim_predicate(predicate.not_predicate, level + 1))
+            return lines
+
+        return [f"{prefix}Неизвестный тип условия"]
+
     if FeeBumpTransactionEnvelope.is_fee_bump_transaction_envelope(xdr):
         fee_transaction = FeeBumpTransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
         transaction = fee_transaction.transaction.inner_transaction_envelope
@@ -689,9 +754,23 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             continue
         if type(operation).__name__ == "CreateClaimableBalance":
             data_exist = True
-            result.append(f"  Спам {operation.asset.code}")
-            result.append(f"  Остальные операции игнорируются.")
-            break
+            result.append(
+                f"    Создаём claimable баланс {operation.amount} {await asset_to_link(operation.asset)}"
+            )
+
+            for idx, claimant in enumerate(operation.claimants, start=1):
+                result.append(
+                    f"    Получатель {idx}: {address_id_to_link(claimant.destination)}"
+                )
+
+                predicate_lines = format_claim_predicate(claimant.predicate, level=3)
+                if predicate_lines:
+                    result.append("      Условия получения:")
+                    result.extend(predicate_lines)
+                else:
+                    result.append("      Условия получения: без ограничений")
+
+            continue
         if type(operation).__name__ == "ManageSellOffer":
             data_exist = True
             # check valid asset
@@ -1642,8 +1721,8 @@ def update_memo_in_xdr(xdr: str, new_memo: str) -> str:
         raise Exception(f"Error updating memo: {str(e)}")
 
 
-async def test():
-    t1 = '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'
+async def local_test():
+    t1 = 'AAAAAgAAAADclX6AoyF+oySOHtC+GIbkd6jLL1gaKssa9UroGPBRLQAAAZACyHw2AAAAQgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABgAAAAJDRFJBVwAAAAAAAAAAAAAArxi+xvgiMXEE6MnqMjjlG9NQ3ZngjZaR2e9SgW6IhXF//////////wAAAAAAAAAMAAAAAk1UTENyb3dkAAAAAAAAAADjcJumqiibTAkcCd35IusHPoD7YwWUJEQ1QT0YjNTYKAAAAAJDRFJBVwAAAAAAAAAAAAAArxi+xvgiMXEE6MnqMjjlG9NQ3ZngjZaR2e9SgW6IhXEAAAAAcKccgAAAAAEAAAABAAAAAAAAAAAAAAAAAAAAAQAAAADitIvEcqMdheqxkvMjpqN4bJcxtAozbiluUkQHAPh2RwAAAAAAAAAAAExLQAAAAAAAAAAOAAAAAkNEUkFXAAAAAAAAAAAAAACvGL7G+CIxcQToyeoyOOUb01DdmeCNlpHZ71KBboiFcQAAAABwpxyAAAAAAgAAAAAAAAAArxi+xvgiMXEE6MnqMjjlG9NQ3ZngjZaR2e9SgW6IhXEAAAAAAAAAAAAAAADclX6AoyF+oySOHtC+GIbkd6jLL1gaKssa9UroGPBRLQAAAAAAAAAAAAAAAA=='
     # t2 = 'AAAAAgAAAADXM/FKYDkdJMoH7qR0azpDSfND7E9VelL2D5ys9ViskACpInUCGVTNAAAH7gAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABrNVObD55WMdlxCeza7th3GiuhKzd7DyNZ/LfdGYW+dUAAAAHZGVwb3NpdAAAAAADAAAAEgAAAAAAAAAA1zPxSmA5HSTKB+6kdGs6Q0nzQ+xPVXpS9g+crPVYrJAAAAAQAAAAAQAAAAIAAAAJAAAAAAAAAAAAAAAAabqYmAAAAAkAAAAAAAAAAAAAAABg0WZFAAAACQAAAAAAAAAAAAAAAAAAAAEAAAABAAAAAAAAAAAAAAABrNVObD55WMdlxCeza7th3GiuhKzd7DyNZ/LfdGYW+dUAAAAHZGVwb3NpdAAAAAADAAAAEgAAAAAAAAAA1zPxSmA5HSTKB+6kdGs6Q0nzQ+xPVXpS9g+crPVYrJAAAAAQAAAAAQAAAAIAAAAJAAAAAAAAAAAAAAAAabqYmAAAAAkAAAAAAAAAAAAAAABg0WZFAAAACQAAAAAAAAAAAAAAAAAAAAEAAAACAAAAAAAAAAGt785ZruUpaPdgYdSUwlJbdWWfpClqZfSZ7ynlZHfklgAAAAh0cmFuc2ZlcgAAAAMAAAASAAAAAAAAAADXM/FKYDkdJMoH7qR0azpDSfND7E9VelL2D5ys9ViskAAAABIAAAABrNVObD55WMdlxCeza7th3GiuhKzd7DyNZ/LfdGYW+dUAAAAKAAAAAAAAAAAAAAAAabqYmAAAAAAAAAAAAAAAAdxbfO1S6ZisuZT4S367BXiUdQdk/Bfe8saQQueNJ2dqAAAACHRyYW5zZmVyAAAAAwAAABIAAAAAAAAAANcz8UpgOR0kygfupHRrOkNJ80PsT1V6UvYPnKz1WKyQAAAAEgAAAAGs1U5sPnlYx2XEJ7Nru2HcaK6ErN3sPI1n8t90Zhb51QAAAAoAAAAAAAAAAAAAAABg0WZFAAAAAAAAAAEAAAAAAAAACwAAAAEAAAAA1zPxSmA5HSTKB+6kdGs6Q0nzQ+xPVXpS9g+crPVYrJAAAAABSUNFAAAAAAAvI2dJZtbbOdy0TAGiTWWdw8Fm5AJqZio/cnXskAmv/QAAAAYAAAABIiVn3qcAjXedbLkQF5+FSXNt8YiGDuj8hso4gNJj+BgAAAAUAAAAAQAAAAYAAAABVCi4nfTpos57F0VW+/5+Krm6FIDOc/fmXYeO1cqQsvMAAAAUAAAAAQAAAAYAAAABcPiBDqRB8xPxhkgBWDKID8BvrEkgmiCEMy36UosRhSkAAAAUAAAAAQAAAAYAAAABgBdpEMDtExocHiH9irvJRhjmZINGNLCz+nLu8EuXI4QAAAAUAAAAAQAAAAYAAAABre/OWa7lKWj3YGHUlMJSW3Vln6QpamX0me8p5WR35JYAAAAUAAAAAQAAAAYAAAAB3Ft87VLpmKy5lPhLfrsFeJR1B2T8F97yxpBC540nZ2oAAAAUAAAAAQAAAAcubx2u2HKIGsUr9jcygHbNgaO1pw5GUkRTo1QwnHo3hgAAAAc6NeSFc6SqMA3o5BfI47AeMBI8Sc5n59Z+h1LRhQrHKQAAAAdZas6LhVQ2R4USghouDssClzsbrQpAV9xUH9DKTXzwNwAAAAeF6SU1pMKaDyyv0aghA17hGSaqY7Hs0EWWKjmeObi17AAAAAwAAAABAAAAANcz8UpgOR0kygfupHRrOkNJ80PsT1V6UvYPnKz1WKyQAAAAAVVTREMAAAAAO5kROA7+mIugqJAOsc/kTzZvfb6Ua+0HckD39iTfFcUAAAABAAAAANcz8UpgOR0kygfupHRrOkNJ80PsT1V6UvYPnKz1WKyQAAAAAnlVU0RDAAAAAAAAAAAAAADNOtpM4w0uT/n1uRfZwjk0j0RlEguTS2NwPbXaE4ty2QAAAAYAAAABcPiBDqRB8xPxhkgBWDKID8BvrEkgmiCEMy36UosRhSkAAAAQAAAAAQAAAAIAAAAPAAAAB0JhbGFuY2UAAAAAEgAAAAAAAAAA1zPxSmA5HSTKB+6kdGs6Q0nzQ+xPVXpS9g+crPVYrJAAAAABAAAABgAAAAGAF2kQwO0TGhweIf2Ku8lGGOZkg0Y0sLP6cu7wS5cjhAAAABAAAAABAAAAAgAAAA8AAAAIUG9vbERhdGEAAAASAAAAAazVTmw+eVjHZcQns2u7YdxoroSs3ew8jWfy33RmFvnVAAAAAQAAAAYAAAABrNVObD55WMdlxCeza7th3GiuhKzd7DyNZ/LfdGYW+dUAAAAQAAAAAQAAAAMAAAAPAAAAD1Jld2FyZEludkRhdGFWMgAAAAADAAAAAAAAAAUAAAAAAAAAEAAAAAEAAAAGAAAAAazVTmw+eVjHZcQns2u7YdxoroSs3ew8jWfy33RmFvnVAAAAEAAAAAEAAAADAAAADwAAAA9SZXdhcmRJbnZEYXRhVjIAAAAAAwAAAAEAAAAFAAAAAAAAAAAAAAABAAAABgAAAAGs1U5sPnlYx2XEJ7Nru2HcaK6ErN3sPI1n8t90Zhb51QAAABAAAAABAAAAAwAAAA8AAAAPUmV3YXJkSW52RGF0YVYyAAAAAAMAAAACAAAABQAAAAAAAAAAAAAAAQAAAAYAAAABrNVObD55WMdlxCeza7th3GiuhKzd7DyNZ/LfdGYW+dUAAAAQAAAAAQAAAAIAAAAPAAAADlVzZXJSZXdhcmREYXRhAAAAAAASAAAAAAAAAADXM/FKYDkdJMoH7qR0azpDSfND7E9VelL2D5ys9ViskAAAAAEAAAAGAAAAAazVTmw+eVjHZcQns2u7YdxoroSs3ew8jWfy33RmFvnVAAAAEAAAAAEAAAACAAAADwAAAA5Xb3JraW5nQmFsYW5jZQAAAAAAEgAAAAAAAAAA1zPxSmA5HSTKB+6kdGs6Q0nzQ+xPVXpS9g+crPVYrJAAAAABAAAABgAAAAGs1U5sPnlYx2XEJ7Nru2HcaK6ErN3sPI1n8t90Zhb51QAAABQAAAABAAAABgAAAAGt785ZruUpaPdgYdSUwlJbdWWfpClqZfSZ7ynlZHfklgAAABAAAAABAAAAAgAAAA8AAAAHQmFsYW5jZQAAAAASAAAAAazVTmw+eVjHZcQns2u7YdxoroSs3ew8jWfy33RmFvnVAAAAAQAAAAYAAAAB3Ft87VLpmKy5lPhLfrsFeJR1B2T8F97yxpBC540nZ2oAAAAQAAAAAQAAAAIAAAAPAAAAB0JhbGFuY2UAAAAAEgAAAAGs1U5sPnlYx2XEJ7Nru2HcaK6ErN3sPI1n8t90Zhb51QAAAAEBcZT8AAFyjAAAGtQAAAAAAKkiEQAAAAA='
     a = await decode_xdr_to_text(t1)
     print('\n'.join(a))
@@ -1706,7 +1785,7 @@ async def create_sep7_auth_transaction(domain: str, nonce: str, callback: str) -
 
 
 if __name__ == '__main__':
-    asyncio.run(test())
+    asyncio.run(local_test())
 
 #    xdr = "AAAAAgAAAAAJk92FjbTLLsK8gty2kiek3bh5GNzHlPtL2Ju3g1BewQAAJ3UCwvFDAAAAHAAAAAEAAAAAAAAAAAAAAABmzaa8AAAAAQAAABBRMzE2IENyZWF0ZSBMQUJSAAAAAQAAAAAAAAAAAAAAAD6PSNQ8NeBFoh7/6169tIn6pjfziFaURDRWU2bQRX+1AAAAAF/2poAAAAAAAAAAAA=="
 #    print(asyncio.run(add_transaction(xdr, 'True')))
