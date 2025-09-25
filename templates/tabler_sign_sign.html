@@ -285,6 +285,7 @@
                 <div id="sep07QrContainer" style="display: none;">
                     <img src="" alt="QR Code" class="img-fluid mb-3" id="sep07QrImg">
                 </div>
+                <div id="sep07Error" class="alert alert-warning" style="display: none;"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -440,12 +441,17 @@
         const sep07QrContainer = document.getElementById('sep07QrContainer');
         const sep07QrImg = document.getElementById('sep07QrImg');
         const sep07UriLink = document.getElementById('sep07UriLink');
-        
+        const sep07Error = document.getElementById('sep07Error');
+
         // Показываем модальное окно и спиннер
         sep07Modal.show();
         sep07Spinner.style.display = 'inline-block';
         sep07QrContainer.style.display = 'none';
-        
+        sep07Error.style.display = 'none';
+        sep07Error.innerText = '';
+        sep07UriLink.removeAttribute('data-uri');
+        sep07UriLink.onclick = null;
+
         try {
             // Делаем запрос к API
             let response = await fetch('/uri_qr/{{tx_hash}}');
@@ -453,7 +459,7 @@
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
             let data = await response.json();
-            
+
             if (data.success) {
                 // Скрываем спиннер и показываем QR-код
                 sep07Spinner.style.display = 'none';
@@ -461,7 +467,7 @@
                 
                 // Устанавливаем источник изображения
                 sep07QrImg.src = data.file;
-                
+
                 // Сохраняем URI в атрибуте data-uri вместо href
                 sep07UriLink.setAttribute('data-uri', data.uri);
                 
@@ -481,9 +487,28 @@
                 // Показываем сообщение об успехе
                 showToast(data.message, 'success');
             } else {
-                // Показываем ошибку и закрываем модальное окно
-                sep07Modal.hide();
-                throw new Error(data.message);
+                sep07Spinner.style.display = 'none';
+                sep07QrContainer.style.display = 'none';
+                sep07Error.innerText = data.message || 'QR-код не может быть создан для этой транзакции.';
+                sep07Error.style.display = 'block';
+
+                if (data.uri) {
+                    sep07UriLink.setAttribute('data-uri', data.uri);
+                    sep07UriLink.onclick = function(e) {
+                        e.preventDefault();
+
+                        if (isInTelegramBrowser()) {
+                            alert("This is Telegram in-app browser. This function is not available here. Please open the page in a regular browser.");
+                        } else {
+                            window.open(this.getAttribute('data-uri'), '_blank');
+                        }
+                    };
+                } else {
+                    sep07UriLink.removeAttribute('data-uri');
+                    sep07UriLink.onclick = null;
+                }
+
+                showToast(data.message || 'QR-код не может быть создан для этой транзакции.', 'warning');
             }
         } catch (error) {
             console.error('There was a problem generating SEP-07 QR:', error);

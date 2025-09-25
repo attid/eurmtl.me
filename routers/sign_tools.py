@@ -4,7 +4,8 @@ from datetime import datetime
 from random import shuffle
 
 from loguru import logger
-from quart import Markup, jsonify, Blueprint, request, render_template, flash, session, redirect, abort, url_for
+from quart import (Markup, jsonify, Blueprint, request, render_template, flash,
+                   session, redirect, abort, url_for)
 from sqlalchemy import func, text
 from stellar_sdk import DecoratedSignature, Keypair, Network, TransactionEnvelope
 from stellar_sdk.exceptions import BadSignatureError
@@ -20,6 +21,8 @@ from other.stellar_tools import (decode_xdr_to_text, check_publish_state, check_
                                  add_transaction, update_transaction_sources)
 from other.telegram_tools import skynet_bot
 from other.web_tools import http_session_manager
+
+MAX_SEP07_URI_LENGTH = 1800  # QR version=5 + H коррекция стабильно вмещают ~1.8k символов
 
 blueprint = Blueprint('sign_tools', __name__)
 
@@ -495,9 +498,9 @@ async def generate_transaction_qr(tr_hash):
                 transaction = db_session.query(Transactions).filter(Transactions.hash == tr_hash).first()
             else:
                 transaction = db_session.query(Transactions).filter(Transactions.uuid == tr_hash).first()
-        
+
         # URI уже получен выше через create_transaction_uri
-        
+
         # Получаем первые целые слова описания транзакции (не более 10 символов)
         text_for_qr = "Transaction"
         if transaction and transaction.description:
@@ -509,14 +512,37 @@ async def generate_transaction_qr(tr_hash):
                 else:
                     break
             text_for_qr = text if text else words[0][:10]  # Если одно слово больше 10 символов, берем первые 10
-        
+
+        if uri and len(uri) > MAX_SEP07_URI_LENGTH:
+            message = 'URI слишком длинный для генерации QR-кода'
+            logger.warning(f'SEP-07 URI too long for QR (length={len(uri)}). tr_hash={tr_hash}')
+            return jsonify({
+                'success': False,
+                'message': message,
+                'file': '',
+                'uri': uri
+            })
+
         # Создаем QR-код
         from routers.helpers import create_beautiful_code
         try:
             create_beautiful_code(qr_file_path, text_for_qr, uri)
+        except ValueError as e:
+            logger.warning(f"QR generation rejected for {tr_hash}: {str(e)}")
+            return jsonify({
+                'success': False,
+                'message': 'URI слишком длинный для генерации QR-кода',
+                'file': '',
+                'uri': uri
+            })
         except Exception as e:
             logger.error(f"Error creating beautiful QR code: {str(e)}")
-            # Continue execution even if QR code creation fails
+            return jsonify({
+                'success': False,
+                'message': f'Error: {str(e)}',
+                'file': '',
+                'uri': uri
+            })
 
         return jsonify({
             'success': True,
