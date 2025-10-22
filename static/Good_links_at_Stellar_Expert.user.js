@@ -3,7 +3,7 @@
 // @namespace   http://tampermonkey.net/
 // @match       https://stellar.expert/*
 // @grant       none
-// @version     1.11
+// @version     1.12
 // @description Change links at Stellar Expert
 // @author      skynet
 // @updateURL   https://eurmtl.me/static/Good_links_at_Stellar_Expert.user.js
@@ -168,86 +168,142 @@ function isValidStellarAddress(address) {
 }
 
 function decodeBase64Text() {
-    // Функция для проверки, является ли строка URL
     function isValidUrl(string) {
-        try {
-            new URL(string);
-            return true;
-        } catch (_) {
-            return false;
-        }
+        try { new URL(string); return true; } catch { return false; }
     }
-
-    // Функция для создания HTML-ссылки
     function createLink(url) {
         const link = document.createElement('a');
-        link.href = url;
-        link.textContent = url;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer'; // Для безопасности
+        link.href = url; link.textContent = url; link.target = '_blank';
+        link.rel = 'noopener noreferrer';
         return link;
     }
 
-    let encodedListItems = document.querySelectorAll('.text-small.condensed .word-break');
+    const encodedListItems = document.querySelectorAll('.text-small.condensed .word-break');
 
-    if (encodedListItems) {
-        encodedListItems.forEach(item => {
-            let separatorIndex = item.textContent.lastIndexOf(': ');
-            if (separatorIndex > -1) {
-                let property = item.textContent.substring(0, separatorIndex);
-                let encodedText = item.textContent.substring(separatorIndex + 2);
+    if (!encodedListItems) return;
 
-                if (!item.hasAttribute('data-old')) {
-                    item.setAttribute('data-old', encodedText);
+    encodedListItems.forEach(item => {
+        // пример строки: "A1: <encoded>"
+        const sepIdx = item.textContent.lastIndexOf(': ');
+        if (sepIdx <= -1) return;
 
-                    if (isValidBase64(encodedText) && !encodedText.startsWith('*')) {
-                        let decodedText = atob(encodedText);
+        const property = item.textContent.substring(0, sepIdx).trim();       // "A1"
+        const encodedText = item.getAttribute('data-old')                     // уже ставили выше
+            ?? item.textContent.substring(sepIdx + 2);
 
-                        // Очищаем содержимое элемента
-                        item.textContent = property + ': ';
+        // уже обработано — не трогаем разметку, но проставим мета-данные если их ещё нет
+        if (item.hasAttribute('data-decoded') && item.hasAttribute('data-prop')) return;
 
-                        if (isValidStellarAddress(decodedText)) {
-                            // Обработка Stellar-адреса
-                            let link = document.createElement('a');
-                            link.href = `https://stellar.expert/explorer/public/account/${decodedText}`;
-                            link.textContent = decodedText;
-                            link.target = '_blank';
-                            item.appendChild(link);
-                        } else if (isValidUrl(decodedText)) {
-                            // Обработка URL
-                            item.appendChild(createLink(decodedText));
-                        } else {
-                            // Поиск URL в тексте
-                            const urlRegex = /(https?:\/\/[^\s]+)/g;
-                            let lastIndex = 0;
-                            let match;
+        if (isValidBase64(encodedText) && !String(encodedText).startsWith('*')) {
+            const decodedText = atob(encodedText);
 
-                            while ((match = urlRegex.exec(decodedText)) !== null) {
-                                // Добавляем текст до URL
-                                if (match.index > lastIndex) {
-                                    item.appendChild(document.createTextNode(
-                                        decodedText.substring(lastIndex, match.index)
-                                    ));
-                                }
+            // Сохраняем для фильтра
+            item.setAttribute('data-prop', property);
+            item.setAttribute('data-decoded', decodedText.toLowerCase());
 
-                                // Добавляем URL как ссылку
-                                item.appendChild(createLink(match[0]));
+            // Перерисовываем видимую часть (как и раньше)
+            // Очищаем и ставим "A1: " префикс
+            item.textContent = property + ': ';
 
-                                lastIndex = match.index + match[0].length;
-                            }
-
-                            // Добавляем оставшийся текст
-                            if (lastIndex < decodedText.length) {
-                                item.appendChild(document.createTextNode(
-                                    decodedText.substring(lastIndex)
-                                ));
-                            }
-                        }
+            if (isValidStellarAddress(decodedText)) {
+                const link = document.createElement('a');
+                link.href = `https://stellar.expert/explorer/public/account/${decodedText}`;
+                link.textContent = decodedText;
+                link.target = '_blank';
+                item.appendChild(link);
+            } else if (isValidUrl(decodedText)) {
+                item.appendChild(createLink(decodedText));
+            } else {
+                const urlRegex = /(https?:\/\/[^\s]+)/g;
+                let lastIndex = 0, match;
+                while ((match = urlRegex.exec(decodedText)) !== null) {
+                    if (match.index > lastIndex) {
+                        item.appendChild(document.createTextNode(decodedText.substring(lastIndex, match.index)));
                     }
+                    item.appendChild(createLink(match[0]));
+                    lastIndex = match.index + match[0].length;
+                }
+                if (lastIndex < decodedText.length) {
+                    item.appendChild(document.createTextNode(decodedText.substring(lastIndex)));
                 }
             }
-        });
+        } else {
+            // Небезопасно/не base64: всё равно сохраняем prop и «сырой» текст для базового поиска
+            const raw = item.textContent.substring(sepIdx + 2).toLowerCase();
+            item.setAttribute('data-prop', property);
+            item.setAttribute('data-decoded', raw);
+        }
+    });
+}
+
+function addDataEntriesFilter() {
+    // Ищем H4 с текстом "Data Entries"
+    const headers = Array.from(document.querySelectorAll('h4'));
+    const dataH4 = headers.find(h => h.textContent.trim().startsWith('Data Entries'));
+    if (!dataH4) return;
+
+    // Не дублировать
+    if (dataH4.querySelector('.skynet-data-filter')) return;
+
+    // Создаём input
+    const wrap = document.createElement('span');
+    wrap.style.marginLeft = '8px';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'skynet-data-filter';
+    input.placeholder = 'фильтр по имени/значению… (Enter)';
+    input.title = 'Фильтрует элементы ниже по имени (A1, A10, …) и по значению. Нажмите Enter для применения, Esc — очистить.';
+    input.style.cssText = 'font-size:12px;padding:3px 6px;min-width:260px;border-radius:6px;border:1px solid #ddd;';
+
+    // Подсказка-хинт
+    const hint = document.createElement('span');
+    hint.className = 'text-tiny dimmed';
+    hint.textContent = ' ⏎ для фильтра, Esc — сброс';
+    hint.style.marginLeft = '6px';
+
+    wrap.appendChild(input);
+    wrap.appendChild(hint);
+    dataH4.appendChild(wrap);
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            filterDataEntries(input.value);
+        } else if (e.key === 'Escape') {
+            input.value = '';
+            filterDataEntries('');
+        }
+    });
+}
+
+function filterDataEntries(query) {
+    // Находим соответствующий UL сразу после заголовка "Data Entries"
+    const headers = Array.from(document.querySelectorAll('h4'));
+    const dataH4 = headers.find(h => h.textContent.trim().startsWith('Data Entries'));
+    if (!dataH4) return;
+
+    // Ищем ближайший UL с классом списка данных (обычно он следующий)
+    let ul = dataH4.nextElementSibling;
+    while (ul && !(ul.tagName === 'UL' && ul.classList.contains('text-small') && ul.classList.contains('condensed'))) {
+        ul = ul.nextElementSibling;
     }
+    if (!ul) return;
+
+    const q = (query || '').trim().toLowerCase();
+    const items = ul.querySelectorAll('li.word-break');
+
+    if (!q) {
+        items.forEach(li => { li.style.display = ''; });
+        return;
+    }
+
+    // Фильтруем: имя (data-prop, напр. "A10") ИЛИ значение (data-decoded)
+    items.forEach(li => {
+        const prop = (li.getAttribute('data-prop') || '').toLowerCase();
+        const val  = (li.getAttribute('data-decoded') || li.textContent || '').toLowerCase();
+        const match = prop.includes(q) || val.includes(q);
+        li.style.display = match ? '' : 'none';
+    });
 }
 
 
@@ -359,9 +415,6 @@ function loadXDR(txID) {
         });
 }
 
-
-
-
 function initTxButton() {
     //const txId = new URL(window.location.href).pathname.split('/').pop().split('?')[0];
     const txId = document.querySelector('h2 .block-select').textContent.trim();
@@ -405,6 +458,9 @@ function checkPage() {
         }
         modifyLinks();
         decodeBase64Text();
+        addDataEntriesFilter();
+        addBalancesFilter();
+
 
     } else if (assetPattern.test(currentUrl)) {
         if (!document.querySelector('.skynet-button')) {
@@ -482,6 +538,91 @@ function initAssetButton() {
     }
 }
 
+
+function addBalancesFilter() {
+    // Ищем H3 с текстом "Account Balances"
+    const h3s = Array.from(document.querySelectorAll('h3'));
+    const header = h3s.find(h => h.firstChild && String(h.firstChild.textContent || h.textContent).trim().startsWith('Account Balances'));
+    if (!header) return;
+
+    if (header.querySelector('.skynet-balance-filter')) return; // уже добавлен
+
+    const wrap = document.createElement('span');
+    wrap.style.marginLeft = '10px';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'skynet-balance-filter';
+    input.placeholder = 'фильтр по активу/issuer… (Enter)';
+    input.title = 'Фильтр по коду/issuer. Нажмите Enter для применения, Esc — очистить.';
+    input.style.cssText = 'font-size:12px;padding:3px 6px;min-width:280px;border-radius:6px;border:1px solid #ddd;';
+
+    const hint = document.createElement('span');
+    hint.className = 'text-tiny dimmed';
+    hint.textContent = ' ⏎ для фильтра, Esc — сброс';
+    hint.style.marginLeft = '6px';
+
+    wrap.appendChild(input);
+    wrap.appendChild(hint);
+    header.appendChild(wrap);
+
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            filterBalances(input.value);
+        } else if (e.key === 'Escape') {
+            input.value = '';
+            filterBalances('');
+        }
+    });
+}
+
+async function filterBalances(query) {
+    const container = document.querySelector('.all-account-balances');
+    if (!container) return;
+
+    const q = (query || '').trim().toLowerCase();
+    const showAll = () => {
+        container.querySelectorAll('a.account-balance').forEach(c => { c.style.display = ''; });
+    };
+
+    if (!q) { showAll(); return; }
+
+    // Проходим «пакетами»: скрываем по одной карточке и ждём кадр, чтобы движок дорисовал новые
+    // Повторяем, пока на проходе есть изменения.
+    let passes = 0;
+    const MAX_PASSES = 200; // страховка от бесконечного цикла
+
+    while (passes++ < MAX_PASSES) {
+        let changed = false;
+
+        const cards = Array.from(container.querySelectorAll('a.account-balance'));
+
+        for (const card of cards) {
+            // плейсхолдер/сырой шаблон — пропускаем, чтобы не мешать дорисовке
+            const assetLink = card.querySelector('.asset-link');
+            if (!assetLink) continue;
+
+            const label = ((assetLink.getAttribute('aria-label') || '') + ' ' + (assetLink.textContent || '')).toLowerCase().trim();
+            if (!label) continue; // ещё не заполнено — пропускаем
+
+            const match = label.includes(q);
+            const desiredDisplay = match ? '' : 'none';
+
+            if (card.style.display !== desiredDisplay) {
+                card.style.display = desiredDisplay;
+                changed = true;
+
+                // Дать странице время перерисовать и подложить следующую партию карточек.
+                await new Promise(r => setTimeout(r, 10));
+                break; // выходим из for, начнём новый проход по обновлённому DOM
+            }
+        }
+
+        if (!changed) break; // на этом проходе ничего не менялось — стабилизировались
+    }
+}
+
+
 async function initLiquidityPoolButton() {
     const poolId = new URL(window.location.href).pathname.split('/').pop();
 
@@ -509,10 +650,10 @@ async function initLiquidityPoolButton() {
             try {
                 const response = await fetch(`https://horizon.stellar.org/liquidity_pools/${poolId}`);
                 const poolData = await response.json();
-                
+
                 if (poolData.reserves && poolData.reserves.length === 2) {
                     const [reserve1, reserve2] = poolData.reserves;
-                    
+
                     let stellarXUrl;
                     if (reserve1.asset === 'native') {
                         stellarXUrl = `https://www.stellarx.com/amm/analytics/native/${reserve2.asset}`;
@@ -521,7 +662,7 @@ async function initLiquidityPoolButton() {
                     } else {
                         stellarXUrl = `https://www.stellarx.com/amm/analytics/${reserve1.asset}/${reserve2.asset}`;
                     }
-                    
+
                     buttonStellarX.href = stellarXUrl;
                 }
             } catch (error) {
