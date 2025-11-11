@@ -230,6 +230,7 @@ async def show_transaction(tr_hash):
     # try send
     send = request.args.get('send', default=None)
     if send is not None:
+        transaction_resp = None
         try:
             if request.args.get('random', default=None) is not None:
                 shuffle(transaction_env.signatures)
@@ -243,24 +244,42 @@ async def show_transaction(tr_hash):
             if transaction_resp.status == 200:
                 await flash(f'Successfully sent, accepted : {transaction_resp.data["successful"]}', 'good')
             else:
-                await flash(f'Failed to send. {transaction_resp.data["extras"]["result_codes"]}')
-                result_codes = transaction_resp.data.get("extras", {}).get("result_codes", {})
-                operation_results = result_codes.get("operations", [])
+                if isinstance(transaction_resp.data, dict):
+                    await flash(f'Failed to send. {transaction_resp.data.get("extras", {}).get("result_codes")}')
+                    result_codes = transaction_resp.data.get("extras", {}).get("result_codes", {})
+                    operation_results = result_codes.get("operations", [])
 
-                # Находим первую операцию, которая не является 'op_success'
-                for i, result in enumerate(operation_results):
-                    if result != 'op_success':
-                        await flash(f'Error in operation {i}: {result}')
+                    # Находим первую операцию, которая не является 'op_success'
+                    for i, result in enumerate(operation_results):
+                        if result != 'op_success':
+                            await flash(f'Error in operation {i}: {result}')
 
-                        failed_operation_dict = '<br>'.join(
-                            await decode_xdr_to_text(transaction.body, only_op_number=i))
-                        await flash(Markup(f'Details of failed operation: {failed_operation_dict}'))
+                            failed_operation_dict = '<br>'.join(
+                                await decode_xdr_to_text(transaction.body, only_op_number=i))
+                            await flash(Markup(f'Details of failed operation: {failed_operation_dict}'))
 
-                        break
+                            break
+                else:
+                    logger.error(
+                        'Failed to send transaction to Stellar: unexpected response format '
+                        '(status={status}) data={data} headers={headers}',
+                        status=transaction_resp.status,
+                        data=transaction_resp.data,
+                        headers=transaction_resp.headers,
+                    )
+                    await flash('Failed to send. Received unexpected response format from Horizon.')
 
         except Exception as e:
             await flash("Failed to send. The error is unclear")
             await flash(f'{e}')
+            logger.exception(
+                'Unexpected error while sending transaction to Stellar (status={status}) data={data} '
+                'headers={headers} tx={tx}',
+                status=getattr(transaction_resp, 'status', None),
+                data=getattr(transaction_resp, 'data', None),
+                headers=getattr(transaction_resp, 'headers', None),
+                tx=transaction_env.to_xdr(),
+            )
 
     resp = await render_template('tabler_sign_sign.html', tx_description=transaction.description,
                                  tx_body=transaction.body, tx_hash=transaction.hash, user_id=user_id,
