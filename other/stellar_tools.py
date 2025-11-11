@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import copy
 import json
 from datetime import datetime, timezone
 
@@ -19,7 +20,9 @@ from stellar_sdk import (
     LiquidityPoolDeposit, LiquidityPoolAsset,
     StrKey
 )
-from stellar_sdk.operation import SetOptions, AccountMerge, Payment, PathPaymentStrictReceive, PathPaymentStrictSend, ManageSellOffer, ManageBuyOffer, CreatePassiveSellOffer, ChangeTrust, Inflation, ManageData, AllowTrust, BumpSequence
+from stellar_sdk.operation import (SetOptions, AccountMerge, Payment, PathPaymentStrictReceive, PathPaymentStrictSend,
+                                   ManageSellOffer, ManageBuyOffer, CreatePassiveSellOffer, ChangeTrust, Inflation,
+                                   ManageData, AllowTrust, BumpSequence, CreateClaimableBalance)
 from stellar_sdk.operation.create_claimable_balance import ClaimPredicateType
 from stellar_sdk.sep import stellar_uri
 from other.cache_tools import async_cache_with_ttl
@@ -343,6 +346,144 @@ async def asset_to_link(operation_asset) -> str:
         return f'<a href="{start_url}/{operation_asset.code}-{operation_asset.issuer}" target="_blank">{operation_asset.code}{star}</a>'
 
 
+class SimulatedLedger:
+    """
+    Simulates the state of the ledger for a single transaction analysis.
+    """
+
+    def __init__(self):
+        self.accounts = {}  # account_id -> account_data from Horizon
+        self.new_assets = set()  # set of "asset_code:asset_issuer"
+
+    async def prefetch_accounts(self, account_ids: set):
+        """Fetches initial account states from Horizon in parallel."""
+        tasks = [get_account(acc_id) for acc_id in account_ids]
+        results = await asyncio.gather(*tasks)
+        for acc_id, acc_data in zip(account_ids, results):
+            if acc_data and 'id' in acc_data:
+                self.accounts[acc_id] = copy.deepcopy(acc_data)
+            else:
+                # Initialize with a default structure if account not found
+                self.accounts[acc_id] = {'id': acc_id, 'balances': [], 'subentry_count': 0, 'num_sponsoring': 0,
+                                         'num_sponsored': 0}
+
+    def get_account(self, account_id: str):
+        """Gets account data from the simulation."""
+        return self.accounts.get(account_id,
+                                 {'id': account_id, 'balances': [], 'subentry_count': 0, 'num_sponsoring': 0,
+                                  'num_sponsored': 0})
+
+    def _get_asset_key(self, asset: Asset) -> str:
+        """Generates a unique key for an asset."""
+        if asset.is_native():
+            return "XLM"
+        return f"{asset.code}:{asset.issuer}"
+
+    def update_balance(self, account_id: str, asset: Asset, amount_delta: float):
+        """Updates the balance of an asset for a given account."""
+        account = self.get_account(account_id)
+        if 'balances' not in account:
+            account['balances'] = []
+
+        balance_updated = False
+        for balance in account['balances']:
+            if asset.is_native() and balance.get('asset_type') == 'native':
+                current_balance = float(balance['balance'])
+                balance['balance'] = str(current_balance + amount_delta)
+                balance_updated = True
+                break
+            elif (not asset.is_native() and
+                  balance.get('asset_code') == asset.code and
+                  balance.get('asset_issuer') == asset.issuer):
+                current_balance = float(balance['balance'])
+                balance['balance'] = str(current_balance + amount_delta)
+                balance_updated = True
+                break
+
+        if not balance_updated and amount_delta > 0:
+            if asset.is_native():
+                account['balances'].append({'asset_type': 'native', 'balance': str(amount_delta)})
+            else:
+                account['balances'].append({
+                    'asset_type': asset.type,
+                    'asset_code': asset.code,
+                    'asset_issuer': asset.issuer,
+                    'balance': str(amount_delta)
+                })
+
+    def add_trustline(self, account_id: str, asset: Asset):
+        """Adds a trustline to an account."""
+        account = self.get_account(account_id)
+        if 'balances' not in account:
+            account['balances'] = []
+
+        if isinstance(asset, LiquidityPoolAsset):
+            for balance in account['balances']:
+                if balance.get('liquidity_pool_id') == asset.liquidity_pool_id:
+                    return
+            account['balances'].append({
+                'balance': '0.0000000',
+                'limit': '922337203685.4775807',
+                'asset_type': 'liquidity_pool_shares',
+                'liquidity_pool_id': asset.liquidity_pool_id,
+            })
+        else:
+            for balance in account['balances']:
+                if (not asset.is_native() and
+                        balance.get('asset_code') == asset.code and
+                        balance.get('asset_issuer') == asset.issuer):
+                    return
+            account['balances'].append({
+                'balance': '0.0000000',
+                'limit': '922337203685.4775807',
+                'asset_type': asset.type,
+                'asset_code': asset.code,
+                'asset_issuer': asset.issuer,
+            })
+
+    def remove_trustline(self, account_id: str, asset: Asset):
+        """Removes a trustline from an account."""
+        account = self.get_account(account_id)
+        if 'balances' not in account:
+            return
+
+        if isinstance(asset, LiquidityPoolAsset):
+            account['balances'] = [
+                b for b in account['balances']
+                if not (b.get('asset_type') == 'liquidity_pool_shares' and b.get(
+                    'liquidity_pool_id') == asset.liquidity_pool_id)
+            ]
+        else:
+            account['balances'] = [
+                b for b in account['balances']
+                if not (b.get('asset_code') == asset.code and b.get('asset_issuer') == asset.issuer)
+            ]
+
+    def create_account(self, account_id: str, starting_balance: str):
+        """Creates a new account in the simulation."""
+        self.accounts[account_id] = {
+            'id': account_id,
+            'balances': [{
+                'asset_type': 'native',
+                'balance': starting_balance
+            }],
+            'subentry_count': 0,
+            'num_sponsoring': 0,
+            'num_sponsored': 0
+        }
+
+    def mark_asset_as_new(self, asset: Asset):
+        """Marks an asset as being created within this transaction."""
+        if not asset.is_native():
+            self.new_assets.add(self._get_asset_key(asset))
+
+    def is_asset_new(self, asset: Asset) -> bool:
+        """Checks if an asset was marked as new."""
+        if asset.is_native():
+            return False
+        return self._get_asset_key(asset) in self.new_assets
+
+
 @async_cache_with_ttl(ttl_seconds=900)
 async def check_asset(asset):
     try:
@@ -592,7 +733,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
     else:
         transaction = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     sequence = transaction.transaction.sequence
-    
+
     balance_str = await get_available_balance_str(transaction.transaction.source.account_id)
     result.append(f"Sequence Number {sequence} {balance_str}")
 
@@ -634,21 +775,19 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
         max_time_ts = transaction.transaction.preconditions.time_bounds.max_time
         max_time_dt = datetime.fromtimestamp(max_time_ts, tz=timezone.utc)
         now_dt = datetime.now(timezone.utc)
-        
+
         human_readable_time = max_time_dt.strftime('%d.%m.%Y %H:%M:%S')
-        
+
         color = ""
         if max_time_dt < now_dt:
-            color = 'style="color: red;"' # Время прошло
+            color = 'style="color: red;"'  # Время прошло
         elif max_time_dt.date() == now_dt.date():
-            color = 'style="color: orange;"' # Время сегодня
-            
+            color = 'style="color: orange;"'  # Время сегодня
+
         result.append(f'<span {color}>MaxTime ! {human_readable_time} UTC</span>')
 
     result.append(f"Операции с аккаунта {address_id_to_link(transaction.transaction.source.account_id)}")
-    #    if transaction.transaction.memo.__class__ == TextMemo:
-    #        memo: TextMemo = transaction.transaction.memo
-    #        result.append(f'  Memo "{memo.memo_text.decode()}"\n')
+
     memo = transaction.transaction.memo
     if isinstance(memo, NoneMemo):
         result.append('  No memo\n')
@@ -663,6 +802,44 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
 
     result.append(f"  Всего {len(transaction.transaction.operations)} операций\n")
 
+    # --- Simulation Setup ---
+    all_account_ids = {transaction.transaction.source.account_id}
+    for op in transaction.transaction.operations:
+        if op.source:
+            all_account_ids.add(op.source.account_id)
+
+        # Accounts in 'destination', 'trustor', etc. fields
+        if hasattr(op, 'destination') and op.destination:
+            if isinstance(op.destination, str):
+                all_account_ids.add(op.destination)
+            elif hasattr(op.destination, 'account_id'):
+                all_account_ids.add(op.destination.account_id)
+        if hasattr(op, 'trustor') and op.trustor:
+            all_account_ids.add(op.trustor)
+        if hasattr(op, 'sponsored_id') and op.sponsored_id:
+            all_account_ids.add(op.sponsored_id)
+        if hasattr(op, 'from_') and op.from_:
+            all_account_ids.add(op.from_.account_id)
+        if isinstance(op, CreateClaimableBalance):
+            for claimant in op.claimants:
+                all_account_ids.add(claimant.destination)
+
+        # Asset issuers
+        assets_to_check = []
+        for attr in ['asset', 'send_asset', 'dest_asset', 'selling', 'buying']:
+            if hasattr(op, attr):
+                asset = getattr(op, attr)
+                if asset:
+                    assets_to_check.append(asset)
+
+        for asset in assets_to_check:
+            if not asset.is_native():
+                all_account_ids.add(asset.issuer)
+
+    simulated_ledger = SimulatedLedger()
+    await simulated_ledger.prefetch_accounts(all_account_ids)
+    # --- End Simulation Setup ---
+
     for idx, operation in enumerate(transaction.transaction.operations):
         if only_op_number:
             if idx == 0:
@@ -674,43 +851,114 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
 
         result.append(f"Операция {idx} - {type(operation).__name__}")
 
-        # print('bad xdr', idx, operation)
-        if operation.source:
-            balance_str = await get_available_balance_str(operation.source.account_id)
-            result.append(f"*** для аккаунта {address_id_to_link(operation.source.account_id)} {balance_str}")
+        op_source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
+        balance_str = await get_available_balance_str(op_source_id)
+        result.append(f"*** для аккаунта {address_id_to_link(op_source_id)} {balance_str}")
+
         if type(operation).__name__ == "Payment":
             data_exist = True
+            dest_id = operation.destination.account_id
             result.append(
-                f"    Перевод {operation.amount} {await asset_to_link(operation.asset)} на аккаунт {address_id_to_link(operation.destination.account_id)}")
-            if operation.asset.code != 'XLM':
-                # check valid asset
-                result.append(await check_asset(operation.asset))
-                # check trust line
-                if operation.destination.account_id != operation.asset.issuer:
-                    destination_account = await get_account(operation.destination.account_id)
+                f"    Перевод {operation.amount} {await asset_to_link(operation.asset)} на аккаунт {address_id_to_link(dest_id)}")
+
+            # --- Validation ---
+            if not operation.asset.is_native():
+                # Check asset existence
+                if not simulated_ledger.is_asset_new(operation.asset):
+                    check_res = await check_asset(operation.asset)
+                    if check_res:
+                        result.append(check_res)
+
+                # Check trustline
+                if dest_id != operation.asset.issuer:
+                    dest_account_sim = simulated_ledger.get_account(dest_id)
                     asset_found = any(
-                        balance.get('asset_code') == operation.asset.code for balance in
-                        destination_account['balances'])
+                        b.get('asset_code') == operation.asset.code and b.get('asset_issuer') == operation.asset.issuer
+                        for b in dest_account_sim.get('balances', [])
+                    )
                     if not asset_found:
-                        result.append(f"<div style=\"color: red;\">Asset not found ! </div>")
-                source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
-                # check balance
-                if source_id != operation.asset.issuer:
-                    source_account = await get_account(source_id)
-                    source_sum = sum(float(balance.get('balance')) for balance in source_account['balances'] if
-                                     balance.get('asset_code') == operation.asset.code)
-                    if source_sum < float(operation.amount):
-                        result.append(f"<div style=\"color: red;\">Not enough balance ! </div>")
+                        result.append(
+                            f'<div style="color: red;">Error: Trustline for {operation.asset.code} not found on destination account.</div>')
 
-                # check sale
-                source_sale = await get_offers(source_id)
-                sale_found = any(
-                    record['selling'].get('asset_code') == operation.asset.code for record in
-                    source_sale['_embedded']['records'])
-                if sale_found:
-                    result.append(f"<div style=\"color: red;\">Sale found! Do you have enough amount? </div>")
+            # Check balance
+            if op_source_id != operation.asset.issuer:
+                source_account_sim = simulated_ledger.get_account(op_source_id)
+                source_sum = 0
+                for b in source_account_sim.get('balances', []):
+                    if operation.asset.is_native() and b.get('asset_type') == 'native':
+                        source_sum = float(b.get('balance', 0))
+                        break
+                    elif not operation.asset.is_native() and b.get('asset_code') == operation.asset.code and b.get(
+                            'asset_issuer') == operation.asset.issuer:
+                        source_sum = float(b.get('balance', 0))
+                        break
+                if source_sum < float(operation.amount):
+                    result.append(
+                        f'<div style="color: red;">Error: Not enough balance ({source_sum}) to send {operation.amount}.</div>')
 
+            # --- State Update ---
+            simulated_ledger.update_balance(op_source_id, operation.asset, -float(operation.amount))
+            simulated_ledger.update_balance(dest_id, operation.asset, float(operation.amount))
             continue
+
+        if type(operation).__name__ == "ChangeTrust":
+            data_exist = True
+            source_id = op_source_id
+
+            # --- Validation & Description ---
+            if isinstance(operation.asset, LiquidityPoolAsset):
+                if operation.limit == '0':
+                    result.append(
+                        f"    Закрываем линию доверия к пулу {pool_id_to_link(operation.asset.liquidity_pool_id)} {await asset_to_link(operation.asset.asset_a)}/{await asset_to_link(operation.asset.asset_b)}")
+                else:
+                    result.append(
+                        f"    Открываем линию доверия к пулу {pool_id_to_link(operation.asset.liquidity_pool_id)} {await asset_to_link(operation.asset.asset_a)}/{await asset_to_link(operation.asset.asset_b)}")
+            else:
+                # Check asset existence
+                if not simulated_ledger.is_asset_new(operation.asset):
+                    check_res = await check_asset(operation.asset)
+                    if "not exist" in check_res:
+                        result.append(
+                            f'<div style="color: orange;">Инфо: Ассет {operation.asset.code} возможно создается в этой транзакции.</div>')
+                        simulated_ledger.mark_asset_as_new(operation.asset)
+                    elif check_res:
+                        result.append(check_res)
+
+                if operation.asset.issuer == source_id:
+                    result.append(f"<div style=\"color: red;\">MELFORMED: You can`t open trustline for yourself!</div>")
+
+                if operation.limit == '0':
+                    result.append(
+                        f"    Закрываем линию доверия к токену {await asset_to_link(operation.asset)} от аккаунта {address_id_to_link(operation.asset.issuer)}")
+                else:
+                    result.append(
+                        f"    Открываем линию доверия к токену {await asset_to_link(operation.asset)} от аккаунта {address_id_to_link(operation.asset.issuer)}")
+
+            # --- State Update ---
+            if operation.limit != '0':
+                simulated_ledger.add_trustline(source_id, operation.asset)
+            else:
+                simulated_ledger.remove_trustline(source_id, operation.asset)
+            continue
+
+        if type(operation).__name__ == "CreateAccount":
+            data_exist = True
+            dest_id = operation.destination
+            start_balance = operation.starting_balance
+            result.append(
+                f"    Создание аккаунта {address_id_to_link(dest_id)} с суммой {start_balance} XLM")
+
+            # --- Validation (omitted for brevity, could check source balance) ---
+
+            # --- State Update ---
+            simulated_ledger.create_account(dest_id, start_balance)
+            simulated_ledger.update_balance(op_source_id, Asset.native(), -float(start_balance))
+            continue
+
+        # --- Fallback to original logic for other operations ---
+        if operation.source:
+            pass
+
         if type(operation).__name__ == "SetOptions":
             data_exist = True
             if operation.signer:
@@ -728,39 +976,16 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                 result.append(f"Установка master_weight {operation.master_weight}")
 
             continue
-        if type(operation).__name__ == "ChangeTrust":
-            data_exist = True
-            source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
-            if operation.asset.type == 'liquidity_pool_shares':
-                if operation.limit == '0':
-                    result.append(
-                        f"    Закрываем линию доверия к пулу {pool_id_to_link(operation.asset.liquidity_pool_id)} {await asset_to_link(operation.asset.asset_a)}/{await asset_to_link(operation.asset.asset_b)}")
-                else:
-                    result.append(
-                        f"    Открываем линию доверия к пулу {pool_id_to_link(operation.asset.liquidity_pool_id)} {await asset_to_link(operation.asset.asset_a)}/{await asset_to_link(operation.asset.asset_b)}")
-            else:
-                # check valid asset
-                result.append(await check_asset(operation.asset))
-                if operation.asset.issuer == source_id:
-                    result.append(f"<div style=\"color: red;\">MELFORMET You can`t open trustline for yourself! </div>")
 
-                if operation.limit == '0':
-                    result.append(
-                        f"    Закрываем линию доверия к токену {await asset_to_link(operation.asset)} от аккаунта {address_id_to_link(operation.asset.issuer)}")
-                else:
-                    result.append(
-                        f"    Открываем линию доверия к токену {await asset_to_link(operation.asset)} от аккаунта {address_id_to_link(operation.asset.issuer)}")
-
-            continue
         if type(operation).__name__ == "CreateClaimableBalance":
             data_exist = True
             result.append(
                 f"    Создаём claimable баланс {operation.amount} {await asset_to_link(operation.asset)}"
             )
 
-            for idx, claimant in enumerate(operation.claimants, start=1):
+            for claimant_idx, claimant in enumerate(operation.claimants, start=1):
                 result.append(
-                    f"    Получатель {idx}: {address_id_to_link(claimant.destination)}"
+                    f"    Получатель {claimant_idx}: {address_id_to_link(claimant.destination)}"
                 )
 
                 predicate_lines = format_claim_predicate(claimant.predicate, level=3)
@@ -774,8 +999,10 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
         if type(operation).__name__ == "ManageSellOffer":
             data_exist = True
             # check valid asset
-            result.append(await check_asset(operation.selling))
-            result.append(await check_asset(operation.buying))
+            if not simulated_ledger.is_asset_new(operation.selling):
+                result.append(await check_asset(operation.selling))
+            if not simulated_ledger.is_asset_new(operation.buying):
+                result.append(await check_asset(operation.buying))
 
             result.append(
                 f"    Офер на продажу {operation.amount} {await asset_to_link(operation.selling)} по цене {operation.price.n / operation.price.d} {await asset_to_link(operation.buying)}")
@@ -783,8 +1010,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                 result.append(
                     f"    Номер офера <a href=\"https://stellar.expert/explorer/public/offer/{operation.offer_id}\">{operation.offer_id}</a>")
             # check balance тут надо проверить сумму
-            source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
-            source_account = await get_account(source_id)
+            source_account = simulated_ledger.get_account(op_source_id)
             selling_asset_code = operation.selling.code if hasattr(operation.selling, 'code') else 'XLM'
             selling_sum = sum(
                 float(balance.get('balance')) for balance in source_account['balances']
@@ -794,15 +1020,15 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             )
 
             if selling_sum < float(operation.amount):
-                result.append(f"<div style=\"color: red;\">Not enough balance to sell {selling_asset_code}! </div>")
+                result.append(
+                    f"<div style=\"color: red;\">Error: Not enough balance to sell {selling_asset_code}! </div>")
 
             continue
         if type(operation).__name__ == "CreatePassiveSellOffer":
             data_exist = True
             result.append(
                 f"    Пассивный офер на продажу {operation.amount} {await asset_to_link(operation.selling)} по цене {operation.price.n / operation.price.d} {await asset_to_link(operation.buying)}")
-            source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
-            source_account = await get_account(source_id)
+            source_account = simulated_ledger.get_account(op_source_id)
             selling_asset_code = operation.selling.code if hasattr(operation.selling, 'code') else 'XLM'
             selling_sum = sum(
                 float(balance.get('balance')) for balance in source_account['balances']
@@ -812,13 +1038,16 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             )
 
             if selling_sum < float(operation.amount):
-                result.append(f"<div style=\"color: red;\">Not enough balance to sell {selling_asset_code}! </div>")
+                result.append(
+                    f"<div style=\"color: red;\">Error: Not enough balance to sell {selling_asset_code}! </div>")
             continue
         if type(operation).__name__ == "ManageBuyOffer":
             data_exist = True
             # check valid asset
-            result.append(await check_asset(operation.selling))
-            result.append(await check_asset(operation.buying))
+            if not simulated_ledger.is_asset_new(operation.selling):
+                result.append(await check_asset(operation.selling))
+            if not simulated_ledger.is_asset_new(operation.buying):
+                result.append(await check_asset(operation.buying))
 
             result.append(
                 f"    Офер на покупку {operation.amount} {await asset_to_link(operation.buying)} по цене {operation.price.n / operation.price.d} {await asset_to_link(operation.selling)}")
@@ -826,10 +1055,9 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                 result.append(
                     f"    Номер офера <a href=\"https://stellar.expert/explorer/public/offer/{operation.offer_id}\">{operation.offer_id}</a>")
 
-            source_id = operation.source.account_id if operation.source else transaction.transaction.source.account_id
-            source_account = await get_account(source_id)
+            source_account = simulated_ledger.get_account(op_source_id)
             selling_asset_code = operation.selling.code if hasattr(operation.selling,
-                                                                   'code') else 'XLM'  # Учитываем, что XLM не имеет code
+                                                                   'code') else 'XLM'
             required_amount_to_spend = float(operation.amount) * (operation.price.n / operation.price.d)
 
             selling_sum = sum(
@@ -841,14 +1069,16 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
 
             if selling_sum < required_amount_to_spend:
                 result.append(
-                    f"<div style=\"color: red;\">Not enough {selling_asset_code} to buy! Required: {required_amount_to_spend}, Available: {selling_sum}</div>")
+                    f"<div style=\"color: red;\">Error: Not enough {selling_asset_code} to buy! Required: {required_amount_to_spend}, Available: {selling_sum}</div>")
 
             continue
         if type(operation).__name__ == "PathPaymentStrictSend":
             data_exist = True
             # check valid asset
-            result.append(await check_asset(operation.send_asset))
-            result.append(await check_asset(operation.dest_asset))
+            if not simulated_ledger.is_asset_new(operation.send_asset):
+                result.append(await check_asset(operation.send_asset))
+            if not simulated_ledger.is_asset_new(operation.dest_asset):
+                result.append(await check_asset(operation.dest_asset))
 
             result.append(
                 f"    Покупка {address_id_to_link(operation.destination.account_id)}, шлем {await asset_to_link(operation.send_asset)} {operation.send_amount} в обмен на {await asset_to_link(operation.dest_asset)} min {operation.dest_min} ")
@@ -856,8 +1086,10 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
         if type(operation).__name__ == "PathPaymentStrictReceive":
             data_exist = True
             # check valid asset
-            result.append(await check_asset(operation.send_asset))
-            result.append(await check_asset(operation.dest_asset))
+            if not simulated_ledger.is_asset_new(operation.send_asset):
+                result.append(await check_asset(operation.send_asset))
+            if not simulated_ledger.is_asset_new(operation.dest_asset):
+                result.append(await check_asset(operation.dest_asset))
             result.append(
                 f"    Продажа {address_id_to_link(operation.destination.account_id)}, Получаем {await asset_to_link(operation.send_asset)} max {operation.send_max} в обмен на {await asset_to_link(operation.dest_asset)} {operation.dest_amount} ")
             continue
@@ -874,25 +1106,17 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                 result.append(f"    Clear flags: {operation.clear_flags}")
             if operation.set_flags is not None:
                 result.append(f"    Set flags: {operation.set_flags}")
-            #  "flags": {
-            #   "auth_required": true,
-            #   "auth_revocable": true,
-            #   "auth_immutable": false,
-            #   "auth_clawback_enabled": true
-            # },
-            issuer_account = await get_account(operation.asset.issuer)
+
+            issuer_account = simulated_ledger.get_account(operation.asset.issuer)
             if issuer_account.get('flags', {}).get('auth_required'):
                 pass
             else:
-                result.append(f"    <div style=\"color: red;\">issuer {address_id_to_link(operation.asset.issuer)} "
-                              f"not need auth </div>")
+                result.append(
+                    f"    <div style=\"color: orange;\">Warning: issuer {address_id_to_link(operation.asset.issuer)} "
+                    f"not need auth </div>")
 
             continue
-        if type(operation).__name__ == "CreateAccount":
-            data_exist = True
-            result.append(
-                f"    Создание аккаунта {address_id_to_link(operation.destination)} с суммой {operation.starting_balance} XLM")
-            continue
+
         if type(operation).__name__ == "AccountMerge":
             data_exist = True
             result.append(
@@ -933,13 +1157,6 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             # Get detailed function info
             hf_details = await decode_invoke_host_function(operation)
             result.extend(hf_details)
-
-            # Add auth info if present
-            # if hasattr(operation, 'auth') and operation.auth:
-            #     result.append("      Auth Entries:")
-            #     for i, auth in enumerate(operation.auth):
-            #         result.append(f"        [{i}] {decode_scval(auth)}")
-
             continue
 
         if type(operation).__name__ in ["PathPaymentStrictSend", "ManageBuyOffer", "ManageSellOffer", "AccountMerge",
@@ -1579,8 +1796,8 @@ def get_operation_threshold_level(operation) -> str:
         if op_name == 'SetOptions':
             # Только определенные изменения в SetOptions требуют высокого порога
             if operation.signer is not None or \
-               operation.low_threshold is not None or operation.med_threshold is not None or \
-               operation.high_threshold is not None:
+                    operation.low_threshold is not None or operation.med_threshold is not None or \
+                    operation.high_threshold is not None:
                 return 'high'
             else:
                 # Другие изменения (например, home_domain) имеют средний порог
@@ -1601,7 +1818,7 @@ def get_operation_threshold_level(operation) -> str:
 
 async def extract_sources(xdr):
     tr = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
-    
+
     # 1. Собираем все уникальные source accounts
     unique_sources = {tr.transaction.source.account_id}
     for op in tr.transaction.operations:
@@ -1639,15 +1856,16 @@ async def extract_sources(xdr):
                 signers.append([signer['key'], signer['weight'],
                                 Keypair.from_public_key(signer['key']).signature_hint().hex()])
                 await add_signer(signer['key'])
-            
+
             sources_data[source_id] = {'threshold': required_threshold_value, 'signers': signers}
 
         except Exception as e:
             logger.warning(f"Failed to extract source {source_id}: {e}")
             sources_data[source_id] = {'threshold': 0,
-                               'signers': [[source_id, 1, Keypair.from_public_key(source_id).signature_hint().hex()]]}
+                                       'signers': [
+                                           [source_id, 1, Keypair.from_public_key(source_id).signature_hint().hex()]]}
             await add_signer(source_id)
-            
+
     return sources_data
 
 
@@ -1656,10 +1874,10 @@ async def update_transaction_sources(transaction: "Transactions") -> bool:
     try:
         # Получаем самую свежую информацию о подписантах и порогах
         fresh_sources = await extract_sources(transaction.body)
-        
+
         # Обновляем поле json
         transaction.json = json.dumps(fresh_sources)
-        
+
         # Используем merge для безопасного обновления объекта в новой сессии
         with db_pool() as db_session:
             db_session.merge(transaction)
@@ -1722,7 +1940,8 @@ def update_memo_in_xdr(xdr: str, new_memo: str) -> str:
 
 
 async def local_test():
-    t1 = 'AAAAAgAAAADclX6AoyF+oySOHtC+GIbkd6jLL1gaKssa9UroGPBRLQAAAZACyHw2AAAAQgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABgAAAAJDRFJBVwAAAAAAAAAAAAAArxi+xvgiMXEE6MnqMjjlG9NQ3ZngjZaR2e9SgW6IhXF//////////wAAAAAAAAAMAAAAAk1UTENyb3dkAAAAAAAAAADjcJumqiibTAkcCd35IusHPoD7YwWUJEQ1QT0YjNTYKAAAAAJDRFJBVwAAAAAAAAAAAAAArxi+xvgiMXEE6MnqMjjlG9NQ3ZngjZaR2e9SgW6IhXEAAAAAcKccgAAAAAEAAAABAAAAAAAAAAAAAAAAAAAAAQAAAADitIvEcqMdheqxkvMjpqN4bJcxtAozbiluUkQHAPh2RwAAAAAAAAAAAExLQAAAAAAAAAAOAAAAAkNEUkFXAAAAAAAAAAAAAACvGL7G+CIxcQToyeoyOOUb01DdmeCNlpHZ71KBboiFcQAAAABwpxyAAAAAAgAAAAAAAAAArxi+xvgiMXEE6MnqMjjlG9NQ3ZngjZaR2e9SgW6IhXEAAAAAAAAAAAAAAADclX6AoyF+oySOHtC+GIbkd6jLL1gaKssa9UroGPBRLQAAAAAAAAAAAAAAAA=='
+    t1 = 'AAAAAgAAAADitIvEcqMdheqxkvMjpqN4bJcxtAozbiluUkQHAPh2RwAAA4QDMDaHAAAAGwAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABJNQUJJWiBDb250cmFjdCBORlQAAAAAAAkAAAABAAAAAOK0i8Ryox2F6rGS8yOmo3hslzG0CjNuKW5SRAcA+HZHAAAAEAAAAAAxiAnzB3T6TmMbSjv0sXnhWa+r+RPwZ+YM+m35M0AoxwAAAAEAAAAAMYgJ8wd0+k5jG0o79LF54Vmvq/kT8GfmDPpt+TNAKMcAAAAKAAAADmlwZnNoYXNoLU1BQklaAAAAAAABAAAAO2JhZmtyZWlmbm1ldmI2eGY0YWNpc3Y3bHc1ZDRzMzJ5Zmp4aWVvbWtoaDU1cmtkcGxneTRhbTdsb3lxAAAAAAEAAAAAnusOEB1kCBk3zbZLPenqRF4qczhw0PKd4BUKjXm614YAAAAGAAAAAk1BQklaAAAAAAAAAAAAAAAxiAnzB3T6TmMbSjv0sXnhWa+r+RPwZ+YM+m35M0AoxwAAAAAAAAABAAAAAQAAAAAxiAnzB3T6TmMbSjv0sXnhWa+r+RPwZ+YM+m35M0AoxwAAABUAAAAAnusOEB1kCBk3zbZLPenqRF4qczhw0PKd4BUKjXm614YAAAACTUFCSVoAAAAAAAAAAAAAADGICfMHdPpOYxtKO/SxeeFZr6v5E/Bn5gz6bfkzQCjHAAAAAAAAAAEAAAABAAAAADGICfMHdPpOYxtKO/SxeeFZr6v5E/Bn5gz6bfkzQCjHAAAAAQAAAACe6w4QHWQIGTfNtks96epEXipzOHDQ8p3gFQqNebrXhgAAAAJNQUJJWgAAAAAAAAAAAAAAMYgJ8wd0+k5jG0o79LF54Vmvq/kT8GfmDPpt+TNAKMcAAAAAAAAAAQAAAAEAAAAAz66d83RyJuEvcQJVwT/ywGlaA9l6fWjz39hyZNiw9qEAAAAGAAAAAk1BQklaAAAAAAAAAAAAAAAxiAnzB3T6TmMbSjv0sXnhWa+r+RPwZ+YM+m35M0AoxwAAAAAAAAABAAAAAQAAAAAxiAnzB3T6TmMbSjv0sXnhWa+r+RPwZ+YM+m35M0AoxwAAABUAAAAAz66d83RyJuEvcQJVwT/ywGlaA9l6fWjz39hyZNiw9qEAAAACTUFCSVoAAAAAAAAAAAAAADGICfMHdPpOYxtKO/SxeeFZr6v5E/Bn5gz6bfkzQCjHAAAAAAAAAAEAAAABAAAAADGICfMHdPpOYxtKO/SxeeFZr6v5E/Bn5gz6bfkzQCjHAAAAAQAAAADPrp3zdHIm4S9xAlXBP/LAaVoD2Xp9aPPf2HJk2LD2oQAAAAJNQUJJWgAAAAAAAAAAAAAAMYgJ8wd0+k5jG0o79LF54Vmvq/kT8GfmDPpt+TNAKMcAAAAAAAAAAQAAAAEAAAAAMYgJ8wd0+k5jG0o79LF54Vmvq/kT8GfmDPpt+TNAKMcAAAARAAAAAAAAAAA='
+
     # t2 = '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'
     a = await decode_xdr_to_text(t1)
     print('\n'.join(a))
