@@ -26,6 +26,7 @@ from stellar_sdk.operation import (SetOptions, AccountMerge, Payment, PathPaymen
 from stellar_sdk.operation.create_claimable_balance import ClaimPredicateType
 from stellar_sdk.sep import stellar_uri
 from other.cache_tools import async_cache_with_ttl
+from other.grist_cache import grist_cache
 from other.grist_tools import grist_manager, MTLGrist, load_user_from_grist, get_secretaries, load_users_from_grist
 from db.sql_models import Signers, Transactions, Signatures
 from db.sql_pool import db_pool
@@ -333,10 +334,7 @@ async def asset_to_link(operation_asset) -> str:
                 if asset[0]['issuer'] == operation_asset.issuer:
                     star = '⭐'
         else:
-            asset = await grist_manager.load_table_data(
-                MTLGrist.EURMTL_assets,
-                filter_dict={"code": [operation_asset.code]}
-            )
+            asset = grist_cache.find_by_filter('EURMTL_assets', 'code', [operation_asset.code])
 
             if asset:
                 tools_cash[key] = asset
