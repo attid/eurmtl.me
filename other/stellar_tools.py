@@ -496,8 +496,7 @@ async def check_asset(asset):
     return f'<div style="color: red;">Asset {asset.code} not exist ! </div>'
 
 
-@async_cache_with_ttl(ttl_seconds=900)
-async def get_account(account_id):
+async def _fetch_account(account_id):
     try:
         response = await http_session_manager.get_web_request(
             "GET", 'https://horizon.stellar.org/accounts/' + account_id, return_type="json"
@@ -507,6 +506,15 @@ async def get_account(account_id):
     except Exception as e:
         logger.warning(f"Error getting account {account_id}: {e}")
     return {'balances': []}
+
+
+@async_cache_with_ttl(ttl_seconds=900)
+async def get_account(account_id):
+    return await _fetch_account(account_id)
+
+
+async def get_account_fresh(account_id):
+    return await _fetch_account(account_id)
 
 
 async def get_available_balance_str(account_id: str) -> str:
@@ -747,7 +755,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                      for tx in same_sequence_txs]
             result.append(f"<div style=\"color: orange;\">Другие транзакции с этим sequence: {', '.join(links)} </div>")
 
-    account_info = await get_account(transaction.transaction.source.account_id)
+    account_info = await get_account_fresh(transaction.transaction.source.account_id)
     if 'sequence' not in account_info:
         result.append('<div style="color: red;">Аккаунт не найден или не содержит sequence</div>')
         return result
@@ -1175,11 +1183,15 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
 
 
 def decode_data_value(data_value: str):
-    base64_message = data_value
-    base64_bytes = base64_message.encode('ascii')
-    message_bytes = base64.b64decode(base64_bytes)
-    message = message_bytes.decode('ascii')
-    return message
+    try:
+        base64_message = data_value
+        base64_bytes = base64_message.encode('utf-8')
+        message_bytes = base64.b64decode(base64_bytes)
+        message = message_bytes.decode('utf-8')
+        return message
+    except Exception as ex:
+        logger.info(f"decode_data_value error: {ex}")
+        return 'decode error'
 
 
 def construct_payload(data):

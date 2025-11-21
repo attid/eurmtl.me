@@ -7,7 +7,7 @@ from quart import Blueprint, request, render_template, jsonify
 from other.config_reader import config
 from db.sql_models import MMWBTransactions
 from db.sql_pool import db_pool
-from other.stellar_tools import get_account, decode_data_value, stellar_manage_data
+from other.stellar_tools import get_account_fresh, decode_data_value, stellar_manage_data
 from other.telegram_tools import check_response_webapp, mmwb_bot
 
 blueprint = Blueprint('mmwb', __name__)
@@ -20,8 +20,7 @@ async def manage_data():
     account_id = request.args.get('account_id')
 
     if account_id:
-        cash = {}
-        account = await get_account(account_id, cash)
+        account = await get_account_fresh(account_id)
         data = account.get('data', {})
 
         for key in data.keys():
