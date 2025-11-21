@@ -170,11 +170,19 @@ async def show_transaction(tr_hash):
                 db_signer: Signers = db_session.query(Signers).filter(Signers.public_key == signer[0]).first()
                 signature_dt = db_session.query(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
                     Signers.public_key == signer[0]).order_by(Signatures.add_dt.desc()).first()
-                
+                signature_source_dt = db_session.query(Signatures) \
+                    .join(Signers, Signatures.signer_id == Signers.id) \
+                    .join(Transactions, Signatures.transaction_hash == Transactions.hash) \
+                    .filter(Signers.public_key == signer[0],
+                            Transactions.source_account == address) \
+                    .order_by(Signatures.add_dt.desc()) \
+                    .first()
+
                 user = user_map.get(db_signer.public_key) if db_signer else None
                 username = user.username if user else None
-                
-                signature_days = (datetime.now() - signature_dt.add_dt).days if signature_dt else "Never"
+
+                signature_days_any = (datetime.now() - signature_dt.add_dt).days if signature_dt else None
+                signature_days_source = (datetime.now() - signature_source_dt.add_dt).days if signature_source_dt else None
             if signature:
                 if has_votes < int(json_transaction[address]['threshold']) or int(
                         json_transaction[address]['threshold']) == 0:
@@ -187,7 +195,16 @@ async def show_transaction(tr_hash):
             else:
                 bad_signers.append(username)
             if signer[1] > 0:
-                signers.append([signer[0], username, signature_days, signer[1], signature])
+                signers.append([
+                    signer[0],
+                    username,
+                    {
+                        "source": signature_days_source,
+                        "any": signature_days_any
+                    },
+                    signer[1],
+                    signature
+                ])
         signers.sort(key=lambda k: k[3], reverse=True)
 
         signers_table.append({
