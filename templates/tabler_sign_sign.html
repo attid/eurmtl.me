@@ -153,7 +153,7 @@
                     <td>
                         {% set source_days = signer[2]['source'] %}
                         {% set any_days = signer[2]['any'] %}
-                        {{ source_days if source_days is not none else 'Never' }}({{ any_days if any_days is not none else 'Never' }})
+                        {{ source_days if source_days is not none else 'Never' }}&nbsp;|&nbsp;{{ any_days if any_days is not none else 'Never' }}
                     </td>
                     <td>{{ signer[3] }}</td>
                     <td>
