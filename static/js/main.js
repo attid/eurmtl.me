@@ -414,8 +414,13 @@ function getBlockCounter() {
 function generateCardHeader(cardName, blockId) {
     return `
         <div tabindex="0" class="row mb-3" id="block${blockId}">
-            <div class="col-8">
+            <div class="col-7">
                 <h5 class="card-title">${cardName} Block #${blockId}</h5>
+            </div>
+            <div class="col-1 d-flex justify-content-end">
+                <button class="btn btn-icon btn-secondary" data-bs-toggle="tooltip" title="Move block up" onclick="moveBlockUp(this)">
+                    <i class="ti ti-arrow-up"></i>
+                </button>
             </div>
             <div class="col-2">
                 <button class="btn btn-secondary w-100" onclick="cloneBlock(this)">Clone</button>
@@ -1147,6 +1152,21 @@ function cloneBlock(element) {
     highlightAndFocusBlock(lastCounter);
     showToast("Block " + dataType + " was cloned", 'warning');
 
+}
+
+function moveBlockUp(element) {
+    const $card = $(element).closest('.card');
+    const $prevCard = $card.prevAll('.card').first();
+
+    // don't move above the initial settings card
+    if (!$prevCard.length || $prevCard.attr('id') === 'firstCard') {
+        if (typeof showToast === 'function') {
+            showToast('Already at the top', 'info');
+        }
+        return;
+    }
+
+    $prevCard.before($card);
 }
 
 function toCamelCase(str) {
