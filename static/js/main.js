@@ -580,11 +580,11 @@ function generateCardCreateAccount() {
 <div class="card">
     <div class="card-body gather-block" data-type="create_account" data-index="${blockId}">
         ${generateCardHeader("Create Account", blockId)}
-        ${generateAccountSelector("destination", "Destination")}
+        ${generateAccountSelector("destination", "Destination", "", "New account (G...)")}
 
-        ${generateInput("startingBalance", "Starting Balance", "float")}
+        ${generateInput("startingBalance", "Starting Balance", "float", "", "Amount of XLM to fund new account")}
 
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -621,7 +621,7 @@ function generateCardManageData() {
             </div>
         </div>
 
-        ${generateAccountSelector("sourceAccount", "Source Account")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -638,9 +638,9 @@ function generateCardSetOption() {
             "This can result in a permanently locked account. Are you sure you know what you are doing?")}
         ${generateInput("threshold", "Low/Medium/High Threshold (optional) you can set just 1 or 10 for all or use 1/2/3", "threshold",  "",
             "This can result in a permanently locked account. Are you sure you know what you are doing?")}
-        ${generateInput("home", "Home Domain (optional)", "text_null")}
+        ${generateInput("home", "Home Domain (optional)", "text_null", "", "Domain to publish in account home_domain")}
 
-        ${generateAccountSelector("sourceAccount", "Source Account")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -658,7 +658,7 @@ function generateCardSetOptionSigner() {
         ${generateInput("weight", "Signer Weight", "int",  "",
             "Signer will be removed from account if this weight is 0. Used to add/remove or adjust weight of an additional signer on the account.")}
 
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -671,11 +671,11 @@ function generateCardClawback() {
     <div class="card-body gather-block" data-type="clawback" data-index="${blockId}">
         ${generateCardHeader("Clawback", blockId)}
 
-        ${generateAssetSelector("asset", "Asset")}
-        ${generateAccountSelector("from", "From")}
-        ${generateInput("amount", "Amount", "float")}
+        ${generateAssetSelector("asset", "Asset", "", "Asset to claw back")}
+        ${generateAccountSelector("from", "From", "", "Account to claw back from")}
+        ${generateInput("amount", "Amount", "float", "", "Amount to reclaim")}
 
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -690,7 +690,7 @@ function generateCardClaimClaimableBalance() {
 
         ${generateClaimableBalanceSelector("balanceId", "Claimable Balance ID")}
 
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -724,14 +724,14 @@ function generateCardSetTrustLineFlags() {
     <div class="card-body gather-block" data-type="set_trust_line_flags" data-index="${blockId}">
         ${generateCardHeader("SetTrustLineFlags", blockId)}
 
-        ${generateAssetSelector("asset", "Asset")}
-        ${generateAccountSelector("trustor", "Trustor")}
+        ${generateAssetSelector("asset", "Asset", "", "Asset whose trustline flags to change")}
+        ${generateAccountSelector("trustor", "Trustor", "", "Account holding the trustline")}
         ${generateInput("setFlags", "Set Flags", "int_null", "",
             "(optional) 1 - Authorized 2 - Authorized maintain")}
         ${generateInput("clearFlags", "Clear Flags", "int_null", "",
             "(optional) 1 - Authorized 2 - Authorized maintain 4 - Clawback enabled")}
 
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -745,8 +745,8 @@ function generateCardCopyMultiSign() {
     <div class="card-body gather-block" data-type="copy_multi_sign" data-index="${blockId}">
         ${generateCardHeader("Copy Multi Sign", blockId)}
 
-        ${generateAccountSelector("from", "From")}
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("from", "From", "", "Account to copy signer set from")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Target account (defaults to top-level public key)")}
     </div>
 </div>
     `;
@@ -758,15 +758,15 @@ function generateCardSwap() {
     <div class="card-body gather-block" data-type="swap" data-index="${blockId}">
         ${generateCardHeader("Swap", blockId)}
 
-        ${generateAssetSelector("selling", "Selling")}
-        ${generateAssetSelector("buying", "Buying")}
+        ${generateAssetSelector("selling", "Selling", "", "Asset you send")}
+        ${generateAssetSelector("buying", "Buying", "", "Asset you want to receive")}
 
-        ${generateInput("amount", "Amount you are swap", "float")}
-        ${generateInput("destination", "Minimum destination amount", "float")}
+        ${generateInput("amount", "Amount you are swap", "float", "", "Amount to send")}
+        ${generateInput("destination", "Minimum destination amount", "float", "", "Minimum you expect to receive")}
 
         ${generatePathSelector("path", "Path")}
 
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -779,12 +779,12 @@ function generateCardLiquidityPoolDeposit() {
         ${generateCardHeader("Liquidity Pool Deposit", blockId)}
 
         ${generatePoolSelector("liquidity_pool_id", "Liquidity Pool")}
-        ${generateInput("max_amount_a", "Max Amount A", "float")}
-        ${generateInput("max_amount_b", "Max Amount B", "float")}
-        ${generateInput("min_price", "Min Price (deposit_a/deposit_b price). Set 0 for auto", "float")}
-        ${generateInput("max_price", "Max Price (deposit_a/deposit_b price). Set 0 for auto", "float")}
+        ${generateInput("max_amount_a", "Max Amount A", "float", "", "Amount of first asset to deposit")}
+        ${generateInput("max_amount_b", "Max Amount B", "float", "", "Amount of second asset to deposit")}
+        ${generateInput("min_price", "Min Price (deposit_a/deposit_b price). Set 0 for auto", "float", "", "Leave 0 to auto-set about -5% from current")}
+        ${generateInput("max_price", "Max Price (deposit_a/deposit_b price). Set 0 for auto", "float", "", "Leave 0 to auto-set about +5% from current")}
 
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -798,11 +798,11 @@ function generateCardLiquidityPoolWithdraw() {
         ${generateCardHeader("Liquidity Pool Withdraw", blockId)}
 
         ${generatePoolSelector("liquidity_pool_id", "Liquidity Pool")}
-        ${generateInput("amount", "Amount (shares to withdraw)", "float")}
-        ${generateInput("min_amount_a", "Min Amount A to receive (0 for auto -5%)", "float")}
-        ${generateInput("min_amount_b", "Min Amount B to receive (0 for auto -5%)", "float")}
+        ${generateInput("amount", "Amount (shares to withdraw)", "float", "", "LP share amount to burn")}
+        ${generateInput("min_amount_a", "Min Amount A to receive (0 for auto -5%)", "float", "", "Leave 0 to auto-set ~ -5%")}
+        ${generateInput("min_amount_b", "Min Amount B to receive (0 for auto -5%)", "float", "", "Leave 0 to auto-set ~ -5%")}
 
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -820,7 +820,7 @@ function generateCardLiquidityPoolTrustline() {
         ${generateInput("limit", "Trust Limit (optional)", "float_null", "",
             "Leave empty to default to the max int64. Set to 0 to remove the trust line.")}
 
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
