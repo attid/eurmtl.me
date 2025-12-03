@@ -179,7 +179,8 @@ function get_uid(){
 
 function generateAccountSelector(fieldName = "sourceAccount",
                                  labelName = "Source Account (optional)",
-                                 fieldValue = "") {
+                                 fieldValue = "",
+                                 helperText = "") {
     var uid = get_uid();
     var validation = fieldName === "sourceAccount" ? 'data-validation="account_null"' : 'data-validation="account"';
     return `
@@ -201,6 +202,7 @@ function generateAccountSelector(fieldName = "sourceAccount",
                 <i class="ti ti-eye"></i>
             </button>
         </div>
+        ${helperText ? `<div class="form-text">${helperText}</div>` : ""}
     </div>
 </div>
     `;
@@ -475,10 +477,10 @@ function generateCardPayment() {
     <div class="card-body gather-block" data-type="payment" data-index="${blockId}">
         ${generateCardHeader("Payment", blockId)}
 
-        ${generateAccountSelector("destination", "Destination")}
-        ${generateAssetSelector("asset", "Asset")}
-        ${generateInput("amount", "Amount", "float")}
-        ${generateAccountSelector("sourceAccount", "Source Account")}
+        ${generateAccountSelector("destination", "Destination", "", "Recipient account (G...)")}
+        ${generateAssetSelector("asset", "Asset", "", "Asset being sent")}
+        ${generateInput("amount", "Amount", "float", "", "Amount to send")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -490,10 +492,10 @@ function generateCardTrustPayment() {
 <div class="card">
     <div class="card-body gather-block" data-type="trust_payment" data-index="${blockId}">
         ${generateCardHeader("Trust Payment", blockId)}
-        ${generateAccountSelector("destination", "Destination")}
-        ${generateAssetSelector("asset", "Asset")}
-        ${generateInput("amount", "Amount", "float")}
-        ${generateAccountSelector("sourceAccount", "Source Account")}
+        ${generateAccountSelector("destination", "Destination", "", "Recipient account (G...)")}
+        ${generateAssetSelector("asset", "Asset", "", "Asset being sent with temporary trust flag")}
+        ${generateInput("amount", "Amount", "float", "", "Amount to send")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -505,10 +507,10 @@ function generateCardChangeTrust() {
 <div class="card">
     <div class="card-body gather-block" data-type="change_trust" data-index="${blockId}">
         ${generateCardHeader("Change Trust", blockId)}
-        ${generateAssetSelector("asset", "Asset")}
+        ${generateAssetSelector("asset", "Asset", "", "Asset to add/remove trustline")}
         ${generateInput("limit", "Trust Limit (optional)", "float_null", "",
             "Leave empty to default to the max int64. Set to 0 to remove the trust line.")}
-        ${generateAccountSelector("sourceAccount", "Source Account")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -520,15 +522,15 @@ function generateCardBuy() {
 <div class="card">
     <div class="card-body gather-block" data-type="buy" data-index="${blockId}">
         ${generateCardHeader("Buy", blockId)}
-        ${generateAssetSelector("buying", "Buying")}
-        ${generateAssetSelector("selling", "Selling")}
+        ${generateAssetSelector("buying", "Buying", "", "Asset you want to buy")}
+        ${generateAssetSelector("selling", "Selling", "", "Asset you will pay with")}
 
-        ${generateInput("amount", "Amount you are buying (zero to delete offer)", "float_trade")}
+        ${generateInput("amount", "Amount you are buying (zero to delete offer)", "float_trade", "", "Amount of buying asset; 0 deletes offer")}
         ${generateInput("price", "Price per unit (buying in terms of selling)", "float_trade","","Тут будет расчет получаемого")}
 
         ${generateOfferSelector()}
 
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -540,15 +542,15 @@ function generateCardSell() {
 <div class="card">
     <div class="card-body gather-block" data-type="sell" data-index="${blockId}">
         ${generateCardHeader("Sell", blockId)}
-        ${generateAssetSelector("selling", "Selling")}
-        ${generateAssetSelector("buying", "Buying")}
+        ${generateAssetSelector("selling", "Selling", "", "Asset you are selling")}
+        ${generateAssetSelector("buying", "Buying", "", "Asset you want to receive")}
 
-        ${generateInput("amount", "Amount you are selling (zero to delete offer)", "float_trade")}
+        ${generateInput("amount", "Amount you are selling (zero to delete offer)", "float_trade", "", "Amount of selling asset; 0 deletes offer")}
         ${generateInput("price", "Price per unit (buying in terms of selling)", "float_trade","","Тут будет расчет получаемого")}
 
         ${generateOfferSelector()}
 
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
@@ -560,13 +562,13 @@ function generateCardSellPassive() {
 <div class="card">
     <div class="card-body gather-block" data-type="sell_passive" data-index="${blockId}">
         ${generateCardHeader("Sell Passive", blockId)}
-        ${generateAssetSelector("selling", "Selling")}
-        ${generateAssetSelector("buying", "Buying")}
+        ${generateAssetSelector("selling", "Selling", "", "Asset you are selling")}
+        ${generateAssetSelector("buying", "Buying", "", "Asset you want to receive")}
 
-        ${generateInput("amount", "Amount you are selling (zero to delete offer)", "float_trade")}
+        ${generateInput("amount", "Amount you are selling (zero to delete offer)", "float_trade", "", "Amount of selling asset; 0 deletes offer")}
         ${generateInput("price", "Price per unit (buying in terms of selling)", "float_trade","","Тут будет расчет получаемого")}
 
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
