@@ -1439,7 +1439,7 @@ def decode_flags(flag_value):
     return flags
 
 
-async def pay_divs(asset_hold: Asset, total_payment: float):
+async def pay_divs(asset_hold: Asset, total_payment: float, payment_asset: Asset, require_trustline: bool = True):
     async with ServerAsync(horizon_url="https://horizon.stellar.org", client=AiohttpClient()) as server:
         accounts = await server.accounts().for_asset(asset_hold).limit(200).call()
         holders = accounts['_embedded']['records']
@@ -1450,6 +1450,16 @@ async def pay_divs(asset_hold: Asset, total_payment: float):
 
         # Расчет общего количества активов и активов каждого аккаунта, включая доли в пулах ликвидности
         for account in holders:
+            if require_trustline and not payment_asset.is_native():
+                has_trustline = any(
+                    balance.get('asset_type') in ['credit_alphanum4', 'credit_alphanum12'] and
+                    balance.get('asset_code') == payment_asset.code and
+                    balance.get('asset_issuer') == payment_asset.issuer
+                    for balance in account.get('balances', [])
+                )
+                if not has_trustline:
+                    continue
+
             account_total_asset = 0  # Суммарное количество активов аккаунта
 
             for balance in account['balances']:
@@ -1686,10 +1696,24 @@ async def stellar_build_xdr(data):
                 source=source_account)
         if operation['type'] == 'pay_divs':
             # {'account': 'GBVIX6CZ57SHXHGPA4AL7DACNNZX4I2LCKIAA3VQUOGTGWYQYVYSE5TU', 'payment': 60.0}
-            for record in await pay_divs(decode_asset(operation['holders']), float(operation['amount'])):
+            require_trustline = True
+            raw_flag = operation.get('require_trustline') if 'require_trustline' in operation else operation.get('requireTrustline')
+            if raw_flag is not None:
+                try:
+                    require_trustline = bool(int(raw_flag))
+                except (TypeError, ValueError):
+                    require_trustline = True
+
+            payout_asset = decode_asset(operation['asset'])
+            for record in await pay_divs(
+                decode_asset(operation['holders']),
+                float(operation['amount']),
+                payout_asset,
+                require_trustline=require_trustline
+            ):
                 if round(record['payment'], 7) > 0:
                     transaction.append_payment_op(destination=record['account'],
-                                                  asset=decode_asset(operation['asset']),
+                                                  asset=payout_asset,
                                                   amount=float2str(record['payment']),
                                                   source=source_account)
 

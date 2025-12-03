@@ -702,6 +702,8 @@ function generatePayDivs() {
         ${generateAssetSelector("holders", "Holders")}
         ${generateAssetSelector("asset", "Asset")}
         ${generateInput("amount", "Amount", "float")}
+        ${generateInput("requireTrustline", "Require Trustline (1/0)", "int", "1",
+            "1 to skip recipients without a trustline to payout asset, 0 to include all")}
 
         ${generateAccountSelector("sourceAccount")}
     </div>
