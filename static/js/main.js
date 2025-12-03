@@ -250,7 +250,8 @@ function generatePoolSelector(fieldName = "pool",
 
 function generateAssetSelector(fieldName = "asset",
                                  labelName = "Asset",
-                                 fieldValue = "") {
+                                 fieldValue = "",
+                                 helperText = "") {
     var uid = get_uid();
     return `
 <!-- Asset Selector -->
@@ -273,6 +274,7 @@ function generateAssetSelector(fieldName = "asset",
                 <i class="ti ti-eye"></i>
             </button>
         </div>
+        ${helperText ? `<div class="form-text">${helperText}</div>` : ""}
     </div>
 </div>
     `;
@@ -699,9 +701,11 @@ function generatePayDivs() {
     <div class="card-body gather-block" data-type="pay_divs" data-index="${blockId}">
         ${generateCardHeader("PayDivs", blockId)}
 
-        ${generateAssetSelector("holders", "Holders")}
-        ${generateAssetSelector("asset", "Asset")}
-        ${generateInput("amount", "Amount", "float")}
+        ${generateAssetSelector("holders", "Holders", "", "Asset whose holders (incl. LP shares) will receive the payout")}
+
+        ${generateAssetSelector("asset", "Asset", "", "Asset used to pay dividends")}
+
+        ${generateInput("amount", "Amount", "float", "", "Total sum to distribute proportionally among holders")}
         ${generateInput("requireTrustline", "Require Trustline (1/0)", "int", "1",
             "1 to skip recipients without a trustline to payout asset, 0 to include all")}
 
