@@ -711,7 +711,7 @@ function generatePayDivs() {
         ${generateInput("requireTrustline", "Require Trustline (1/0)", "int", "1",
             "1 to skip recipients without a trustline to payout asset, 0 to include all")}
 
-        ${generateAccountSelector("sourceAccount")}
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
 </div>
     `;
