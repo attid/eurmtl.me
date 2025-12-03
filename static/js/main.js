@@ -889,6 +889,7 @@ function getCardByName(selectedOperation){
         case 'set_trust_line_flags':
             newCardHTML = generateCardSetTrustLineFlags();
             break;
+        case 'pay_divs':
         case 'payDivs':
             newCardHTML = generatePayDivs();
             break;
