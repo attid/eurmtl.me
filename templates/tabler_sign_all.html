@@ -74,7 +74,7 @@
             <td class="description">{{ transaction.description[:30] }}</td>
             <td>
                 {% if transaction.source_account and transaction.source_account|length > 8 %}
-                    <a href="https://stellar.expert/explorer/public/account/{{ transaction.source_account }}" target="_blank" title="{{ transaction.source_account }}">
+                    <a href="https://viewer.eurmtl.me/account/{{ transaction.source_account }}" target="_blank" title="{{ transaction.source_account }}">
                         {{ transaction.source_account[:4] }}..{{ transaction.source_account[-4:] }}
                     </a>
                 {% endif %}

@@ -25,7 +25,7 @@
         {% if publish_state[0] == 1 %}
         <div class="alert alert-success mt-3" role="alert">
             <h4 class="alert-title">Transaction Published</h4>
-            <p><a href="https://stellar.expert/explorer/public/tx/{{ tx_hash }}" class="alert-link">Transaction is
+            <p><a href="https://viewer.eurmtl.me/transaction/{{ tx_hash }}" class="alert-link">Transaction is
                 published at {{ publish_state[1] }}</a></p>
         </div>
         {% endif %}
@@ -33,7 +33,7 @@
         {% if publish_state[0] == 10 %}
         <div class="alert alert-danger mt-3" role="alert">
             <h4 class="alert-title">Transaction Error</h4>
-            <p><a href="https://stellar.expert/explorer/public/tx/{{ tx_hash }}" class="alert-link text-danger">Transaction
+            <p><a href="https://viewer.eurmtl.me/transaction/{{ tx_hash }}" class="alert-link text-danger">Transaction
                 is published with error at {{ publish_state[1] }}</a></p>
         </div>
         {% endif %}
@@ -73,7 +73,7 @@
 {% if publish_state[0] == 1 %}
 <div class="alert alert-success">
     <h4 class="alert-title">
-        <a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}" class="alert-link">Transaction is published at
+        <a href="https://viewer.eurmtl.me/transaction/{{tx_hash}}" class="alert-link">Transaction is published at
             {{publish_state[1]}}</a>
     </h4>
     <p>You don't need to sign it. But you can if you want. ^_^</p>
@@ -82,7 +82,7 @@
 {% if publish_state[0] == 10 %}
 <div class="alert alert-danger">
     <h4 class="alert-title">
-        <a href="https://stellar.expert/explorer/public/tx/{{tx_hash}}" class="alert-link text-danger">Transaction is
+        <a href="https://viewer.eurmtl.me/transaction/{{tx_hash}}" class="alert-link text-danger">Transaction is
             published with error at {{publish_state[1]}}</a>
     </h4>
 </div>
@@ -120,7 +120,7 @@
 <div class="card mt-3">
     <div class="card-header">
         <h3 class="card-title">Collected {{ record['has_votes'] }} from {{ record['threshold'] }} for
-            <a class="bg-link" title="{{ record['sources'] }}" href="https://stellar.expert/explorer/public/account/{{ record['sources'] }}">{{ record['sources'][:4] }}..{{ record['sources'][-4:] }}</a>
+            <a class="bg-link" title="{{ record['sources'] }}" href="https://viewer.eurmtl.me/account/{{ record['sources'] }}">{{ record['sources'][:4] }}..{{ record['sources'][-4:] }}</a>
         </h3>
     </div>
     <div class="card-body">
@@ -139,7 +139,7 @@
                 <tbody>
                 {% for signer in record['signers'] %}
                 <tr>
-                    <td><a href="https://stellar.expert/explorer/public/account/{{ signer[0] }}">{{ signer[0][:4] }}..{{
+                    <td><a href="https://viewer.eurmtl.me/account/{{ signer[0] }}">{{ signer[0][:4] }}..{{
                         signer[0][-8:-4] }}..{{ signer[0][-4:] }}</a></td>
                     <td>
                         {% if admin_weight == 0 %}

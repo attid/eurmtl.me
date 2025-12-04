@@ -311,19 +311,19 @@ def float2str(f) -> str:
 
 
 def address_id_to_link(key) -> str:
-    start_url = "https://stellar.expert/explorer/public/account"
-    return f'<a href="{start_url}/{key}" target="_blank">{key[:4] + ".." + key[-4:]}</a>'
+    start_url = "https://viewer.eurmtl.me/account/"
+    return f'<a href="{start_url}{key}" target="_blank">{key[:4] + ".." + key[-4:]}</a>'
 
 
 def pool_id_to_link(key) -> str:
-    start_url = "https://stellar.expert/explorer/public/liquidity-pool"
-    return f'<a href="{start_url}/{key}" target="_blank">{key[:4] + ".." + key[-4:]}</a>'
+    start_url = "https://viewer.eurmtl.me/pool/"
+    return f'<a href="{start_url}{key}" target="_blank">{key[:4] + ".." + key[-4:]}</a>'
 
 
 async def asset_to_link(operation_asset) -> str:
-    start_url = "https://stellar.expert/explorer/public/asset"
+    start_url = "https://viewer.eurmtl.me/assets/"
     if operation_asset.code == 'XLM':
-        return f'<a href="{start_url}/{operation_asset.code}" target="_blank">{operation_asset.code}⭐</a>'
+        return f'<a href="{start_url}{operation_asset.code}" target="_blank">{operation_asset.code}⭐</a>'
     else:
         star = ''
         # add * if we have asset in DB
@@ -1014,7 +1014,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                 f"    Офер на продажу {operation.amount} {await asset_to_link(operation.selling)} по цене {operation.price.n / operation.price.d} {await asset_to_link(operation.buying)}")
             if operation.offer_id != 0:
                 result.append(
-                    f"    Номер офера <a href=\"https://stellar.expert/explorer/public/offer/{operation.offer_id}\">{operation.offer_id}</a>")
+                    f"    Номер офера <a href=\"https://viewer.eurmtl.me/offer/{operation.offer_id}\">{operation.offer_id}</a>")
             # check balance тут надо проверить сумму
             source_account = simulated_ledger.get_account(op_source_id)
             selling_asset_code = operation.selling.code if hasattr(operation.selling, 'code') else 'XLM'
@@ -1059,7 +1059,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                 f"    Офер на покупку {operation.amount} {await asset_to_link(operation.buying)} по цене {operation.price.n / operation.price.d} {await asset_to_link(operation.selling)}")
             if operation.offer_id != 0:
                 result.append(
-                    f"    Номер офера <a href=\"https://stellar.expert/explorer/public/offer/{operation.offer_id}\">{operation.offer_id}</a>")
+                    f"    Номер офера <a href=\"https://viewer.eurmtl.me/offer/{operation.offer_id}\">{operation.offer_id}</a>")
 
             source_account = simulated_ledger.get_account(op_source_id)
             selling_asset_code = operation.selling.code if hasattr(operation.selling,
