@@ -9,7 +9,7 @@ function viewAccount(element) {
     var destinationValue = $(element).closest('.row').find('.account-input').val().trim();
 
     if (destinationValue.length === 56) {
-        window.open('https://stellar.expert/explorer/public/account/' + destinationValue, '_blank');
+        window.open('https://viewer.eurmtl.me/offer/' + destinationValue, '_blank');
     } else {
         showToast('Адрес должен содержать 56 символов', 'warning');
 
@@ -20,7 +20,7 @@ function viewAsset(element) {
     var destinationValue = $(element).closest('.row').find('.account-input').val().trim();
 
     if (destinationValue.length > 2) {
-        window.open('https://stellar.expert/explorer/public/asset/' + destinationValue, '_blank');
+        window.open('https://viewer.eurmtl.me/asset/' + destinationValue, '_blank');
     } else {
         showToast('Ассет не выбран', 'warning');
     }
@@ -211,7 +211,7 @@ function generateAccountSelector(fieldName = "sourceAccount",
 function viewPool(element) {
     var poolId = $(element).closest('.row').find('.account-input').val().trim();
     if (poolId.length === 64) {
-        window.open('https://stellar.expert/explorer/public/liquidity-pool/' + poolId, '_blank');
+        window.open('https://viewer.eurmtl.me/offer/pool/' + poolId, '_blank');
     } else {
         showToast('Pool ID должен содержать 64 символа', 'warning');
     }
