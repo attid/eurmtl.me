@@ -82,6 +82,8 @@ def require_grist_auth(f: F) -> F:
             abort(401, "Authorization header is missing")
 
         token = auth_header.strip()
+        if auth_header.startswith('Bearer '):
+            token = auth_header[7:].strip()
         if not hmac.compare_digest(token.encode(), config.grist_income.encode()):
             logger.warning(f"Grist webhook from {ip}: Invalid token provided: '{token}'")
             abort(403, "Invalid token")
