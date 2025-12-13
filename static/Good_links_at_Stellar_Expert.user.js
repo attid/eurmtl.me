@@ -3,7 +3,7 @@
 // @namespace   http://tampermonkey.net/
 // @match       https://stellar.expert/*
 // @grant       none
-// @version     1.12
+// @version     1.13
 // @description Change links at Stellar Expert
 // @author      skynet
 // @updateURL   https://eurmtl.me/static/Good_links_at_Stellar_Expert.user.js
@@ -78,11 +78,17 @@ function initButton() {
 }
 
 function addExternalLinks(accountAddress) {
+    const buttonViewer = document.createElement('a');
     const buttonStellarchain = document.createElement('a');
     const buttonScopuly = document.createElement('a');
     const buttonCalcOrders = document.createElement('a');
     const buttonWhereSigner = document.createElement('a');
     const buttonBSN = document.createElement('a');
+
+    buttonViewer.href = `https://viewer.eurmtl.me/account/${accountAddress}`;
+    buttonViewer.innerText = 'eurmtl viewer';
+    buttonViewer.target = "_blank";
+    buttonViewer.classList.add('button', 'small', 'text-small', 'skynet-button');
 
     // Настройка кнопки для Stellarchain
     buttonStellarchain.href = `https://stellarchain.io/accounts/${accountAddress}`;
@@ -125,6 +131,7 @@ function addExternalLinks(accountAddress) {
 
     // Добавление кнопок на страницу
     if (parentElement) {
+        parentElement.appendChild(buttonViewer);
         parentElement.appendChild(buttonBsnExpert);
         parentElement.appendChild(buttonScopuly);
         parentElement.appendChild(buttonStellarchain);
