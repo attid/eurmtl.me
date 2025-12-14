@@ -16,12 +16,7 @@ from stellar_sdk.exceptions import SdkError
 from other.config_reader import config
 from other.grist_tools import grist_manager, GristTableConfig, GristAPI
 from other.stellar_tools import stellar_build_xdr, add_transaction
-from other.telegram_tools import send_telegram_message_
-
-
-class HolderNotFoundException(Exception):
-    """Custom exception raised when a Grist holder record cannot be found."""
-    pass
+from other.telegram_tools import skynet_bot
 
 
 RELY_DEAL_CHAT_ID = -1003363491610  # rely
@@ -38,6 +33,32 @@ deal_locks: Dict[int, asyncio.Lock] = {}
 
 # --- Typing for Decorator ---
 F = TypeVar('F', bound=Callable[..., Awaitable[Tuple[Response, int]]])
+
+
+class TelegramMessenger:
+    """A helper class to send messages to a specific Telegram chat."""
+
+    @staticmethod
+    async def send_message(text: str, disable_web_page_preview: bool = True, parse_mode: str = 'HTML') -> None:
+        """
+        Sends a message to the predefined Telegram chat.
+
+        Args:
+            text: The message text to send.
+            disable_web_page_preview: If True, disables web page previews for links.
+            parse_mode: The parse mode for the message text (e.g., 'HTML', 'Markdown').
+        """
+        await skynet_bot.send_message(
+            chat_id=RELY_DEAL_CHAT_ID,
+            text=text,
+            disable_web_page_preview=disable_web_page_preview,
+            parse_mode=parse_mode
+        )
+
+
+class HolderNotFoundException(Exception):
+    """Custom exception raised when a Grist holder record cannot be found."""
+    pass
 
 
 def _get_deal_lock(deal_id: int) -> asyncio.Lock:
@@ -452,7 +473,7 @@ async def _handle_checked_empty_transaction(deal_record: DealRecord) -> None:
             errors_str = '\n'.join([f"- {e}" for e in errors])
             text = (f"Проверка сделки #{deal_id} провалена. Ошибки:\n{errors_str}\n"
                     f"Автоматическое создание транзакции отменено.")
-            await send_telegram_message_(RELY_DEAL_CHAT_ID, text)
+            await TelegramMessenger.send_message(text=text)
             return
 
         xdr = result
@@ -462,10 +483,10 @@ async def _handle_checked_empty_transaction(deal_record: DealRecord) -> None:
             logger.info(f"Transaction for deal {deal_id} added with hash {add_result}. URL: {transaction_url}")
             await deal_repo.set_transaction(deal_id, transaction_url)
             text = f'Создана транзакция для сделки #{deal_id}. <a href="{transaction_url}">URL</a>'
-            await send_telegram_message_(RELY_DEAL_CHAT_ID, text)
+            await TelegramMessenger.send_message(text=text)
         else:
             logger.error(f"Failed to add transaction for deal {deal_id}: {add_result}")
-            await send_telegram_message_(RELY_DEAL_CHAT_ID, f"Ошибка добавления транзакции для сделки #{deal_id}. Детали: {add_result}")
+            await TelegramMessenger.send_message(text=f"Ошибка добавления транзакции для сделки #{deal_id}. Детали: {add_result}")
 
 
 async def _process_grist_payload(payload: List[Dict]) -> None:
