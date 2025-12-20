@@ -9,7 +9,7 @@ function viewAccount(element) {
     var destinationValue = $(element).closest('.row').find('.account-input').val().trim();
 
     if (destinationValue.length === 56) {
-        window.open('https://viewer.eurmtl.me/offer/' + destinationValue, '_blank');
+        window.open('https://viewer.eurmtl.me/account/' + destinationValue, '_blank');
     } else {
         showToast('Адрес должен содержать 56 символов', 'warning');
 
@@ -180,16 +180,18 @@ function get_uid(){
 function generateAccountSelector(fieldName = "sourceAccount",
                                  labelName = "Source Account (optional)",
                                  fieldValue = "",
-                                 helperText = "") {
+                                 helperText = "",
+                                 validationOverride = "") {
     var uid = get_uid();
-    var validation = fieldName === "sourceAccount" ? 'data-validation="account_null"' : 'data-validation="account"';
+    var validationValue = validationOverride || (fieldName === "sourceAccount" ? "account_null" : "account");
     return `
 <!-- Account -->
 <div class="row mb-3">
     <div class="col-12">
         <label for="${fieldName}-${uid}" class="form-label">${labelName}</label>
         <div class="input-group">
-            <input type="text" class="form-control account-input me-2" maxlength="56" data-type="${fieldName}" ${validation}
+            <input type="text" class="form-control account-input me-2" maxlength="56" data-type="${fieldName}"
+                data-validation="${validationValue}"
                 value="${fieldValue}" id="${fieldName}-${uid}">
 
             <button type="button" class="btn btn-icon btn-primary me-2" data-bs-toggle="tooltip" title="Выбрать из списка"
@@ -211,7 +213,7 @@ function generateAccountSelector(fieldName = "sourceAccount",
 function viewPool(element) {
     var poolId = $(element).closest('.row').find('.account-input').val().trim();
     if (poolId.length === 64) {
-        window.open('https://viewer.eurmtl.me/offer/pool/' + poolId, '_blank');
+        window.open('https://viewer.eurmtl.me/pool/' + poolId, '_blank');
     } else {
         showToast('Pool ID должен содержать 64 символа', 'warning');
     }
@@ -226,7 +228,8 @@ function fetchPoolsMTL(buttonElement) {
 
 function generatePoolSelector(fieldName = "pool",
                              labelName = "Liquidity Pool",
-                             fieldValue = "") {
+                             fieldValue = "",
+                             validationOverride = "pool") {
     var uid = get_uid();
     return `
 <!-- Pool Selector -->
@@ -234,7 +237,8 @@ function generatePoolSelector(fieldName = "pool",
     <div class="col-12">
         <label for="${fieldName}-${uid}" class="form-label">${labelName}</label>
         <div class="input-group">
-            <input type="text" class="form-control account-input me-2" data-type="${fieldName}" data-validation="pool"
+            <input type="text" class="form-control account-input me-2" data-type="${fieldName}"
+                data-validation="${validationOverride}"
                 value="${fieldValue}" id="${fieldName}-${uid}">
             <button type="button" class="btn btn-icon btn-primary me-2" data-bs-toggle="tooltip"
                 title="Выбрать из списка" onclick="fetchPoolsMTL(this)">
@@ -253,7 +257,8 @@ function generatePoolSelector(fieldName = "pool",
 function generateAssetSelector(fieldName = "asset",
                                  labelName = "Asset",
                                  fieldValue = "",
-                                 helperText = "") {
+                                 helperText = "",
+                                 validationOverride = "asset") {
     var uid = get_uid();
     return `
 <!-- Asset Selector -->
@@ -261,7 +266,8 @@ function generateAssetSelector(fieldName = "asset",
     <div class="col-12">
         <label for="${fieldName}-${uid}" class="form-label">${labelName}</label>
         <div class="input-group">
-            <input type="text" class="form-control account-input me-2" data-type="${fieldName}" data-validation="asset"
+            <input type="text" class="form-control account-input me-2" data-type="${fieldName}"
+                data-validation="${validationOverride}"
                 value="${fieldValue}" id="${fieldName}-${uid}">
             <button type="button" class="btn btn-icon btn-primary me-2" data-bs-toggle="tooltip"
                 title="Выбрать из списка" onclick="fetchAssetsMTL(this)">
@@ -284,7 +290,8 @@ function generateAssetSelector(fieldName = "asset",
 
 function generateClaimableBalanceSelector(fieldName = "balanceId",
                                           labelName = "Claimable Balance ID",
-                                          fieldValue = "") {
+                                          fieldValue = "",
+                                          validationOverride = "claimable_balance_id") {
     var uid = get_uid();
     return `
 <!-- Claimable Balance Selector -->
@@ -293,7 +300,7 @@ function generateClaimableBalanceSelector(fieldName = "balanceId",
         <label for="${fieldName}-${uid}" class="form-label">${labelName}</label>
         <div class="input-group">
             <input type="text" class="form-control account-input me-2" data-type="${fieldName}"
-                data-validation="claimable_balance_id" value="${fieldValue}" id="${fieldName}-${uid}">
+                data-validation="${validationOverride}" value="${fieldValue}" id="${fieldName}-${uid}">
             <button type="button" class="btn btn-icon btn-primary me-2" data-bs-toggle="tooltip"
                 title="Выбрать из списка" onclick="fetchClaimableBalances(this)">
                 <i class="ti ti-list"></i>
@@ -669,6 +676,22 @@ function generateCardSetOptionSigner() {
     `;
 }
 
+function generateCardBumpSequence() {
+    var blockId = getBlockCounter();
+    return `
+<div class="card">
+    <div class="card-body gather-block" data-type="bump_sequence" data-index="${blockId}">
+        ${generateCardHeader("Bump Sequence", blockId)}
+
+        ${generateInput("bump_to", "Bump To", "int", "",
+            "New sequence number for source account (must be higher than current)")}
+
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
+    </div>
+</div>
+    `;
+}
+
 function generateCardClawback() {
     var blockId = getBlockCounter();
     return `
@@ -694,6 +717,96 @@ function generateCardClaimClaimableBalance() {
         ${generateCardHeader("Claim Claimable Balance", blockId)}
 
         ${generateClaimableBalanceSelector("balanceId", "Claimable Balance ID")}
+
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
+    </div>
+</div>
+    `;
+}
+
+function generateCardBeginSponsoringFutureReserves() {
+    var blockId = getBlockCounter();
+    return `
+<div class="card">
+    <div class="card-body gather-block" data-type="begin_sponsoring_future_reserves" data-index="${blockId}">
+        ${generateCardHeader("Begin Sponsoring Future Reserves", blockId)}
+
+        ${generateAccountSelector("sponsored_id", "Sponsored Account", "", "Account to sponsor future reserves for")}
+
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Sponsor account (optional, defaults to top-level public key)")}
+    </div>
+</div>
+    `;
+}
+
+function generateCardEndSponsoringFutureReserves() {
+    var blockId = getBlockCounter();
+    return `
+<div class="card">
+    <div class="card-body gather-block" data-type="end_sponsoring_future_reserves" data-index="${blockId}">
+        ${generateCardHeader("End Sponsoring Future Reserves", blockId)}
+
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
+    </div>
+</div>
+    `;
+}
+
+function generateCardRevokeSponsorship() {
+    var blockId = getBlockCounter();
+    return `
+<div class="card">
+    <div class="card-body gather-block" data-type="revoke_sponsorship" data-index="${blockId}">
+        ${generateCardHeader("Revoke Sponsorship", blockId)}
+
+        <div class="row mb-3">
+            <div class="col-12">
+                <label for="revoke_type-${blockId}" class="form-label">Revoke Type</label>
+                <select id="revoke_type-${blockId}" class="form-select" data-type="revoke_type" data-validation="text"
+                        onchange="updateRevokeSponsorshipFields(this)">
+                    <option value="" disabled>Choose revoke type</option>
+                    <option value="account" selected>Account</option>
+                    <option value="trustline">Trustline</option>
+                    <option value="data">Data</option>
+                    <option value="offer">Offer</option>
+                    <option value="claimable_balance">Claimable Balance</option>
+                    <option value="liquidity_pool">Liquidity Pool</option>
+                    <option value="signer">Signer (Ed25519)</option>
+                </select>
+            </div>
+        </div>
+
+        <div data-revoke-target="account">
+            ${generateAccountSelector("revoke_account_id", "Account", "", "Account whose sponsorship is being revoked")}
+        </div>
+
+        <div data-revoke-target="trustline" style="display: none;">
+            ${generateAccountSelector("revoke_trustline_account", "Account", "", "Account holding the trustline", "account_null")}
+            ${generateAssetSelector("revoke_trustline_asset", "Asset", "", "Trustline asset to revoke sponsorship for", "text_null")}
+        </div>
+
+        <div data-revoke-target="data" style="display: none;">
+            ${generateAccountSelector("revoke_data_account", "Account", "", "Account that owns the data entry", "account_null")}
+            ${generateInput("revoke_data_name", "Data Name", "text_null", "", "Data entry name")}
+        </div>
+
+        <div data-revoke-target="offer" style="display: none;">
+            ${generateAccountSelector("revoke_offer_seller", "Seller", "", "Account that owns the offer", "account_null")}
+            ${generateInput("revoke_offer_id", "Offer ID", "int_null", "", "Offer ID to revoke sponsorship for")}
+        </div>
+
+        <div data-revoke-target="claimable_balance" style="display: none;">
+            ${generateClaimableBalanceSelector("revoke_claimable_balance_id", "Claimable Balance ID", "", "text_null")}
+        </div>
+
+        <div data-revoke-target="liquidity_pool" style="display: none;">
+            ${generatePoolSelector("revoke_liquidity_pool_id", "Liquidity Pool", "", "text_null")}
+        </div>
+
+        <div data-revoke-target="signer" style="display: none;">
+            ${generateAccountSelector("revoke_signer_account", "Account", "", "Account that owns the signer", "account_null")}
+            ${generateAccountSelector("revoke_signer_key", "Signer Public Key", "", "Signer key to revoke sponsorship for", "account_null")}
+        </div>
 
         ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
@@ -876,12 +989,28 @@ function getCardByName(selectedOperation){
         case 'set_options_signer':
                 newCardHTML = generateCardSetOptionSigner();
             break;
+        case 'bump_sequence':
+        case 'bumpSequence':
+            newCardHTML = generateCardBumpSequence();
+            break;
         case 'clawback':
             newCardHTML = generateCardClawback();
             break;
         case 'claim_claimable_balance':
         case 'claimClaimableBalance':
             newCardHTML = generateCardClaimClaimableBalance();
+            break;
+        case 'begin_sponsoring_future_reserves':
+        case 'beginSponsoringFutureReserves':
+            newCardHTML = generateCardBeginSponsoringFutureReserves();
+            break;
+        case 'end_sponsoring_future_reserves':
+        case 'endSponsoringFutureReserves':
+            newCardHTML = generateCardEndSponsoringFutureReserves();
+            break;
+        case 'revoke_sponsorship':
+        case 'revokeSponsorship':
+            newCardHTML = generateCardRevokeSponsorship();
             break;
         case 'copy_multi_sign':
         case 'copyMultiSign':
@@ -938,12 +1067,68 @@ function addOperation(selectElement) {
         $('.new-operation').before($newCard);
         $newCard.fadeIn(); // Плавное появление карточки
 
+        if (selectedOperation === 'revoke_sponsorship') {
+            var revokeSelect = $newCard.find('[data-type="revoke_type"]');
+            if (revokeSelect.length) {
+                updateRevokeSponsorshipFields(revokeSelect[0]);
+            }
+        }
+
         highlightAndFocusBlock(lastCounter);
         showToast("Block " + selectedOperation + " was added", 'success');
     }
 
     // Сброс выбора в выпадающем списке
     $(selectElement).val('');
+}
+
+function updateRevokeSponsorshipFields(selectElement) {
+    var $block = $(selectElement).closest('.gather-block');
+    var selected = $(selectElement).val();
+    var validationMap = {
+        revoke_account_id: 'account',
+        revoke_trustline_account: 'account',
+        revoke_trustline_asset: 'asset',
+        revoke_data_account: 'account',
+        revoke_data_name: 'text',
+        revoke_offer_seller: 'account',
+        revoke_offer_id: 'int',
+        revoke_claimable_balance_id: 'claimable_balance_id',
+        revoke_liquidity_pool_id: 'pool',
+        revoke_signer_account: 'account',
+        revoke_signer_key: 'account'
+    };
+
+    $block.find('[data-revoke-target]').each(function() {
+        var $section = $(this);
+        var target = $section.data('revoke-target');
+        var isActive = target === selected;
+        $section.toggle(isActive);
+
+        $section.find('[data-validation]').each(function() {
+            var $input = $(this);
+            var dataType = $input.data('type');
+            var baseValidation = validationMap[dataType];
+            if (!baseValidation) {
+                return;
+            }
+
+            if (isActive) {
+                $input.attr('data-validation', baseValidation);
+                return;
+            }
+
+            if (baseValidation === 'account') {
+                $input.attr('data-validation', 'account_null');
+            } else if (baseValidation === 'int') {
+                $input.attr('data-validation', 'int_null');
+            } else if (baseValidation === 'float') {
+                $input.attr('data-validation', 'float_null');
+            } else {
+                $input.attr('data-validation', 'text_null');
+            }
+        });
+    });
 }
 
 function updateMemoField() {
@@ -1147,6 +1332,22 @@ function cloneBlock(element) {
         let value = $(this).val();
         newBlock.find(`input[data-type="${inputType}"]`).val(value);
     });
+
+    // Копируем значения select полей из оригинального блока в новый
+    originalBlock.find('select').each(function() {
+        let selectType = $(this).data('type');
+        let value = $(this).val();
+        if (selectType) {
+            newBlock.find(`select[data-type="${selectType}"]`).val(value);
+        }
+    });
+
+    if (dataType === 'revoke_sponsorship') {
+        var revokeSelect = newBlock.find('[data-type="revoke_type"]');
+        if (revokeSelect.length) {
+            updateRevokeSponsorshipFields(revokeSelect[0]);
+        }
+    }
 
     $('.new-operation').before(newBlock.fadeIn());
     highlightAndFocusBlock(lastCounter);
