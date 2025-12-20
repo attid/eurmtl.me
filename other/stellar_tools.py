@@ -1132,6 +1132,12 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             data_exist = True
             result.append(f"    ClaimClaimableBalance {address_id_to_link(operation.balance_id)}")
             continue
+        if type(operation).__name__ == "BumpSequence":
+            data_exist = True
+            result.append(
+                f"    BumpSequence to {operation.bump_to}"
+            )
+            continue
         if type(operation).__name__ == "BeginSponsoringFutureReserves":
             data_exist = True
             result.append(f"    BeginSponsoringFutureReserves {address_id_to_link(operation.sponsored_id)}")
@@ -1694,6 +1700,62 @@ async def stellar_build_xdr(data):
                 set_flags=set_flags_decoded,
                 clear_flags=clear_flags_decoded,
                 source=source_account)
+        if operation['type'] == 'bump_sequence':
+            transaction.append_bump_sequence_op(
+                bump_to=int(operation['bump_to']),
+                source=source_account
+            )
+        if operation['type'] == 'begin_sponsoring_future_reserves':
+            transaction.append_begin_sponsoring_future_reserves_op(
+                sponsored_id=operation['sponsored_id'],
+                source=source_account
+            )
+        if operation['type'] == 'end_sponsoring_future_reserves':
+            transaction.append_end_sponsoring_future_reserves_op(source=source_account)
+        if operation['type'] == 'revoke_sponsorship':
+            revoke_type = operation.get('revoke_type')
+            if revoke_type == 'account':
+                transaction.append_revoke_account_sponsorship_op(
+                    account_id=operation['revoke_account_id'],
+                    source=source_account
+                )
+            elif revoke_type == 'trustline':
+                transaction.append_revoke_trustline_sponsorship_op(
+                    account_id=operation['revoke_trustline_account'],
+                    asset=decode_asset(operation['revoke_trustline_asset']),
+                    source=source_account
+                )
+            elif revoke_type == 'data':
+                transaction.append_revoke_data_sponsorship_op(
+                    account_id=operation['revoke_data_account'],
+                    data_name=operation['revoke_data_name'],
+                    source=source_account
+                )
+            elif revoke_type == 'offer':
+                transaction.append_revoke_offer_sponsorship_op(
+                    seller_id=operation['revoke_offer_seller'],
+                    offer_id=int(operation['revoke_offer_id']),
+                    source=source_account
+                )
+            elif revoke_type == 'claimable_balance':
+                balance_id = operation['revoke_claimable_balance_id']
+                if len(balance_id) == 64:
+                    balance_id = balance_id.rjust(72, '0')
+                transaction.append_revoke_claimable_balance_sponsorship_op(
+                    claimable_balance_id=balance_id,
+                    source=source_account
+                )
+            elif revoke_type == 'liquidity_pool':
+                transaction.append_revoke_liquidity_pool_sponsorship_op(
+                    liquidity_pool_id=operation['revoke_liquidity_pool_id'],
+                    source=source_account
+                )
+            elif revoke_type == 'signer':
+                transaction.append_revoke_ed25519_public_key_signer_sponsorship_op(
+                    account_id=operation['revoke_signer_account'],
+                    signer_key=operation['revoke_signer_key'],
+                    source=source_account
+                )
         if operation['type'] == 'pay_divs':
             # {'account': 'GBVIX6CZ57SHXHGPA4AL7DACNNZX4I2LCKIAA3VQUOGTGWYQYVYSE5TU', 'payment': 60.0}
             require_trustline = True
