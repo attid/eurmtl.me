@@ -1025,7 +1025,8 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                     'asset_type'] == 'native')
             )
 
-            if selling_sum < float(operation.amount):
+            selling_asset_issuer = getattr(operation.selling, 'issuer', None)
+            if selling_sum < float(operation.amount) and selling_asset_issuer != op_source_id:
                 result.append(
                     f"<div style=\"color: red;\">Error: Not enough balance to sell {selling_asset_code}! </div>")
 
@@ -1043,7 +1044,8 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                     'asset_type'] == 'native')
             )
 
-            if selling_sum < float(operation.amount):
+            selling_asset_issuer = getattr(operation.selling, 'issuer', None)
+            if selling_sum < float(operation.amount) and selling_asset_issuer != op_source_id:
                 result.append(
                     f"<div style=\"color: red;\">Error: Not enough balance to sell {selling_asset_code}! </div>")
             continue
@@ -1073,7 +1075,8 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                     'asset_type'] == 'native')
             )
 
-            if selling_sum < required_amount_to_spend:
+            selling_asset_issuer = getattr(operation.selling, 'issuer', None)
+            if selling_sum < required_amount_to_spend and selling_asset_issuer != op_source_id:
                 result.append(
                     f"<div style=\"color: red;\">Error: Not enough {selling_asset_code} to buy! Required: {required_amount_to_spend}, Available: {selling_sum}</div>")
 
