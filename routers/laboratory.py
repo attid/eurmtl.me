@@ -263,8 +263,14 @@ async def cmd_offers(account_id):
     try:
         account = Server(horizon_url="https://horizon.stellar.org").offers().for_account(account_id).call()
         for record in account['_embedded']['records']:
-            result[f"{record['id']} selling {record['amount']} {record['selling']['asset_code']} " +
-                   f"for {record['buying']['asset_code']} price {record['price']}"] = record['id']
+            # Use 'native' for XLM asset code to match frontend logic if needed,
+            # but Horizon returns asset_type='native' for XLM.
+            # Let's ensure asset codes are present.
+            selling_code = record['selling'].get('asset_code', 'XLM')
+            buying_code = record['buying'].get('asset_code', 'XLM')
+            
+            label = f"{record['id']} selling {record['amount']} {selling_code} for {buying_code} price {record['price']}"
+            result[label] = json.dumps(record)
     except:
         pass
     return jsonify(result)

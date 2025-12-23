@@ -366,7 +366,108 @@ function fetchOffers(buttonElement) {
     var $row = $button.closest('.row');
     var $input = $row.find('input[data-type="offer_id"]'); // Использование data-type для точного выбора
 
-    fetchDataAndShowDropdown(`/lab/offers/${keyToUse}`, 'offers'+keyToUse, $row, $input);
+    fetchOffersAndShowDropdown(`/lab/offers/${keyToUse}`, 'offers'+keyToUse, $row, $input);
+}
+
+function fetchOffersAndShowDropdown(url, globalDataVarKey, $row, $input) {
+    if (!window.globalCash[globalDataVarKey]) {
+        showToast('Подождите, идет загрузка', 'info');
+        $.ajax({
+            url: url,
+            type: 'GET',
+            success: function(response) {
+                window.globalCash[globalDataVarKey] = response;
+                showOfferDropdown($row, $input, response);
+            },
+            error: function(xhr, status, error) {
+                console.error('Не удалось получить данные:', error);
+                showToast('Ошибка при загрузке данных', 'danger');
+            }
+        });
+    } else {
+        showOfferDropdown($row, $input, window.globalCash[globalDataVarKey]);
+    }
+}
+
+function showOfferDropdown($row, $input, offers) {
+    var dropdownId = 'dropdown-' + new Date().getTime();
+    if ($('#' + dropdownId).length) {
+        $('#' + dropdownId).remove();
+    }
+    $('.dropdown-menu').remove();
+
+    var $dropdown = $('<div>').addClass('dropdown-menu').attr('id', dropdownId);
+
+    $.each(offers, function(name, recordJson) {
+        var $a = $('<a>').addClass('dropdown-item').text(name).attr('href', '#');
+        $a.on('click', function(e) {
+            e.preventDefault();
+            var record = JSON.parse(recordJson);
+            
+            // Populate Offer ID
+            $input.val(record.id);
+            
+            // Populate other fields in the same card
+            var $cardBody = $row.closest('.card-body');
+            var cardType = $cardBody.data('type');
+            
+            // Selling Asset
+            var selling = record.selling;
+            var sellingVal = selling.asset_type === 'native' ? 'XLM' : `${selling.asset_code}-${selling.asset_issuer}`;
+            $cardBody.find('input[data-type="selling"]').val(sellingVal);
+            
+            // Buying Asset
+            var buying = record.buying;
+            var buyingVal = buying.asset_type === 'native' ? 'XLM' : `${buying.asset_code}-${buying.asset_issuer}`;
+            $cardBody.find('input[data-type="buying"]').val(buyingVal);
+
+            // Price
+            $cardBody.find('input[data-type="price"]').val(record.price);
+
+            // Amount
+            if (cardType === 'buy') {
+                // For ManageBuyOffer, amount is the amount of asset being BOUGHT.
+                // Horizon record.amount is amount of asset being SOLD.
+                // buy_amount = sell_amount * price
+                var buyAmount = parseFloat(record.amount) * parseFloat(record.price);
+                $cardBody.find('input[data-type="amount"]').val(buyAmount.toFixed(7));
+            } else {
+                // For ManageSellOffer, amount is the amount of asset being SOLD.
+                $cardBody.find('input[data-type="amount"]').val(record.amount);
+            }
+
+            $dropdown.removeClass('show');
+        });
+        $dropdown.append($a);
+    });
+
+    $row.append($dropdown);
+
+    // Обновленное позиционирование
+    $input.parent().css('position', 'relative');
+    $dropdown.css({
+        top: $input.outerHeight(),
+        left: 0,
+        position: 'absolute',
+        width: $input.outerWidth(),
+        'z-index': 1000
+    });
+
+    // Показываем dropdown
+    $dropdown.addClass('show');
+
+    // Закрываем dropdown при клике вне его
+    setTimeout(function() {
+        var clickHandler = function(event) {
+            if (!$(event.target).closest($dropdown).length &&
+                !$(event.target).is($input) &&
+                !$(event.target).is($row.find('button'))) {
+                $dropdown.removeClass('show');
+                $(document).off('click', clickHandler);
+            }
+        };
+        $(document).on('click', clickHandler);
+    }, 100);
 }
 
 
@@ -534,13 +635,14 @@ function generateCardBuy() {
 <div class="card">
     <div class="card-body gather-block" data-type="buy" data-index="${blockId}">
         ${generateCardHeader("Buy", blockId)}
+        
+        ${generateOfferSelector()}
+
         ${generateAssetSelector("buying", "Buying", "", "Asset you want to buy")}
         ${generateAssetSelector("selling", "Selling", "", "Asset you will pay with")}
 
         ${generateInput("amount", "Amount you are buying (zero to delete offer)", "float_trade", "", "Amount of buying asset; 0 deletes offer")}
         ${generateInput("price", "Price per unit (buying in terms of selling)", "float_trade","","Тут будет расчет получаемого")}
-
-        ${generateOfferSelector()}
 
         ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
@@ -554,13 +656,14 @@ function generateCardSell() {
 <div class="card">
     <div class="card-body gather-block" data-type="sell" data-index="${blockId}">
         ${generateCardHeader("Sell", blockId)}
+        
+        ${generateOfferSelector()}
+
         ${generateAssetSelector("selling", "Selling", "", "Asset you are selling")}
         ${generateAssetSelector("buying", "Buying", "", "Asset you want to receive")}
 
         ${generateInput("amount", "Amount you are selling (zero to delete offer)", "float_trade", "", "Amount of selling asset; 0 deletes offer")}
         ${generateInput("price", "Price per unit (buying in terms of selling)", "float_trade","","Тут будет расчет получаемого")}
-
-        ${generateOfferSelector()}
 
         ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
