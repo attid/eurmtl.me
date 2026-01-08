@@ -138,7 +138,7 @@ function showDropdown($row, $input, accounts) {
         var $a = $('<a>').addClass('dropdown-item').text(name).attr('href', '#');
         $a.on('click', function(e) {
             e.preventDefault();
-            $input.val(address);
+            $input.val(address).trigger('change');
             $dropdown.removeClass('show');
         });
         $dropdown.append($a);
@@ -268,7 +268,7 @@ function generateAssetSelector(fieldName = "asset",
         <div class="input-group">
             <input type="text" class="form-control account-input me-2" data-type="${fieldName}"
                 data-validation="${validationOverride}"
-                value="${fieldValue}" id="${fieldName}-${uid}">
+                value="${fieldValue}" id="${fieldName}-${uid}" onchange="checkAssetBalance(this)">
             <button type="button" class="btn btn-icon btn-primary me-2" data-bs-toggle="tooltip"
                 title="Выбрать из списка" onclick="fetchAssetsMTL(this)">
                 <i class="ti ti-list"></i>
@@ -282,10 +282,87 @@ function generateAssetSelector(fieldName = "asset",
                 <i class="ti ti-eye"></i>
             </button>
         </div>
+        <div class="form-text text-success balance-text" style="cursor: pointer; display: none; font-weight: bold;" onclick="setAmount(this)"></div>
         ${helperText ? `<div class="form-text">${helperText}</div>` : ""}
     </div>
 </div>
     `;
+}
+
+function checkAssetBalance(element) {
+    var $input = $(element);
+    var asset = $input.val();
+    // Support picking buying/selling assets in offers
+    var $block = $input.closest('.gather-block');
+    
+    // Find Source Account
+    var sourceAccount = $block.find('input[data-type="sourceAccount"]').val();
+    if (!sourceAccount || sourceAccount.length !== 56) {
+        sourceAccount = $('[id^="publicKey-"]').val();
+    }
+
+    if (!sourceAccount || sourceAccount.length !== 56 || !asset) {
+        $input.closest('.row').find('.balance-text').hide();
+        return;
+    }
+
+    // Don't check balance for 'buying' asset in ManageSellOffer (we receive it)
+    // But DO check for 'selling' asset.
+    // For ManageBuyOffer, we spend 'selling' asset (confusing naming in Horizon/Stellar, but standard is: Selling = what you give, Buying = what you get)
+    // Wait, ManageBuyOffer: "Creates an offer that specifies the amount of an asset the account wants to *buy*."
+    // But you still pay with the *selling* asset.
+    // So for both Sell and Buy offers, we care about the balance of the 'selling' asset?
+    // - ManageSellOffer: selling X, buying Y. Need balance of X.
+    // - ManageBuyOffer: buying X, selling Y. Need balance of Y.
+    
+    // Let's just check balance for whatever asset selector triggered this. 
+    // If user checks 'Buying' asset balance, it tells them how much they HAVE of the thing they want to buy (maybe useful?)
+    // But critically, for 'Selling' field, it tells them how much they can spend.
+    
+    $.ajax({
+        url: '/lab/check_balance',
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ account_id: sourceAccount, asset: asset }),
+        success: function(response) {
+            var $balanceText = $input.closest('.row').find('.balance-text');
+            if (response.balance) {
+                var text = 'Available: ' + response.balance;
+                if (response.is_issuer) text += ' (Issuer)';
+                $balanceText.text(text).show();
+            } else {
+                $balanceText.hide();
+            }
+        },
+        error: function() {
+             $input.closest('.row').find('.balance-text').hide();
+        }
+    });
+}
+
+function setAmount(element) {
+    var text = $(element).text();
+    // Extract number from "Available: 123.456 (Issuer)"
+    var amount = text.replace('Available: ', '').split(' ')[0];
+    if (amount === 'Unlimited') return; 
+    
+    var $block = $(element).closest('.gather-block');
+    // For ManageSellOffer/Payment, we set 'amount'.
+    // For ManageBuyOffer, 'amount' input is "Amount being bought". 
+    // If we click balance on 'Selling' asset (asset we pay with), we might want to calculate? 
+    // But 'setAmount' usually implies setting the main amount field.
+    // If the user clicks balance on 'Asset' (Payment) or 'Selling' (Sell Offer), setting 'amount' is correct.
+    // If user clicks balance on 'Buying' (Buy Offer), setting 'amount' (amount to buy) is correct (buying up to current balance of that asset? No, that doesn't make sense).
+    
+    // Simplification: Always set the 'amount' field of the block.
+    // User can adjust if they clicked the wrong one.
+    
+    var $amountInput = $block.find('input[data-type="amount"]');
+    if ($amountInput.length) {
+        $amountInput.val(amount);
+        $amountInput.trigger('input'); // Trigger any calculations
+        showToast('Amount set to ' + amount, 'info');
+    }
 }
 
 function generateClaimableBalanceSelector(fieldName = "balanceId",
@@ -414,7 +491,7 @@ function showOfferDropdown($row, $input, offers) {
             // Selling Asset
             var selling = record.selling;
             var sellingVal = selling.asset_type === 'native' ? 'XLM' : `${selling.asset_code}-${selling.asset_issuer}`;
-            $cardBody.find('input[data-type="selling"]').val(sellingVal);
+            $cardBody.find('input[data-type="selling"]').val(sellingVal).trigger('change');
             
             // Buying Asset
             var buying = record.buying;
