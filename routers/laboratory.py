@@ -292,6 +292,55 @@ async def cmd_path(asset_from, asset_for, asset_sum):
     return jsonify(result)
 
 
+@blueprint.route('/lab/check_balance', methods=['POST'])
+async def cmd_check_balance():
+    data = await request.json
+    account_id = data.get('account_id')
+    asset_str = data.get('asset')
+
+    if not account_id or len(account_id) != 56:
+        return jsonify({'error': 'Invalid account ID'}), 400
+    if not asset_str:
+        return jsonify({'error': 'Invalid asset'}), 400
+
+    # Check if issuer (Asset format: CODE-ISSUER)
+    if '-' in asset_str:
+        try:
+            code, issuer = asset_str.split('-')
+            if issuer == account_id:
+                return jsonify({'balance': 'Unlimited', 'is_issuer': True})
+        except:
+            pass
+
+    try:
+        account = Server(horizon_url="https://horizon.stellar.org").accounts().account_id(account_id).call()
+        
+        balance_val = "0"
+        
+        if asset_str == 'XLM':
+            for bal in account['balances']:
+                if bal['asset_type'] == 'native':
+                    balance_val = bal['balance']
+                    break
+        elif '-' in asset_str:
+            code, issuer = asset_str.split('-')
+            for bal in account['balances']:
+                if bal.get('asset_code') == code and bal.get('asset_issuer') == issuer:
+                    balance_val = bal['balance']
+                    break
+        elif len(asset_str) == 64: # Liquidity Pool ID
+            for bal in account['balances']:
+                if bal.get('asset_type') == 'liquidity_pool_shares' and bal.get('liquidity_pool_id') == asset_str:
+                    balance_val = bal['balance']
+                    break
+        
+        return jsonify({'balance': balance_val})
+
+    except Exception as e:
+        logger.warning(f"Error fetching balance: {e}")
+        return jsonify({'error': 'Failed to fetch account'}), 400
+
+
 @blueprint.route('/lab/update_memo', methods=['POST'])
 async def lab_update_memo():
     data = await request.json
