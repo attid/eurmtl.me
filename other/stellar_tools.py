@@ -810,7 +810,9 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
 
     # --- Simulation Setup ---
     all_account_ids = {transaction.transaction.source.account_id}
-    for op in transaction.transaction.operations:
+    for idx, op in enumerate(transaction.transaction.operations):
+        if only_op_number is not None and idx != only_op_number:
+            continue
         if op.source:
             all_account_ids.add(op.source.account_id)
 
