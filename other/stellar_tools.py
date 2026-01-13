@@ -1174,6 +1174,36 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             max_price = operation.max_price.n / operation.max_price.d
             result.append(
                 f"    LiquidityPoolDeposit {pool_id_to_link(operation.liquidity_pool_id)} пополнение {operation.max_amount_a}/{operation.max_amount_b} ограничения цены {min_price}/{max_price}")
+            pool_data = await get_pool_data(operation.liquidity_pool_id)
+            lp_asset = pool_data.get('LiquidityPoolAsset')
+            if isinstance(lp_asset, LiquidityPoolAsset):
+                source_account_sim = simulated_ledger.get_account(op_source_id)
+                assets_to_check = [
+                    (lp_asset.asset_a, float(operation.max_amount_a)),
+                    (lp_asset.asset_b, float(operation.max_amount_b))
+                ]
+                for asset, required_amount in assets_to_check:
+                    if not asset.is_native():
+                        has_trustline = any(
+                            b.get('asset_code') == asset.code and b.get('asset_issuer') == asset.issuer
+                            for b in source_account_sim.get('balances', [])
+                        )
+                        if not has_trustline:
+                            result.append(
+                                f'<div style="color: red;">Error: Trustline for {asset.code} not found on source account.</div>')
+                    source_sum = 0.0
+                    for b in source_account_sim.get('balances', []):
+                        if asset.is_native() and b.get('asset_type') == 'native':
+                            source_sum = float(b.get('balance', 0))
+                            break
+                        if (not asset.is_native() and b.get('asset_code') == asset.code and
+                                b.get('asset_issuer') == asset.issuer):
+                            source_sum = float(b.get('balance', 0))
+                            break
+                    if source_sum < required_amount:
+                        result.append(
+                            f'<div style="color: red;">Error: Not enough balance ({source_sum}) to deposit '
+                            f'{required_amount} {await asset_to_link(asset)}.</div>')
             continue
         if type(operation).__name__ == "LiquidityPoolWithdraw":
             data_exist = True
