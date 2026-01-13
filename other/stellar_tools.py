@@ -1183,6 +1183,8 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                     (lp_asset.asset_b, float(operation.max_amount_b))
                 ]
                 for asset, required_amount in assets_to_check:
+                    if op_source_id == asset.issuer:
+                        continue
                     if not asset.is_native():
                         has_trustline = any(
                             b.get('asset_code') == asset.code and b.get('asset_issuer') == asset.issuer
@@ -1204,11 +1206,20 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
                         result.append(
                             f'<div style="color: red;">Error: Not enough balance ({source_sum}) to deposit '
                             f'{required_amount} {await asset_to_link(asset)}.</div>')
+                for asset, required_amount in assets_to_check:
+                    if op_source_id == asset.issuer:
+                        continue
+                    simulated_ledger.update_balance(op_source_id, asset, -required_amount)
             continue
         if type(operation).__name__ == "LiquidityPoolWithdraw":
             data_exist = True
             result.append(
                 f"    LiquidityPoolWithdraw {pool_id_to_link(operation.liquidity_pool_id)} вывод {operation.amount} минимум {operation.min_amount_a}/{operation.min_amount_b} ")
+            pool_data = await get_pool_data(operation.liquidity_pool_id)
+            lp_asset = pool_data.get('LiquidityPoolAsset')
+            if isinstance(lp_asset, LiquidityPoolAsset):
+                simulated_ledger.update_balance(op_source_id, lp_asset.asset_a, float(operation.min_amount_a))
+                simulated_ledger.update_balance(op_source_id, lp_asset.asset_b, float(operation.min_amount_b))
             continue
         if type(operation).__name__ == "InvokeHostFunction":
             data_exist = True
@@ -2086,7 +2097,7 @@ async def local_test():
     t1 = 'AAAAAgAAAADOMXDBa9hG5A4IeNFDXZmy8cVeya1DSRrU6lBNy4vlSgAAndQCwvFDAAAAlwAAAAEAAAAAAAAAAAAAAABpbnPUAAAAAAAAAAQAAAAAAAAABgAAAAMAAAAAAAAAAVVTRE0AAAAAzjFwwWvYRuQOCHjRQ12ZsvHFXsmtQ0ka1OpQTcuL5UoAAAABWFJQAAAAAABvF6+da84qsKUGM1pUpaqkjO/azcr/o0SbYbgrLCrfEQAAAB5//////////wAAAAAAAAAWpxtzXUJD2s+HSQYaA1xvPY236qg/UT9MVKzCTQrgSWsAAAAQTFM8AAAAAAb8I6wAAJZkWwBMS0ABTHINAJiWgAAAAAAAAAAGAAAAAwAAAAAAAAABRVRIAAAAAABLdx6glzbkWah37rikB57CgRSIU5K81u2ff6YiTOCYaQAAAAFVU0RNAAAAAM4xcMFr2EbkDgh40UNdmbLxxV7JrUNJGtTqUE3Li+VKAAAAHn//////////AAAAAAAAABbtAagXK1FaEuvm+WnoKp9IHW4wuzebOz1LQeDvKj0q4AAAAAAAmJaAAAAACVAvkAAAAAJhAB6EgAAAAqEAHoSAAAAAAAAAAAA='
 
     # t2 = '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'
-    a = decode_xdr_to_base64(t1)
+    a = await decode_xdr_to_text(t1)
     print(a)
     # a = await decode_xdr_to_text(t2)
     # print('\n'.join(a))
