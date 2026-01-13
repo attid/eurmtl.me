@@ -1560,7 +1560,11 @@ function processOperations(jsonData) {
     let count = 0; // Инициализация счетчика
 
     jsonData.operations.forEach((op) => {
-        var blockHTML = getCardByName(op.name);
+        const isChangeTrust = op.name === 'changeTrust' || op.name === 'change_trust';
+        const assetPayload = op.attributes ? op.attributes.asset : null;
+        const isLpTrustline = isChangeTrust && assetPayload &&
+            (assetPayload.liquidityPoolId || assetPayload.type === 'liquidity_pool_shares');
+        var blockHTML = getCardByName(isLpTrustline ? 'liquidity_pool_trustline' : op.name);
         if (!blockHTML) {
             return; // Если нет соответствующего HTML, пропускаем итерацию
         }
@@ -1569,6 +1573,17 @@ function processOperations(jsonData) {
         $block.find('input').each(function() {
             let dataType = $(this).data('type');
             let camelCaseDataType = toCamelCase(dataType);
+
+            if (isLpTrustline) {
+                if (dataType === 'liquidity_pool_id') {
+                    $(this).val(assetPayload.liquidityPoolId || '');
+                    return;
+                }
+                if (dataType === 'limit') {
+                    $(this).val(op.attributes.limit || '');
+                    return;
+                }
+            }
 
             // Обработка поля asset
             if (dataType.toLowerCase().includes('asset') ||
