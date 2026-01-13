@@ -141,6 +141,13 @@ def decode_xdr_to_base64(xdr, return_json=False):
     transaction_envelope = TransactionEnvelope.from_xdr(xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE)
     transaction: Transaction = transaction_envelope.transaction
     new_json = {'attributes': {}, 'feeBumpAttributes': {'maxFee': '10101'}, 'operations': []}
+    def serialize_asset(asset):
+        if isinstance(asset, LiquidityPoolAsset):
+            return {
+                'type': 'liquidity_pool_shares',
+                'liquidityPoolId': asset.liquidity_pool_id
+            }
+        return asset.to_dict()
 
     fee = str(int(transaction.fee / len(transaction.operations)))
     new_json['attributes'] = {'sourceAccount': transaction.source.account_id, 'sequence': str(transaction.sequence),
@@ -165,13 +172,13 @@ def decode_xdr_to_base64(xdr, return_json=False):
         if isinstance(operation, Payment):
             # noinspection PyTypedDict
             op_json['attributes'] = {'destination': operation.destination.account_id,
-                                     'asset': operation.asset.to_dict(),
+                                     'asset': serialize_asset(operation.asset),
                                      'amount': float2str(operation.amount),
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, ChangeTrust):
             # noinspection PyTypedDict
-            op_json['attributes'] = {'asset': operation.asset.to_dict(),
+            op_json['attributes'] = {'asset': serialize_asset(operation.asset),
                                      'limit': operation.limit,
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
@@ -192,7 +199,7 @@ def decode_xdr_to_base64(xdr, return_json=False):
         elif isinstance(operation, SetTrustLineFlags):
             # noinspection PyTypedDict
             op_json['attributes'] = {'trustor': operation.trustor,
-                                     'asset': operation.asset.to_dict(),
+                                     'asset': serialize_asset(operation.asset),
                                      'setFlags': operation.set_flags.value if operation.set_flags else None,
                                      'clearFlags': operation.clear_flags.value if operation.clear_flags else None,
                                      'sourceAccount': operation.source.account_id if operation.source else None
@@ -207,16 +214,16 @@ def decode_xdr_to_base64(xdr, return_json=False):
             op_json['attributes'] = {'amount': operation.amount,
                                      'price': operation.price.n / operation.price.d,
                                      'offerId': operation.offer_id,
-                                     'selling': operation.selling.to_dict(),
-                                     'buying': operation.buying.to_dict(),
+                                     'selling': serialize_asset(operation.selling),
+                                     'buying': serialize_asset(operation.buying),
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, CreatePassiveSellOffer):
             # noinspection PyTypedDict
             op_json['attributes'] = {'amount': operation.amount,
                                      'price': operation.price.n / operation.price.d,
-                                     'selling': operation.selling.to_dict(),
-                                     'buying': operation.buying.to_dict(),
+                                     'selling': serialize_asset(operation.selling),
+                                     'buying': serialize_asset(operation.buying),
                                      'sourceAccount': operation.source.account_id if operation.source is not None else None
                                      }
         elif isinstance(operation, Clawback):
@@ -2049,8 +2056,8 @@ async def local_test():
     t1 = 'AAAAAgAAAADOMXDBa9hG5A4IeNFDXZmy8cVeya1DSRrU6lBNy4vlSgAAndQCwvFDAAAAlwAAAAEAAAAAAAAAAAAAAABpbnPUAAAAAAAAAAQAAAAAAAAABgAAAAMAAAAAAAAAAVVTRE0AAAAAzjFwwWvYRuQOCHjRQ12ZsvHFXsmtQ0ka1OpQTcuL5UoAAAABWFJQAAAAAABvF6+da84qsKUGM1pUpaqkjO/azcr/o0SbYbgrLCrfEQAAAB5//////////wAAAAAAAAAWpxtzXUJD2s+HSQYaA1xvPY236qg/UT9MVKzCTQrgSWsAAAAQTFM8AAAAAAb8I6wAAJZkWwBMS0ABTHINAJiWgAAAAAAAAAAGAAAAAwAAAAAAAAABRVRIAAAAAABLdx6glzbkWah37rikB57CgRSIU5K81u2ff6YiTOCYaQAAAAFVU0RNAAAAAM4xcMFr2EbkDgh40UNdmbLxxV7JrUNJGtTqUE3Li+VKAAAAHn//////////AAAAAAAAABbtAagXK1FaEuvm+WnoKp9IHW4wuzebOz1LQeDvKj0q4AAAAAAAmJaAAAAACVAvkAAAAAJhAB6EgAAAAqEAHoSAAAAAAAAAAAA='
 
     # t2 = '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'
-    a = await decode_xdr_to_text(t1)
-    print('\n'.join(a))
+    a = decode_xdr_to_base64(t1)
+    print(a)
     # a = await decode_xdr_to_text(t2)
     # print('\n'.join(a))
 
