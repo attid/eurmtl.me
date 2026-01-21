@@ -7,7 +7,8 @@ from quart import Blueprint, jsonify, request, render_template
 
 from other.config_reader import config
 from other.qr_tools import create_beautiful_code
-from other.stellar_tools import create_sep7_auth_transaction, process_xdr_transaction, is_valid_base64
+from services.stellar_client import create_sep7_auth_transaction, process_xdr_transaction
+from services.xdr_parser import is_valid_base64
 from other.web_tools import cors_jsonify
 
 blueprint = Blueprint('sep07_auth', __name__, url_prefix='/remote/sep07/auth')

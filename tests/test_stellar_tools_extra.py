@@ -10,7 +10,7 @@ from stellar_sdk import (
 )
 
 # Импортируем тестируемую функцию
-from other.stellar_tools import update_memo_in_xdr, TransactionEnvelope
+from services.xdr_parser import update_memo_in_xdr, TransactionEnvelope
 
 # --- Вспомогательная функция для создания XDR ---
 

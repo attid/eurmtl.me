@@ -9,7 +9,8 @@ from other.config_reader import config
 from db.sql_models import Transactions, Signers, Signatures, WebEditorMessages, MMWBTransactions
 from other.grist_tools import grist_manager, MTLGrist
 from routers.sign_tools import parse_xdr_for_signatures
-from other.stellar_tools import decode_xdr_to_text, is_valid_base64, add_transaction
+from services.xdr_parser import decode_xdr_to_text, is_valid_base64
+from services.stellar_client import add_transaction
 from other.web_tools import cors_jsonify
 from routers.remote_sep07_auth import blueprint as sep07_blueprint_auth
 from routers.remote_sep07 import blueprint as sep07_blueprint

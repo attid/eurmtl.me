@@ -10,8 +10,8 @@ from quart import Blueprint, request, render_template, flash, session, jsonify
 from other.qr_tools import create_beautiful_code
 from other.config_reader import start_path
 from other.grist_tools import grist_manager, MTLGrist, get_grist_asset_by_code
-from other.stellar_tools import check_asset, add_trust_line_uri, xdr_to_uri
-from other.stellar_tools import float2str
+from services.stellar_client import check_asset, add_trust_line_uri, xdr_to_uri
+from services.stellar_client import float2str
 
 blueprint = Blueprint('sellers', __name__)
 last_update_time = datetime.now() - timedelta(minutes=20)

@@ -7,7 +7,7 @@ from stellar_sdk.operation import (
 )
 
 # Импортируем тестируемую функцию из вашего проекта
-from other.stellar_tools import get_operation_threshold_level
+from services.stellar_client import get_operation_threshold_level
 
 # --- Тестовые данные ---
 

@@ -7,7 +7,8 @@ from quart import Blueprint, request, render_template, jsonify, current_app
 
 from other.config_reader import config
 from db.sql_models import MMWBTransactions
-from other.stellar_tools import get_account_fresh, decode_data_value, stellar_manage_data
+from services.stellar_client import get_account_fresh, stellar_manage_data
+from services.xdr_parser import decode_data_value
 from other.telegram_tools import check_response_webapp, mmwb_bot
 
 blueprint = Blueprint('mmwb', __name__)

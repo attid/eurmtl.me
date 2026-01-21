@@ -15,7 +15,7 @@ from stellar_sdk.exceptions import SdkError
 
 from other.config_reader import config
 from other.grist_tools import grist_manager, GristTableConfig, GristAPI
-from other.stellar_tools import stellar_build_xdr, add_transaction
+from services.stellar_client import stellar_build_xdr, add_transaction
 from other.telegram_tools import skynet_bot
 
 

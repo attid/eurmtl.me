@@ -11,8 +11,9 @@ from stellar_sdk.utils import is_valid_hash
 from db.sql_models import Transactions
 from infrastructure.repositories.transaction_repository import TransactionRepository
 from other.grist_tools import MTLGrist, grist_manager
-from other.stellar_tools import (decode_xdr_to_base64, stellar_build_xdr, decode_asset,
-                                 is_valid_base64, update_memo_in_xdr, decode_data_value, float2str)
+from services.xdr_parser import (decode_xdr_to_base64, is_valid_base64, 
+                                 update_memo_in_xdr, decode_data_value)
+from services.stellar_client import stellar_build_xdr, decode_asset, float2str
 from other.web_tools import http_session_manager
 
 blueprint = Blueprint('lab', __name__)

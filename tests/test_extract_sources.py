@@ -12,7 +12,7 @@ from stellar_sdk.operation import (
     Payment, AccountMerge, SetOptions
 )
 
-from other.stellar_tools import extract_sources, main_fund_address
+from services.stellar_client import extract_sources, main_fund_address
 
 # Конфигурация для асинхронных тестов
 @pytest.fixture
@@ -80,7 +80,7 @@ def create_test_transaction_builder(source_kp, operations):
 # --- Тесты с моками ---
 
 @pytest.mark.asyncio
-@patch('other.stellar_tools.http_session_manager.get_web_request')
+@patch('services.stellar_client.http_session_manager.get_web_request')
 async def test_extract_sources_for_medium_threshold(mock_get, app):
     """Тест 1: Транзакция со средним порогом."""
     async with app.app_context():
@@ -98,7 +98,7 @@ async def test_extract_sources_for_medium_threshold(mock_get, app):
         assert sources[source_kp.public_key]['threshold'] == 5 # medium_threshold
 
 @pytest.mark.asyncio
-@patch('other.stellar_tools.http_session_manager.get_web_request')
+@patch('services.stellar_client.http_session_manager.get_web_request')
 async def test_extract_sources_for_high_threshold(mock_get, app):
     """Тест 2: Транзакция с высоким порогом."""
     async with app.app_context():
@@ -117,7 +117,7 @@ async def test_extract_sources_for_high_threshold(mock_get, app):
         assert sources[source_kp.public_key]['threshold'] == 10 # high_threshold
 
 @pytest.mark.asyncio
-@patch('other.stellar_tools.http_session_manager.get_web_request')
+@patch('services.stellar_client.http_session_manager.get_web_request')
 async def test_extract_sources_with_multiple_sources(mock_get, app):
     """Тест 3: Транзакция с несколькими источниками."""
     async with app.app_context():
@@ -148,7 +148,7 @@ async def test_extract_sources_with_multiple_sources(mock_get, app):
         assert sources[op_source_kp.public_key]['threshold'] == 100 # high
 
 @pytest.mark.asyncio
-@patch('other.stellar_tools.http_session_manager.get_web_request')
+@patch('services.stellar_client.http_session_manager.get_web_request')
 async def test_extract_sources_handles_network_error(mock_get, app):
     """Тест 4: Обработка ошибки сети."""
     async with app.app_context():
