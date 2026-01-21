@@ -13,6 +13,7 @@ from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
 from stellar_sdk.sep import stellar_uri
 
 from db.sql_models import Transactions, Signers, Signatures, Alerts
+from infrastructure.repositories.transaction_repository import TransactionRepository
 from other.cache_tools import async_cache_with_ttl
 from other.config_reader import start_path, config
 from other.grist_tools import load_users_from_grist
@@ -69,11 +70,12 @@ async def show_transaction(tr_hash):
         abort(404)
     session['return_to'] = request.url
 
-    with db_pool() as db_session:
+    async with current_app.db_pool() as db_session:
+        repo = TransactionRepository(db_session)
         if len(tr_hash) == 64:
-            transaction = db_session.query(Transactions).filter(Transactions.hash == tr_hash).first()
+            transaction = await repo.get_by_hash(tr_hash)
         else:
-            transaction = db_session.query(Transactions).filter(Transactions.uuid == tr_hash).first()
+            transaction = await repo.get_by_uuid(tr_hash)
 
     if transaction is None:
         return 'Transaction not exist =('
@@ -164,27 +166,14 @@ async def show_transaction(tr_hash):
         sorted_signers = sorted(json_transaction[address]['signers'], key=lambda x: x[1])
         for signer in sorted_signers:
             async with current_app.db_pool() as db_session:
-                result = await db_session.execute(select(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
-                    Signatures.transaction_hash == transaction.hash,
-                    Signers.public_key == signer[0],
-                    Signatures.hidden != 1
-                ))
-                signature = result.scalars().first()
+                repo = TransactionRepository(db_session)
+                signature = await repo.get_signature_by_signer_public_key(signer[0], transaction.hash)
                 
-                result = await db_session.execute(select(Signers).filter(Signers.public_key == signer[0]))
-                db_signer: Signers = result.scalars().first()
+                db_signer = await repo.get_signer_by_public_key(signer[0])
                 
-                result = await db_session.execute(select(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
-                    Signers.public_key == signer[0]).order_by(Signatures.add_dt.desc()))
-                signature_dt = result.scalars().first()
+                signature_dt = await repo.get_latest_signature_by_signer(signer[0])
                 
-                result = await db_session.execute(select(Signatures) \
-                    .join(Signers, Signatures.signer_id == Signers.id) \
-                    .join(Transactions, Signatures.transaction_hash == Transactions.hash) \
-                    .filter(Signers.public_key == signer[0],
-                            Transactions.source_account == address) \
-                    .order_by(Signatures.add_dt.desc()))
-                signature_source_dt = result.scalars().first()
+                signature_source_dt = await repo.get_latest_signature_for_source(signer[0], address)
 
                 user = user_map.get(db_signer.public_key) if db_signer else None
                 username = user.username if user else None
@@ -224,10 +213,8 @@ async def show_transaction(tr_hash):
 
     # show signatures
     async with current_app.db_pool() as db_session:
-        result = await db_session.execute(select(Signatures) \
-            .outerjoin(Signers, Signatures.signer_id == Signers.id) \
-            .filter(Signatures.transaction_hash == transaction.hash).order_by(Signatures.id))
-        db_signatures = result.scalars().all()
+        repo = TransactionRepository(db_session)
+        db_signatures = await repo.get_all_signatures_for_transaction(transaction.hash)
         
         # Оптимизация: предзагрузка всех пользователей для подписей
         signer_ids = [s.signer_id for s in db_signatures if s.signer_id]
@@ -333,8 +320,8 @@ async def parse_xdr_for_signatures(tx_body):
         return result
 
     async with current_app.db_pool() as db_session:
-        result = await db_session.execute(select(Transactions).filter(Transactions.hash == tr_full.hash_hex()))
-        transaction = result.scalars().first()
+        repo = TransactionRepository(db_session)
+        transaction = await repo.get_by_hash(tr_full.hash_hex())
         if transaction is None:
             result['MESSAGES'].append('Transaction not found')
             return result
@@ -407,34 +394,16 @@ async def start_show_all_transactions():
     offset = next_page * limit
 
     async with current_app.db_pool() as db_session:
-        transactions_query = select(
-            Transactions.hash.label('hash'),
-            Transactions.description.label('description'),
-            Transactions.add_dt.label('add_dt'),
-            Transactions.state.label('state'),
-            Transactions.source_account.label('source_account'),
-            func.count(Signatures.signature_xdr).label('signature_count')
-        ).outerjoin(
-            Signatures, Transactions.hash == Signatures.transaction_hash
+        repo = TransactionRepository(db_session)
+        transactions = await repo.search_transactions(
+            search_text=search_text,
+            status=status,
+            source_account=source_account,
+            owner_id=session['user_id'] if my_transactions and 'user_id' in session else None,
+            signer_address=signer_address,
+            offset=offset,
+            limit=limit
         )
-
-        # Применяем фильтры, если они заданы
-        if search_text:
-            transactions_query = transactions_query.filter(Transactions.description.ilike(f'%{search_text}%'))
-        if status != -1:
-            transactions_query = transactions_query.filter(Transactions.state == status)
-        if source_account:
-            transactions_query = transactions_query.filter(Transactions.source_account == source_account)
-        if my_transactions and 'user_id' in session:
-            transactions_query = transactions_query.filter(Transactions.owner_id == session['user_id'])
-        if signer_address:
-            transactions_query = transactions_query.join(Signers, Signatures.signer_id == Signers.id).filter(
-                Signers.public_key == signer_address)
-
-        transactions_query = transactions_query.group_by(Transactions).order_by(Transactions.add_dt.desc())
-        
-        result = await db_session.execute(transactions_query.offset(offset).limit(limit))
-        transactions = result.all()
         next_page = next_page + 1 if len(transactions) == limit else None
 
         # Передаем параметры фильтров в шаблон
@@ -454,11 +423,12 @@ async def decode_xdr(tr_hash):
     if len(tr_hash) != 64 and len(tr_hash) != 32:
         abort(404)
 
-    with db_pool() as db_session:
+    async with current_app.db_pool() as db_session:
+        repo = TransactionRepository(db_session)
         if len(tr_hash) == 64:
-            transaction = db_session.query(Transactions).filter(Transactions.hash == tr_hash).first()
+            transaction = await repo.get_by_hash(tr_hash)
         else:
-            transaction = db_session.query(Transactions).filter(Transactions.uuid == tr_hash).first()
+            transaction = await repo.get_by_uuid(tr_hash)
 
     if transaction is None:
         return 'Transaction not exist =('
@@ -479,11 +449,11 @@ async def create_transaction_uri(tr_hash):
         str: URI транзакции для использования в QR-коде или None, если транзакция не найдена
     """
     async with current_app.db_pool() as db_session:
+        repo = TransactionRepository(db_session)
         if len(tr_hash) == 64:
-            result = await db_session.execute(select(Transactions).filter(Transactions.hash == tr_hash))
+            transaction = await repo.get_by_hash(tr_hash)
         else:
-            result = await db_session.execute(select(Transactions).filter(Transactions.uuid == tr_hash))
-        transaction = result.scalars().first()
+            transaction = await repo.get_by_uuid(tr_hash)
     
     if not transaction:
         return None
@@ -548,13 +518,14 @@ async def generate_transaction_qr(tr_hash):
     try:
         # Получаем транзакцию для получения описания
         async with current_app.db_pool() as db_session:
+            repo = TransactionRepository(db_session)
             if len(tr_hash) == 64:
-                result = await db_session.execute(select(Transactions).filter(Transactions.hash == tr_hash))
+                transaction = await repo.get_by_hash(tr_hash)
             else:
-                result = await db_session.execute(select(Transactions).filter(Transactions.uuid == tr_hash))
-            transaction = result.scalars().first()
+                transaction = await repo.get_by_uuid(tr_hash)
 
         # URI уже получен выше через create_transaction_uri
+
 
         # Получаем первые целые слова описания транзакции (не более 10 символов)
         text_for_qr = "Transaction"

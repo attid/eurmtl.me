@@ -9,6 +9,7 @@ from stellar_sdk import Server
 from stellar_sdk.utils import is_valid_hash
 
 from db.sql_models import Transactions
+from infrastructure.repositories.transaction_repository import TransactionRepository
 from other.grist_tools import MTLGrist, grist_manager
 from other.stellar_tools import (decode_xdr_to_base64, stellar_build_xdr, decode_asset,
                                  is_valid_base64, update_memo_in_xdr, decode_data_value, float2str)
@@ -26,11 +27,11 @@ async def cmd_laboratory():
     tr_hash = request.args.get('import')
     if tr_hash:
         async with current_app.db_pool() as db_session:
+            repo = TransactionRepository(db_session)
             if len(tr_hash) == 64:
-                result = await db_session.execute(select(Transactions).filter(Transactions.hash == tr_hash))
+                transaction = await repo.get_by_hash(tr_hash)
             else:
-                result = await db_session.execute(select(Transactions).filter(Transactions.uuid == tr_hash))
-            transaction = result.scalars().first()
+                transaction = await repo.get_by_uuid(tr_hash)
 
         if transaction is None:
             return 'Transaction not exist =('
