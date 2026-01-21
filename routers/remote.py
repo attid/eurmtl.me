@@ -8,13 +8,13 @@ from quart import Blueprint, request, jsonify, abort, current_app
 from other.config_reader import config
 from db.sql_models import Transactions, Signers, Signatures, WebEditorMessages, MMWBTransactions
 from other.grist_tools import grist_manager, MTLGrist
-from routers.sign_tools import parse_xdr_for_signatures
+# from routers.sign_tools import parse_xdr_for_signatures # Removed, logic in service
 from services.xdr_parser import decode_xdr_to_text, is_valid_base64
 from services.stellar_client import add_transaction
 from other.web_tools import cors_jsonify
 from routers.remote_sep07_auth import blueprint as sep07_blueprint_auth
 from routers.remote_sep07 import blueprint as sep07_blueprint
-from infrastructure.repositories.transaction_repository import TransactionRepository
+from services.transaction_service import TransactionService
 
 blueprint = Blueprint('remote', __name__)
 blueprint.register_blueprint(sep07_blueprint)
@@ -24,27 +24,12 @@ blueprint.register_blueprint(sep07_blueprint_auth)
 @blueprint.route('/remote/need_sign/<public_key>', methods=('GET',))
 async def remote_need_sign(public_key):
     async with current_app.db_pool() as db_session:
-        repo = TransactionRepository(db_session)
+        service = TransactionService(db_session)
         
-        # Получаем подписанта по публичному ключу
-        signer = await repo.get_signer_by_public_key(public_key)
-        if not signer:
-            return jsonify({'error': 'Signer not found'}), 404
-
         # Получаем транзакции, требующие подписи этого подписанта
-        transactions = await repo.get_pending_for_signer(signer)
+        transactions = await service.get_pending_transactions_for_signer(public_key)
 
-        # Формируем ответ
-        result_list = []
-        for transaction in transactions:
-            result_list.append({
-                'hash': transaction.hash,
-                'body': transaction.body,
-                'add_dt': transaction.add_dt.isoformat(),
-                'description': transaction.description
-            })
-
-        return jsonify(result_list)
+        return jsonify(transactions)
 
 
 @blueprint.route('/remote/update_signature', methods=('POST',))
@@ -55,7 +40,9 @@ async def remote_update_signature():
     if not xdr or not is_valid_base64(xdr):
         return jsonify({"error": "Invalid or missing base64 data"}), 400  # Bad Request
 
-    result = await parse_xdr_for_signatures(xdr)
+    async with current_app.db_pool() as db_session:
+        service = TransactionService(db_session)
+        result = await service.sign_transaction_from_xdr(xdr)
 
     if result["SUCCESS"]:
         return jsonify(result), 200  # OK
@@ -84,11 +71,8 @@ async def remote_get_xdr(tr_hash):
         abort(404)
 
     async with current_app.db_pool() as db_session:
-        repo = TransactionRepository(db_session)
-        if len(tr_hash) == 64:
-            transaction = await repo.get_by_hash(tr_hash)
-        else:
-            transaction = await repo.get_by_uuid(tr_hash)
+        service = TransactionService(db_session)
+        transaction = await service.get_transaction_by_hash(tr_hash)
 
     if transaction is None:
         return 'Transaction not exist =('
@@ -184,4 +168,5 @@ async def remote_add_transaction():
 
 
 if __name__ == '__main__':
-    print(asyncio.run(remote_need_sign('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI')))
+    # print(asyncio.run(remote_need_sign('GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI')))
+    pass
