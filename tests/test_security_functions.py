@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from quart import Quart
 
 # Импортируем тестируемую функцию
-from other.stellar_tools import check_user_in_sign
+from services.stellar_client import check_user_in_sign
 from db.sql_models import Transactions, Signers, Signatures
 
 @pytest.fixture
@@ -16,22 +16,22 @@ def app():
 # --- Тесты для check_user_in_sign ---
 
 @pytest.mark.asyncio
-@patch('other.stellar_tools.session', {})
+@patch('services.stellar_client.session', {})
 async def test_not_logged_in(app):
     """Тест 1: Пользователь не авторизован."""
     async with app.app_context():
         assert await check_user_in_sign('some_hash') is False
 
 @pytest.mark.asyncio
-@patch('other.stellar_tools.session', {'user_id': '84131737'})
+@patch('services.stellar_client.session', {'user_id': '84131737'})
 async def test_is_admin(app):
     """Тест 2: Пользователь - админ."""
     async with app.app_context():
         assert await check_user_in_sign('some_hash') is True
 
 @pytest.mark.asyncio
-@patch('other.stellar_tools.get_secretaries', new_callable=AsyncMock, return_value={})
-@patch('other.stellar_tools.session', {'user_id': '12345'})
+@patch('services.stellar_client.get_secretaries', new_callable=AsyncMock, return_value={})
+@patch('services.stellar_client.session', {'user_id': '12345'})
 async def test_is_transaction_owner(mock_get_secretaries, app):
     """Тест 3: Пользователь - владелец транзакции."""
     mock_transaction = Transactions(owner_id='12345')
@@ -51,8 +51,8 @@ async def test_is_transaction_owner(mock_get_secretaries, app):
         assert await check_user_in_sign('some_hash') is True
 
 @pytest.mark.asyncio
-@patch('other.stellar_tools.get_secretaries', new_callable=AsyncMock)
-@patch('other.stellar_tools.session', {'user_id': '12345'})
+@patch('services.stellar_client.get_secretaries', new_callable=AsyncMock)
+@patch('services.stellar_client.session', {'user_id': '12345'})
 async def test_is_secretary(mock_get_secretaries, app):
     """Тест 4: Пользователь - секретарь."""
     mock_transaction = Transactions(owner_id='999', source_account='G_SOURCE')
@@ -72,8 +72,8 @@ async def test_is_secretary(mock_get_secretaries, app):
         assert await check_user_in_sign('some_hash') is True
 
 @pytest.mark.asyncio
-@patch('other.stellar_tools.get_secretaries', new_callable=AsyncMock, return_value={})
-@patch('other.stellar_tools.session', {'user_id': '12345'})
+@patch('services.stellar_client.get_secretaries', new_callable=AsyncMock, return_value={})
+@patch('services.stellar_client.session', {'user_id': '12345'})
 async def test_is_signer_who_signed(mock_get_secretaries, app):
     """Тест 5: Пользователь - подписант, который подписал."""
     mock_transaction = Transactions(owner_id='999')
@@ -112,8 +112,8 @@ async def test_is_signer_who_signed(mock_get_secretaries, app):
         assert await check_user_in_sign('some_hash') is True
 
 @pytest.mark.asyncio
-@patch('other.stellar_tools.get_secretaries', new_callable=AsyncMock, return_value={})
-@patch('other.stellar_tools.session', {'user_id': '12345'})
+@patch('services.stellar_client.get_secretaries', new_callable=AsyncMock, return_value={})
+@patch('services.stellar_client.session', {'user_id': '12345'})
 async def test_is_signer_who_did_not_sign(mock_get_secretaries, app):
     """Тест 6: Пользователь - подписант, который НЕ подписал."""
     mock_transaction = Transactions(owner_id='999')
@@ -139,8 +139,8 @@ async def test_is_signer_who_did_not_sign(mock_get_secretaries, app):
         assert await check_user_in_sign('some_hash') is False
 
 @pytest.mark.asyncio
-@patch('other.stellar_tools.get_secretaries', new_callable=AsyncMock, return_value={})
-@patch('other.stellar_tools.session', {'user_id': '12345'})
+@patch('services.stellar_client.get_secretaries', new_callable=AsyncMock, return_value={})
+@patch('services.stellar_client.session', {'user_id': '12345'})
 async def test_not_related_user(mock_get_secretaries, app):
     """Тест 7: Пользователь не имеет отношения к транзакции."""
     mock_transaction = Transactions(owner_id='999')

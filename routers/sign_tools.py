@@ -17,8 +17,9 @@ from infrastructure.repositories.transaction_repository import TransactionReposi
 from other.cache_tools import async_cache_with_ttl
 from other.config_reader import start_path, config
 from other.grist_tools import load_users_from_grist
-from other.stellar_tools import (decode_xdr_to_text, check_publish_state, check_user_in_sign,
-                                 add_transaction, update_transaction_sources)
+from services.xdr_parser import decode_xdr_to_text
+from services.stellar_client import (check_publish_state, check_user_in_sign,
+                                     add_transaction, update_transaction_sources)
 from other.telegram_tools import skynet_bot
 from other.web_tools import http_session_manager
 

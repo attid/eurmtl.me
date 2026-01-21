@@ -9,7 +9,7 @@ from quart import Blueprint, send_file, request, session, redirect, render_templ
 
 from other.config_reader import config, start_path
 from db.sql_models import Signers
-from other.stellar_tools import check_user_weight
+from services.stellar_client import check_user_weight
 from other.telegram_tools import check_response
 from other.quart_tools import get_ip
 from other.tailscale import get_latest_version_package

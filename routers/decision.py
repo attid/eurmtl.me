@@ -9,7 +9,7 @@ from sulguk import SULGUK_PARSE_MODE
 from other.config_reader import config
 from db.sql_models import Decisions
 from other.gspread_tools import gs_update_decision, gs_get_last_id, gs_save_new_decision
-from other.stellar_tools import check_user_weight
+from services.stellar_client import check_user_weight
 from other.telegram_tools import skynet_bot
 
 blueprint = Blueprint('decision', __name__)
