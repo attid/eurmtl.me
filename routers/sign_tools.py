@@ -5,15 +5,14 @@ from random import shuffle
 
 from loguru import logger
 from quart import (Markup, jsonify, Blueprint, request, render_template, flash,
-                   session, redirect, abort, url_for)
-from sqlalchemy import func, text
+                   session, redirect, abort, url_for, current_app)
+from sqlalchemy import func, text, select
 from stellar_sdk import DecoratedSignature, Keypair, Network, TransactionEnvelope
 from stellar_sdk.exceptions import BadSignatureError
 from stellar_sdk.xdr import DecoratedSignature as DecoratedSignatureXdr
 from stellar_sdk.sep import stellar_uri
 
 from db.sql_models import Transactions, Signers, Signatures, Alerts
-from db.sql_pool import db_pool
 from other.cache_tools import async_cache_with_ttl
 from other.config_reader import start_path, config
 from other.grist_tools import load_users_from_grist
@@ -102,9 +101,10 @@ async def show_transaction(tr_hash):
     admin_weight = 2 if await check_user_in_sign(tr_hash) else 0
     if 'userdata' in session and 'username' in session['userdata']:
         user_id = int(session['userdata']['id'])
-        with db_pool() as db_session:
-            alert = db_session.query(Alerts).filter(Alerts.transaction_hash == tr_hash,
-                                                    Alerts.tg_id == user_id).first()
+        async with current_app.db_pool() as db_session:
+            result = await db_session.execute(select(Alerts).filter(Alerts.transaction_hash == tr_hash,
+                                                    Alerts.tg_id == user_id))
+            alert = result.scalars().first()
     else:
         user_id = 0
         alert = False
@@ -126,11 +126,12 @@ async def show_transaction(tr_hash):
             # Проверяем, является ли пользователь администратором
             if admin_weight > 0:
                 hide = 1 if hide_action == 'true' else 0
-                with db_pool() as db_session:
-                    signature_to_update = db_session.query(Signatures).filter(Signatures.id == signature_id).first()
+                async with current_app.db_pool() as db_session:
+                    result = await db_session.execute(select(Signatures).filter(Signatures.id == signature_id))
+                    signature_to_update = result.scalars().first()
                     if signature_to_update:
                         signature_to_update.hidden = hide
-                        db_session.commit()
+                        await db_session.commit()
             else:
                 await flash('You do not have permission to perform this action.')
 
@@ -160,23 +161,30 @@ async def show_transaction(tr_hash):
         has_votes = 0
         # find bad signer and calc votes
         sorted_signers = sorted(json_transaction[address]['signers'], key=lambda x: x[1])
+        sorted_signers = sorted(json_transaction[address]['signers'], key=lambda x: x[1])
         for signer in sorted_signers:
-            with db_pool() as db_session:
-                signature = db_session.query(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
+            async with current_app.db_pool() as db_session:
+                result = await db_session.execute(select(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
                     Signatures.transaction_hash == transaction.hash,
                     Signers.public_key == signer[0],
                     Signatures.hidden != 1
-                ).first()
-                db_signer: Signers = db_session.query(Signers).filter(Signers.public_key == signer[0]).first()
-                signature_dt = db_session.query(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
-                    Signers.public_key == signer[0]).order_by(Signatures.add_dt.desc()).first()
-                signature_source_dt = db_session.query(Signatures) \
+                ))
+                signature = result.scalars().first()
+                
+                result = await db_session.execute(select(Signers).filter(Signers.public_key == signer[0]))
+                db_signer: Signers = result.scalars().first()
+                
+                result = await db_session.execute(select(Signatures).join(Signers, Signatures.signer_id == Signers.id).filter(
+                    Signers.public_key == signer[0]).order_by(Signatures.add_dt.desc()))
+                signature_dt = result.scalars().first()
+                
+                result = await db_session.execute(select(Signatures) \
                     .join(Signers, Signatures.signer_id == Signers.id) \
                     .join(Transactions, Signatures.transaction_hash == Transactions.hash) \
                     .filter(Signers.public_key == signer[0],
                             Transactions.source_account == address) \
-                    .order_by(Signatures.add_dt.desc()) \
-                    .first()
+                    .order_by(Signatures.add_dt.desc()))
+                signature_source_dt = result.scalars().first()
 
                 user = user_map.get(db_signer.public_key) if db_signer else None
                 username = user.username if user else None
@@ -215,14 +223,19 @@ async def show_transaction(tr_hash):
         })
 
     # show signatures
-    with db_pool() as db_session:
-        db_signatures = db_session.query(Signatures) \
+    async with current_app.db_pool() as db_session:
+        result = await db_session.execute(select(Signatures) \
             .outerjoin(Signers, Signatures.signer_id == Signers.id) \
-            .filter(Signatures.transaction_hash == transaction.hash).order_by(Signatures.id).all()
+            .filter(Signatures.transaction_hash == transaction.hash).order_by(Signatures.id))
+        db_signatures = result.scalars().all()
         
         # Оптимизация: предзагрузка всех пользователей для подписей
         signer_ids = [s.signer_id for s in db_signatures if s.signer_id]
-        all_signers = db_session.query(Signers).filter(Signers.id.in_(signer_ids)).all() if signer_ids else []
+        if signer_ids:
+            result = await db_session.execute(select(Signers).filter(Signers.id.in_(signer_ids)))
+            all_signers = result.scalars().all()
+        else:
+            all_signers = []
         signer_map = {s.id: s for s in all_signers}
 
         # Загружаем пользователей для подписей одним запросом
@@ -319,8 +332,9 @@ async def parse_xdr_for_signatures(tx_body):
         result['MESSAGES'].append('BAD xdr. Can`t load')
         return result
 
-    with db_pool() as db_session:
-        transaction = db_session.query(Transactions).filter(Transactions.hash == tr_full.hash_hex()).first()
+    async with current_app.db_pool() as db_session:
+        result = await db_session.execute(select(Transactions).filter(Transactions.hash == tr_full.hash_hex()))
+        transaction = result.scalars().first()
         if transaction is None:
             result['MESSAGES'].append('Transaction not found')
             return result
@@ -333,21 +347,23 @@ async def parse_xdr_for_signatures(tx_body):
     if len(tr_full.signatures) > 0:
         # Оптимизация: предзагрузка всех пользователей Grist
         all_signer_hints = [s.signature_hint.hex() for s in tr_full.signatures]
-        with db_pool() as db_session:
-            all_db_signers = db_session.query(Signers).filter(Signers.signature_hint.in_(all_signer_hints)).all()
+        async with current_app.db_pool() as db_session:
+            result = await db_session.execute(select(Signers).filter(Signers.signature_hint.in_(all_signer_hints)))
+            all_db_signers = result.scalars().all()
         
         signer_map = {s.signature_hint: s for s in all_db_signers}
         user_map = await load_users_from_grist([s.public_key for s in all_db_signers])
 
-        with db_pool() as db_session:
+        async with current_app.db_pool() as db_session:
             for signature in tr_full.signatures:
                 db_signer = signer_map.get(signature.signature_hint.hex())
                 user = user_map.get(db_signer.public_key) if db_signer else None
                 username = user.username if user else None
 
-                if db_session.query(Signatures).filter(Signatures.transaction_hash == transaction.hash,
+                result = await db_session.execute(select(Signatures).filter(Signatures.transaction_hash == transaction.hash,
                                                        Signatures.signature_xdr == signature.to_xdr_object(
-                                                       ).to_xdr()).first():
+                                                       ).to_xdr()))
+                if result.scalars().first():
                     result['MESSAGES'].append(f'Can`t add {username if db_signer else None}. '
                                               f'Already was added.')
                 else:
@@ -372,7 +388,7 @@ async def parse_xdr_for_signatures(tx_body):
                                           tx_description=transaction.description)
                         except BadSignatureError:
                             result['MESSAGES'].append(f'Bad signature. {signature.signature_hint.hex()} not verify')
-            db_session.commit()
+            await db_session.commit()
     return result
 
 
@@ -390,8 +406,8 @@ async def start_show_all_transactions():
     limit = 100
     offset = next_page * limit
 
-    with db_pool() as db_session:
-        transactions_query = db_session.query(
+    async with current_app.db_pool() as db_session:
+        transactions_query = select(
             Transactions.hash.label('hash'),
             Transactions.description.label('description'),
             Transactions.add_dt.label('add_dt'),
@@ -417,7 +433,8 @@ async def start_show_all_transactions():
 
         transactions_query = transactions_query.group_by(Transactions).order_by(Transactions.add_dt.desc())
         
-        transactions = transactions_query.offset(offset).limit(limit).all()
+        result = await db_session.execute(transactions_query.offset(offset).limit(limit))
+        transactions = result.all()
         next_page = next_page + 1 if len(transactions) == limit else None
 
         # Передаем параметры фильтров в шаблон
@@ -461,11 +478,12 @@ async def create_transaction_uri(tr_hash):
     Returns:
         str: URI транзакции для использования в QR-коде или None, если транзакция не найдена
     """
-    with db_pool() as db_session:
+    async with current_app.db_pool() as db_session:
         if len(tr_hash) == 64:
-            transaction = db_session.query(Transactions).filter(Transactions.hash == tr_hash).first()
+            result = await db_session.execute(select(Transactions).filter(Transactions.hash == tr_hash))
         else:
-            transaction = db_session.query(Transactions).filter(Transactions.uuid == tr_hash).first()
+            result = await db_session.execute(select(Transactions).filter(Transactions.uuid == tr_hash))
+        transaction = result.scalars().first()
     
     if not transaction:
         return None
@@ -529,11 +547,12 @@ async def generate_transaction_qr(tr_hash):
 
     try:
         # Получаем транзакцию для получения описания
-        with db_pool() as db_session:
+        async with current_app.db_pool() as db_session:
             if len(tr_hash) == 64:
-                transaction = db_session.query(Transactions).filter(Transactions.hash == tr_hash).first()
+                result = await db_session.execute(select(Transactions).filter(Transactions.hash == tr_hash))
             else:
-                transaction = db_session.query(Transactions).filter(Transactions.uuid == tr_hash).first()
+                result = await db_session.execute(select(Transactions).filter(Transactions.uuid == tr_hash))
+            transaction = result.scalars().first()
 
         # URI уже получен выше через create_transaction_uri
 
@@ -610,21 +629,22 @@ async def add_alert(tr_hash):
     #     return jsonify({'success': False, 'message': 'User not found in signers'})
 
     try:
-        with db_pool() as db_session:
-            alert = db_session.query(Alerts).filter(Alerts.transaction_hash == tr_hash,
-                                                    Alerts.tg_id == tg_id).first()
+        async with current_app.db_pool() as db_session:
+            result = await db_session.execute(select(Alerts).filter(Alerts.transaction_hash == tr_hash,
+                                                    Alerts.tg_id == tg_id))
+            alert = result.scalars().first()
             if alert is None:
                 alert = Alerts(tg_id=tg_id, transaction_hash=tr_hash)
                 db_session.add(alert)
-                db_session.commit()
+                await db_session.commit()
                 return jsonify({
                     'success': True,
                     'icon': 'ti-bell-ringing',
                     'message': 'Alert added successfully'
                 })
             else:
-                db_session.delete(alert)
-                db_session.commit()
+                await db_session.delete(alert)
+                await db_session.commit()
                 return jsonify({
                     'success': True,
                     'icon': 'ti-bell-off',
@@ -640,8 +660,9 @@ async def add_alert(tr_hash):
 async def alert_singers(tr_hash, small_text, tx_description):
     text = (f'Transaction <a href="https://eurmtl.me/sign_tools/{tr_hash}">{tx_description}</a> : '
             f'{small_text}.')
-    with db_pool() as db_session:
-        alert_query = db_session.query(Alerts).filter(Alerts.transaction_hash == tr_hash).all()
+    async with current_app.db_pool() as db_session:
+        result = await db_session.execute(select(Alerts).filter(Alerts.transaction_hash == tr_hash))
+        alert_query = result.scalars().all()
         for alert in alert_query:
             await skynet_bot.send_message(chat_id=alert.tg_id, text=text, disable_web_page_preview=True, parse_mode='HTML')
 

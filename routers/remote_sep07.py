@@ -7,13 +7,13 @@ from loguru import logger
 
 from stellar_sdk.sep import stellar_uri
 from stellar_sdk import Network, TransactionEnvelope, TransactionBuilder, Keypair
-from quart import Blueprint, request, jsonify, abort, render_template
+from sqlalchemy import select
+from quart import Blueprint, request, jsonify, abort, render_template, current_app
 import traceback
 from urllib.parse import urlparse, parse_qs, unquote
 
 from other.config_reader import config
 from db.sql_models import Transactions, Signers, Signatures, WebEditorMessages, MMWBTransactions
-from db.sql_pool import db_pool
 from other.grist_tools import grist_manager, MTLGrist
 from routers.sign_tools import parse_xdr_for_signatures
 from other.stellar_tools import decode_xdr_to_text, is_valid_base64, add_transaction
@@ -155,23 +155,25 @@ async def remote_add_uri():
 
         # Save the URI in the database without blocking event loop
         try:
-            def db_task():
-                with db_pool() as db_session:
-                    existing_transaction = db_session.query(MMWBTransactions).filter_by(uuid=key).first()
-                    if existing_transaction:
-                        existing_data = json.loads(existing_transaction.json)
-                        if existing_data.get('uri') == uri:
-                            return "exists_same"
-                        return "exists_different"
+            status = "saved"
+            async with current_app.db_pool() as db_session:
+                result = await db_session.execute(select(MMWBTransactions).filter_by(uuid=key))
+                existing_transaction = result.scalars().first()
+
+                if existing_transaction:
+                    existing_data = json.loads(existing_transaction.json)
+                    if existing_data.get('uri') == uri:
+                        status = "exists_same"
+                    else:
+                        status = "exists_different"
+                else:
                     transaction = MMWBTransactions(
                         uuid=key,
                         json=json.dumps({'uri': uri})
                     )
                     db_session.add(transaction)
-                    db_session.commit()
-                    return "saved"
-
-            status = await asyncio.to_thread(db_task)
+                    await db_session.commit()
+                    status = "saved"
             if status == "exists_same":
                 logger.info("Transaction already exists in database")
                 url = f"https://t.me/MyMTLWalletBot?start=uri_{key}"
@@ -228,14 +230,11 @@ async def get(uuid_key):
         return cors_jsonify({})
 
     try:
-        def db_task():
-            with db_pool() as db_session:
-                transaction = db_session.query(MMWBTransactions.json).filter(
-                    MMWBTransactions.uuid == uuid_key
-                ).first()
-                return transaction.json if transaction else None
-
-        transaction_json = await asyncio.to_thread(db_task)
+        async with current_app.db_pool() as db_session:
+            result = await db_session.execute(select(MMWBTransactions.json).filter(
+                MMWBTransactions.uuid == uuid_key
+            ))
+            transaction_json = result.scalars().first()
         if not transaction_json:
             return cors_jsonify({
                 "SUCCESS": False,

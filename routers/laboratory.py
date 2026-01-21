@@ -3,12 +3,12 @@ import json
 from datetime import datetime, timedelta, timezone
 from loguru import logger
 
-from quart import Blueprint, request, render_template, jsonify, session
+from sqlalchemy import select
+from quart import Blueprint, request, render_template, jsonify, session, current_app
 from stellar_sdk import Server
 from stellar_sdk.utils import is_valid_hash
 
 from db.sql_models import Transactions
-from db.sql_pool import db_pool
 from other.grist_tools import MTLGrist, grist_manager
 from other.stellar_tools import (decode_xdr_to_base64, stellar_build_xdr, decode_asset,
                                  is_valid_base64, update_memo_in_xdr, decode_data_value, float2str)
@@ -25,11 +25,12 @@ async def cmd_laboratory():
     import_xdr = ''
     tr_hash = request.args.get('import')
     if tr_hash:
-        with db_pool() as db_session:
+        async with current_app.db_pool() as db_session:
             if len(tr_hash) == 64:
-                transaction = db_session.query(Transactions).filter(Transactions.hash == tr_hash).first()
+                result = await db_session.execute(select(Transactions).filter(Transactions.hash == tr_hash))
             else:
-                transaction = db_session.query(Transactions).filter(Transactions.uuid == tr_hash).first()
+                result = await db_session.execute(select(Transactions).filter(Transactions.uuid == tr_hash))
+            transaction = result.scalars().first()
 
         if transaction is None:
             return 'Transaction not exist =('
