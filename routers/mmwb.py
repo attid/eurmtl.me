@@ -1,12 +1,12 @@
 import json
 
+from sqlalchemy import select
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from loguru import logger
-from quart import Blueprint, request, render_template, jsonify
+from quart import Blueprint, request, render_template, jsonify, current_app
 
 from other.config_reader import config
 from db.sql_models import MMWBTransactions
-from db.sql_pool import db_pool
 from other.stellar_tools import get_account_fresh, decode_data_value, stellar_manage_data
 from other.telegram_tools import check_response_webapp, mmwb_bot
 
@@ -60,11 +60,11 @@ async def manage_data_action():
     if not check_response_webapp(init_data_str, config.mmwb_token):
         return jsonify({'ok': False, 'error': 'Нет прав на редактирование'}), 403
 
-    with db_pool() as db_session:
+    async with current_app.db_pool() as db_session:
         xdr = await stellar_manage_data(account_id, key, value)
         record = MMWBTransactions(tg_id=user_id, json=json.dumps({'xdr': xdr}))
         db_session.add(record)
-        db_session.commit()
+        await db_session.commit()
 
         # Выполняем редактирование сообщения в Telegram
         reply_markup = await get_md_reply_markup(record.uuid)

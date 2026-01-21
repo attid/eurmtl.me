@@ -1,11 +1,11 @@
-from quart import Blueprint, request, jsonify, make_response, render_template
+from sqlalchemy import select
+from quart import Blueprint, request, jsonify, make_response, render_template, current_app
 from stellar_sdk import Network
 from stellar_sdk.exceptions import BadRequestError
 from stellar_sdk.sep.stellar_web_authentication import build_challenge_transaction
 
 from other.config_reader import config
 from db.sql_models import Addresses
-from db.sql_pool import db_pool
 from quart_cors import cors
 
 blueprint = Blueprint('federal', __name__)
@@ -19,8 +19,9 @@ async def federation():
     # https://eurmtl.me/federation/?q=GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB&type=id
     if request.args.get('q') and request.args.get('type'):
         if request.args.get('type') == 'name':
-            with db_pool() as db_session:
-                address = db_session.query(Addresses).filter(Addresses.stellar_address == request.args.get('q')).first()
+            async with current_app.db_pool() as db_session:
+                result = await db_session.execute(select(Addresses).filter(Addresses.stellar_address == request.args.get('q')))
+                address = result.scalars().first()
                 if address:
                     result = {"stellar_address": address.stellar_address,
                               "account_id": address.account_id}
@@ -32,8 +33,9 @@ async def federation():
                     return resp
 
         if request.args.get('type') == 'id':
-            with db_pool() as db_session:
-                address = db_session.query(Addresses).filter(Addresses.account_id == request.args.get('q')).first()
+            async with current_app.db_pool() as db_session:
+                result = await db_session.execute(select(Addresses).filter(Addresses.account_id == request.args.get('q')))
+                address = result.scalars().first()
                 if address:
                     result = {"stellar_address": address.stellar_address,
                               "account_id": address.account_id}

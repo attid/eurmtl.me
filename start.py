@@ -20,9 +20,12 @@ import routers.grist
 import routers.rely
 from other.config_reader import config, update_test_user
 from db.sql_models import Base
-from db.sql_pool import engine
+from db.sql_pool import create_async_pool
 
 app = Quart(__name__)
+
+# Initialize DB pool
+app.db_pool, app.db_engine = create_async_pool(config.db_dsn)
 
 logger.add("log/app.log", level=logging.INFO)
 
@@ -94,7 +97,8 @@ async def update_db():
     # session.execute('DROP TABLE t_transactions')
     # session.execute('DROP TABLE t_signers')
     # session.commit()
-    Base.metadata.create_all(engine)
+    async with app.db_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
     return "OK"
 
 

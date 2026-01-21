@@ -2,12 +2,12 @@ import asyncio
 import uuid
 
 from loguru import logger
-from quart import Blueprint, request, render_template, flash, jsonify, session, redirect, abort
+from sqlalchemy import select
+from quart import Blueprint, request, render_template, flash, jsonify, session, redirect, abort, current_app
 from sulguk import SULGUK_PARSE_MODE
 
 from other.config_reader import config
 from db.sql_models import Decisions
-from db.sql_pool import db_pool
 from other.gspread_tools import gs_update_decision, gs_get_last_id, gs_save_new_decision
 from other.stellar_tools import check_user_weight
 from other.telegram_tools import skynet_bot
@@ -61,11 +61,9 @@ async def cmd_add_decision():
 
         user_weight = await check_user_weight()
         if user_weight > 0:
-            def check_existing():
-                with db_pool() as db_session:
-                    return db_session.query(Decisions).filter(Decisions.num == question_number).first()
-
-            existing_decision = await asyncio.to_thread(check_existing)
+            async with current_app.db_pool() as db_session:
+                result = await db_session.execute(select(Decisions).filter(Decisions.num == question_number))
+                existing_decision = result.scalars().first()
             if existing_decision:
                 await flash(f'Вопрос с номером {question_number} уже существует. '
                             f'<a href="/d/{existing_decision.uuid}">Редактировать существующий вопрос</a> '
@@ -94,21 +92,18 @@ async def cmd_add_decision():
                     await gs_save_new_decision(decision_id=question_number, url=url, username=username,
                                                short_name=short_subject)
 
-                    def insert_decision():
-                        with db_pool() as db_session:
-                            des = Decisions()
-                            des.uuid = d_uuid
-                            des.num = question_number
-                            des.description = short_subject
-                            des.reading = reading
-                            des.full_text = inquiry
-                            des.url = url
-                            des.username = username
-                            des.status = status
-                            db_session.add(des)
-                            db_session.commit()
-
-                    await asyncio.to_thread(insert_decision)
+                    async with current_app.db_pool() as db_session:
+                        des = Decisions()
+                        des.uuid = d_uuid
+                        des.num = question_number
+                        des.description = short_subject
+                        des.reading = reading
+                        des.full_text = inquiry
+                        des.url = url
+                        des.username = username
+                        des.status = status
+                        db_session.add(des)
+                        await db_session.commit()
                     await flash('Вопрос успешно добавлен.', 'good')
                     return redirect(f'/d/{d_uuid}')
 
@@ -118,25 +113,92 @@ async def cmd_add_decision():
                                  user_weight=user_weight)
 
 
+@blueprint.route('/d2', methods=('GET',))
+@blueprint.route('/d2/<question_uuid>', methods=('GET',))
+async def cmd_d2_index(question_uuid=None):
+    return await render_template('d2_index.html', question_uuid=question_uuid)
+
+
+@blueprint.route('/d2/fragment/edit', methods=('GET',))
+async def cmd_d2_edit():
+    from other.grist_tools import grist_manager, MTLGrist
+
+    questions = await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
+    question_data = await grist_manager.load_table_data(MTLGrist.QUESTION_DATA) or []
+
+    data_by_question = {}
+    for row in question_data:
+        question_id = row.get("QUESTION_ID")
+        reading = row.get("READING")
+        if question_id is None or reading is None:
+            continue
+        try:
+            reading_int = int(reading)
+        except (TypeError, ValueError):
+            continue
+        data_by_question.setdefault(question_id, []).append({
+            "reading": reading_int,
+            "status": row.get("STATUS") or "",
+        })
+
+    items = []
+    for question in questions:
+        number = question.get("NUMBER")
+        title = question.get("TITLE") or ""
+        question_id = question.get("id")
+        readings = data_by_question.get(question_id, [])
+        max_reading = max((r["reading"] for r in readings), default=0)
+        status = ""
+        for r in readings:
+            if r["reading"] == max_reading:
+                status = r["status"]
+                break
+        items.append({
+            "number": number,
+            "title": title,
+            "reading": max_reading,
+            "status": status,
+            "readings_count": len(readings),
+        })
+
+    items.sort(key=lambda row: (row["number"] is None, row["number"]), reverse=True)
+    return await render_template('d2_frag_edit.html', items=items)
+
+
+@blueprint.route('/d2/fragment/new', methods=('GET',))
+async def cmd_d2_new():
+    from other.grist_tools import grist_manager, MTLGrist
+
+    templates = await grist_manager.load_table_data(MTLGrist.QUESTION_TEMPLATES) or []
+    items = []
+    for template in templates:
+        items.append({
+            "id": template.get("id"),
+            "title": template.get("TITLE") or "",
+            "body": template.get("BODY") or "",
+        })
+
+    items.sort(key=lambda row: row["title"].lower())
+    return await render_template('d2_frag_new.html', templates=items)
+
+
 @blueprint.route('/d/<decision_id>', methods=('GET', 'POST'))
 async def cmd_show_decision(decision_id):
     session['return_to'] = request.url
     if len(decision_id) != 32:
         abort(404)
 
-    def fetch_decision():
-        with db_pool() as db_session:
-            decision = db_session.query(Decisions).filter(Decisions.uuid == decision_id).first()
-            if not decision:
-                return None
-            links_url = (
-                db_session.query(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 1).first(),
-                db_session.query(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 2).first(),
-                db_session.query(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 3).first(),
-            )
-            return decision, links_url
-
-    result = await asyncio.to_thread(fetch_decision)
+    async with current_app.db_pool() as db_session:
+        result = await db_session.execute(select(Decisions).filter(Decisions.uuid == decision_id))
+        decision = result.scalars().first()
+        if decision:
+            res1 = await db_session.execute(select(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 1))
+            res2 = await db_session.execute(select(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 2))
+            res3 = await db_session.execute(select(Decisions.url).filter(Decisions.num == decision.num, Decisions.reading == 3))
+            links_url = (res1.first(), res2.first(), res3.first())
+            result = (decision, links_url)
+        else:
+            result = None
     if not result:
         return 'Decision not exist =('
 
@@ -159,14 +221,12 @@ async def cmd_show_decision(decision_id):
             # new or update
             # если не меняем чтение то обновление
             if reading == decision.reading:
-                def update_decision():
-                    with db_pool() as db_session:
-                        dec = db_session.query(Decisions).filter(Decisions.uuid == decision_id).first()
-                        dec.full_text = inquiry
-                        dec.status = status
-                        db_session.commit()
-
-                await asyncio.to_thread(update_decision)
+                async with current_app.db_pool() as db_session:
+                    result = await db_session.execute(select(Decisions).filter(Decisions.uuid == decision_id))
+                    dec = result.scalars().first()
+                    dec.full_text = inquiry
+                    dec.status = status
+                    await db_session.commit()
                 text = get_full_text(status, inquiry, links_url, decision.uuid, decision.username)
                 await skynet_bot.edit_message_text(chat_id=int(f'-100{chat_ids[reading]}'),
                                                    text=text,
@@ -198,21 +258,18 @@ async def cmd_show_decision(decision_id):
                     else:
                         url = f'https://t.me/c/{chat_ids[reading]}/{message_id}'
 
-                        def insert_decision():
-                            with db_pool() as db_session:
-                                des = Decisions()
-                                des.uuid = new_uuid
-                                des.num = decision.num
-                                des.description = short_subject
-                                des.reading = reading
-                                des.full_text = inquiry
-                                des.url = url
-                                des.username = username
-                                des.status = status
-                                db_session.add(des)
-                                db_session.commit()
-
-                        await asyncio.to_thread(insert_decision)
+                        async with current_app.db_pool() as db_session:
+                            des = Decisions()
+                            des.uuid = new_uuid
+                            des.num = decision.num
+                            des.description = short_subject
+                            des.reading = reading
+                            des.full_text = inquiry
+                            des.url = url
+                            des.username = username
+                            des.status = status
+                            db_session.add(des)
+                            await db_session.commit()
 
                         # Nmbr	Name	Text	Author	First	Second	Vote	Sign	Decision
                         # 1     2       3       4       5       6       7       8       9
@@ -253,22 +310,126 @@ async def update_decision_text():
             return jsonify({"message": "Missing data"}), 400
 
         # Обновление текста в базе данных
-        def db_task():
-            with db_pool() as db_session:
-                decision = db_session.query(Decisions).filter(Decisions.url == msg_url).first()
-                if decision is not None:
-                    decision.full_text = msg_text
-                    db_session.commit()
-                    return True
-                return False
-
-        updated = await asyncio.to_thread(db_task)
+        async with current_app.db_pool() as db_session:
+            result = await db_session.execute(select(Decisions).filter(Decisions.url == msg_url))
+            decision = result.scalars().first()
+            if decision is not None:
+                decision.full_text = msg_text
+                await db_session.commit()
+                updated = True
+            else:
+                updated = False
         if updated:
             return jsonify({"message": "Text updated successfully"}), 200
         else:
             return jsonify({"message": "Decision not found"}), 404
 
 
+async def migrate_decisions_to_grist():
+    async with current_app.db_pool() as db_session:
+        result = await db_session.execute(select(Decisions)
+                    .order_by(Decisions.num, Decisions.reading, Decisions.dt))
+        decisions = result.scalars().all()
+    if not decisions:
+        logger.info("No decisions found for migration.")
+        return
+
+    from other.grist_tools import grist_manager, MTLGrist
+
+    users = await grist_manager.load_table_data(MTLGrist.SP_USERS) or []
+    username_to_id = {}
+    for user in users:
+        username = (user.get("USERNAME") or "").lstrip("@").lower()
+        if username:
+            username_to_id[username] = user["id"]
+
+    existing_questions = await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
+    number_to_question_id = {}
+    question_id_to_number = {}
+    for question in existing_questions:
+        number = question.get("NUMBER")
+        if number is None:
+            continue
+        number_to_question_id[number] = question["id"]
+        question_id_to_number[question["id"]] = number
+
+    existing_question_data = await grist_manager.load_table_data(MTLGrist.QUESTION_DATA) or []
+    existing_pairs = set()
+    for data in existing_question_data:
+        question_id = data.get("QUESTION_ID")
+        reading = data.get("READING")
+        if question_id is None or reading is None:
+            continue
+        number = question_id_to_number.get(question_id)
+        if number is not None:
+            existing_pairs.add((number, int(reading)))
+
+    dedup = {}
+    max_reading = {}
+    for decision in decisions:
+        key = (decision.num, decision.reading)
+        if key not in dedup:
+            dedup[key] = decision
+        max_reading[decision.num] = max(decision.reading, max_reading.get(decision.num, 0))
+
+    questions_to_create = []
+    for number, reading in max_reading.items():
+        if number in number_to_question_id:
+            continue
+        decision = dedup.get((number, reading)) or dedup.get((number, 1))
+        title = decision.description if decision else ""
+        questions_to_create.append({
+            "fields": {
+                "NUMBER": number,
+                "TITLE": title,
+                "READING": reading,
+            }
+        })
+
+    if questions_to_create:
+        await grist_manager.post_data(MTLGrist.QUESTIONS, {"records": questions_to_create})
+        existing_questions = await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
+        number_to_question_id = {q.get("NUMBER"): q["id"] for q in existing_questions if q.get("NUMBER") is not None}
+
+    question_data_to_create = []
+    for (number, reading), decision in dedup.items():
+        if (number, reading) in existing_pairs:
+            continue
+
+        question_id = number_to_question_id.get(number)
+        if question_id is None:
+            continue
+
+        fields = {
+            "QUESTION_ID": question_id,
+            "READING": reading,
+            "UUID": decision.uuid,
+            "TELEGRAM_LINK": decision.url,
+            "BODY": decision.full_text or "",
+            "EXTRA": "",
+            "STATUS": decision.status or "",
+        }
+
+        if decision.dt:
+            fields["CREATED_AT"] = decision.dt.isoformat()
+
+        username = (decision.username or "").lstrip("@").lower()
+        created_by_id = username_to_id.get(username)
+        if created_by_id is not None:
+            fields["CREATED_BY"] = created_by_id
+
+        question_data_to_create.append({"fields": fields})
+
+    if question_data_to_create:
+        batch_size = 200
+        for i in range(0, len(question_data_to_create), batch_size):
+            batch = question_data_to_create[i:i + batch_size]
+            await grist_manager.post_data(MTLGrist.QUESTION_DATA, {"records": batch})
+        logger.info("Migration completed: %s question rows, %s question_data rows.",
+                    len(questions_to_create), len(question_data_to_create))
+    else:
+        logger.info("No new QUESTION_DATA rows to migrate.")
+
+
 if __name__ == "__main__":
-    pass
-    # print(asyncio.run(gs_update_decision(155, 5, 5)))
+    asyncio.run(migrate_decisions_to_grist())

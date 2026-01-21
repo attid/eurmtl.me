@@ -4,11 +4,11 @@ import signal
 import subprocess
 import uuid
 
-from quart import Blueprint, send_file, request, session, redirect, render_template
+from sqlalchemy import select
+from quart import Blueprint, send_file, request, session, redirect, render_template, current_app
 
 from other.config_reader import config, start_path
 from db.sql_models import Signers
-from db.sql_pool import db_pool
 from other.stellar_tools import check_user_weight
 from other.telegram_tools import check_response
 from other.quart_tools import get_ip
@@ -117,14 +117,13 @@ async def authorize():
         session['userdata'] = data
         session["user_id"] = data["id"]
 
-        async def update_user():
-            with db_pool() as db_session:
-                user = db_session.query(Signers).filter(Signers.username == data['username']).first()
-                if user and user.tg_id != data['id']:
-                    user.tg_id = data['id']
-                    db_session.commit()
+        async with current_app.db_pool() as db_session:
+            result = await db_session.execute(select(Signers).filter(Signers.username == data['username']))
+            user = result.scalars().first()
+            if user and user.tg_id != data['id']:
+                user.tg_id = data['id']
+                await db_session.commit()
 
-        await asyncio.to_thread(update_user)
         return_to_url = session.get('return_to', None)
         if return_to_url:
             return redirect(return_to_url)

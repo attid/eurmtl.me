@@ -39,6 +39,7 @@ dependencies = [
     "sqlalchemy-firebird==2.0.2",
     "gspread-asyncio>=2.0.0",
     "quart-cors>=0.8.0",
+    "sqlalchemy-firebird-async>=0.2.1",
 ]
 
 [project.optional-dependencies]

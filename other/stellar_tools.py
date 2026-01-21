@@ -29,7 +29,8 @@ from other.cache_tools import async_cache_with_ttl
 from other.grist_cache import grist_cache
 from other.grist_tools import grist_manager, MTLGrist, load_user_from_grist, get_secretaries, load_users_from_grist
 from db.sql_models import Signers, Transactions, Signatures
-from db.sql_pool import db_pool
+from quart import session, flash, current_app
+from sqlalchemy import select
 from other.config_reader import config
 from other.web_tools import http_session_manager
 
@@ -75,11 +76,12 @@ async def check_publish_state(tx_hash: str) -> (int, str):
         if response.status == 200:
             data = response.data
             date = data['created_at'].replace('T', ' ').replace('Z', '')
-            with db_pool() as db_session:
-                transaction = db_session.query(Transactions).filter(Transactions.hash == tx_hash).first()
+            async with current_app.db_pool() as db_session:
+                result = await db_session.execute(select(Transactions).filter(Transactions.hash == tx_hash))
+                transaction = result.scalars().first()
                 if transaction and transaction.state != 2:
                     transaction.state = 2
-                    db_session.commit()
+                    await db_session.commit()
             if data['successful']:
                 return 1, date
             else:
@@ -751,11 +753,12 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
     result.append(f"Sequence Number {sequence} {balance_str}")
 
     # Проверяем наличие других транзакций с таким же sequence
-    with db_pool() as db_session:
-        same_sequence_txs = db_session.query(Transactions).filter(
+    async with current_app.db_pool() as db_session:
+        result = await db_session.execute(select(Transactions).filter(
             Transactions.stellar_sequence == sequence,
             Transactions.hash != transaction.hash_hex() if hasattr(transaction, 'hash_hex') else None
-        ).all()
+        ))
+        same_sequence_txs = result.scalars().all()
 
         if same_sequence_txs:
             links = [f'<a href="https://eurmtl.me/sign_tools/{tx.hash}">{tx.description[:10]}...</a>'
@@ -1416,9 +1419,10 @@ async def check_user_in_sign(tr_hash):
         if int(user_id) in (84131737, 3718221):
             return True
 
-        with db_pool() as db_session:
+        async with current_app.db_pool() as db_session:
             # Check if user is owner of transaction
-            transaction = db_session.query(Transactions).filter(Transactions.hash == tr_hash).first()
+            result = await db_session.execute(select(Transactions).filter(Transactions.hash == tr_hash))
+            transaction = result.scalars().first()
             if transaction and transaction.owner_id and int(transaction.owner_id) == int(user_id):
                 return True
 
@@ -1430,15 +1434,17 @@ async def check_user_in_sign(tr_hash):
                     return True
 
             # Check if the user is a signer
-            address = db_session.query(Signers).filter(Signers.tg_id == user_id).first()
+            result = await db_session.execute(select(Signers).filter(Signers.tg_id == user_id))
+            address = result.scalars().first()
             if address is None:
                 return False
 
             # Check if the user has signed this transaction
-            signature = db_session.query(Signatures).filter(
+            result = await db_session.execute(select(Signatures).filter(
                 Signatures.transaction_hash == tr_hash,
                 Signatures.signer_id == address.id
-            ).first()
+            ))
+            signature = result.scalars().first()
 
             if signature:
                 return True
@@ -1903,19 +1909,20 @@ async def add_signer(signer_key):
     if username != "FaceLess" and username[0] != '@':
         username = '@' + username
 
-    with db_pool() as db_session:
-        db_signer = db_session.query(Signers).filter(Signers.public_key == signer_key).first()
+    async with current_app.db_pool() as db_session:
+        result = await db_session.execute(select(Signers).filter(Signers.public_key == signer_key))
+        db_signer = result.scalars().first()
         if db_signer is None:
             hint = Keypair.from_public_key(signer_key).signature_hint().hex()
             db_session.add(Signers(username='FaceLess', public_key=signer_key, tg_id=user_id,
                                    signature_hint=hint))
-            db_session.commit()
+            await db_session.commit()
         else:
             # if user_id and username != 'FaceLess':
             if user_id != db_signer.tg_id or username != db_signer.username:
                 db_signer.tg_id = user_id
                 db_signer.username = username
-                db_session.commit()
+                await db_session.commit()
 
 
 def get_operation_threshold_level(operation) -> str:
@@ -2033,9 +2040,9 @@ async def update_transaction_sources(transaction: "Transactions") -> bool:
         transaction.json = json.dumps(fresh_sources)
 
         # Используем merge для безопасного обновления объекта в новой сессии
-        with db_pool() as db_session:
-            db_session.merge(transaction)
-            db_session.commit()
+        async with current_app.db_pool() as db_session:
+            await db_session.merge(transaction)
+            await db_session.commit()
         logger.info(f"Successfully updated sources for transaction {transaction.hash}")
         return True
     except Exception as e:
@@ -2055,8 +2062,9 @@ async def add_transaction(tx_body, tx_description):
     tx_hash = tr.hash_hex()
     tr.signatures.clear()
 
-    with db_pool() as db_session:
-        existing_transaction = db_session.query(Transactions).filter(Transactions.hash == tx_hash).first()
+    async with current_app.db_pool() as db_session:
+        result = await db_session.execute(select(Transactions).filter(Transactions.hash == tx_hash))
+        existing_transaction = result.scalars().first()
         if existing_transaction:
             return True, tx_hash
 
@@ -2074,12 +2082,13 @@ async def add_transaction(tx_body, tx_description):
 
         if len(tr_full.signatures) > 0:
             for signature in tr_full.signatures:
-                signer = db_session.query(Signers).filter(
-                    Signers.signature_hint == signature.signature_hint.hex()).first()
+                result = await db_session.execute(select(Signers).filter(
+                    Signers.signature_hint == signature.signature_hint.hex()))
+                signer = result.scalars().first()
                 db_session.add(Signatures(signature_xdr=signature.to_xdr_object().to_xdr(),
                                           signer_id=signer.id if signer else None,
                                           transaction_hash=tx_hash))
-        db_session.commit()
+        await db_session.commit()
 
     return True, tx_hash
 

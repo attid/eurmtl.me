@@ -1,6 +1,8 @@
+
 import pytest
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
+from quart import Quart, current_app
 
 from stellar_sdk import (
     TransactionEnvelope, Keypair, Asset, Network,
@@ -13,9 +15,19 @@ from stellar_sdk.operation import (
 from other.stellar_tools import extract_sources, main_fund_address
 
 # Конфигурация для асинхронных тестов
-@pytest.fixture(scope="session")
-def event_loop():
-    return asyncio.get_event_loop()
+@pytest.fixture
+def app():
+    app = Quart(__name__)
+    mock_db_pool = AsyncMock()
+    mock_db_session = MagicMock()
+    mock_db_session.commit = AsyncMock()
+    # Ensure execute returns a mock result
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = None # Default no signer found
+    mock_db_session.execute = AsyncMock(return_value=mock_result)
+    mock_db_pool.__aenter__.return_value = mock_db_session
+    app.db_pool = MagicMock(return_value=mock_db_pool)
+    return app
 
 # --- Тест 0: Интеграционный тест с реальным Horizon API ---
 
@@ -69,81 +81,85 @@ def create_test_transaction_builder(source_kp, operations):
 
 @pytest.mark.asyncio
 @patch('other.stellar_tools.http_session_manager.get_web_request')
-async def test_extract_sources_for_medium_threshold(mock_get):
+async def test_extract_sources_for_medium_threshold(mock_get, app):
     """Тест 1: Транзакция со средним порогом."""
-    source_kp = Keypair.random()
-    mock_get.return_value = mock_horizon_response(low=2, med=5, high=10)
-    
-    ops = [Payment(destination=Keypair.random().public_key, asset=Asset.native(), amount="10")]
-    tx_builder = create_test_transaction_builder(source_kp, ops)
-    tx_envelope = tx_builder.build()
-    
-    sources = await extract_sources(tx_envelope.to_xdr())
-    print(sources)
-    
-    assert source_kp.public_key in sources
-    assert sources[source_kp.public_key]['threshold'] == 5 # medium_threshold
+    async with app.app_context():
+        source_kp = Keypair.random()
+        mock_get.return_value = mock_horizon_response(low=2, med=5, high=10)
+        
+        ops = [Payment(destination=Keypair.random().public_key, asset=Asset.native(), amount="10")]
+        tx_builder = create_test_transaction_builder(source_kp, ops)
+        tx_envelope = tx_builder.build()
+        
+        sources = await extract_sources(tx_envelope.to_xdr())
+        print(sources)
+        
+        assert source_kp.public_key in sources
+        assert sources[source_kp.public_key]['threshold'] == 5 # medium_threshold
 
 @pytest.mark.asyncio
 @patch('other.stellar_tools.http_session_manager.get_web_request')
-async def test_extract_sources_for_high_threshold(mock_get):
+async def test_extract_sources_for_high_threshold(mock_get, app):
     """Тест 2: Транзакция с высоким порогом."""
-    source_kp = Keypair.random()
-    mock_get.return_value = mock_horizon_response(low=2, med=5, high=10)
-    
-    ops = [
-        Payment(destination=Keypair.random().public_key, asset=Asset.native(), amount="10"),
-        AccountMerge(destination=Keypair.random().public_key)
-    ]
-    tx_builder = create_test_transaction_builder(source_kp, ops)
-    tx_envelope = tx_builder.build()
-    
-    sources = await extract_sources(tx_envelope.to_xdr())
-    
-    assert sources[source_kp.public_key]['threshold'] == 10 # high_threshold
+    async with app.app_context():
+        source_kp = Keypair.random()
+        mock_get.return_value = mock_horizon_response(low=2, med=5, high=10)
+        
+        ops = [
+            Payment(destination=Keypair.random().public_key, asset=Asset.native(), amount="10"),
+            AccountMerge(destination=Keypair.random().public_key)
+        ]
+        tx_builder = create_test_transaction_builder(source_kp, ops)
+        tx_envelope = tx_builder.build()
+        
+        sources = await extract_sources(tx_envelope.to_xdr())
+        
+        assert sources[source_kp.public_key]['threshold'] == 10 # high_threshold
 
 @pytest.mark.asyncio
 @patch('other.stellar_tools.http_session_manager.get_web_request')
-async def test_extract_sources_with_multiple_sources(mock_get):
+async def test_extract_sources_with_multiple_sources(mock_get, app):
     """Тест 3: Транзакция с несколькими источниками."""
-    main_source_kp = Keypair.random()
-    op_source_kp = Keypair.random()
+    async with app.app_context():
+        main_source_kp = Keypair.random()
+        op_source_kp = Keypair.random()
 
-    # Настраиваем мок для ответа на запросы для обоих аккаунтов
-    def side_effect(method, url, **kwargs):
-        if main_source_kp.public_key in url:
-            return mock_horizon_response(low=2, med=5, high=10)
-        if op_source_kp.public_key in url:
-            return mock_horizon_response(low=20, med=50, high=100)
-        return MagicMock(status=404)
-    mock_get.side_effect = side_effect
+        # Настраиваем мок для ответа на запросы для обоих аккаунтов
+        def side_effect(method, url, **kwargs):
+            if main_source_kp.public_key in url:
+                return mock_horizon_response(low=2, med=5, high=10)
+            if op_source_kp.public_key in url:
+                return mock_horizon_response(low=20, med=50, high=100)
+            return MagicMock(status=404)
+        mock_get.side_effect = side_effect
 
-    ops = [
-        Payment(destination=Keypair.random().public_key, asset=Asset.native(), amount="10"), # Источник - main_source (medium)
-        SetOptions(low_threshold=1, source=op_source_kp.public_key) # Источник - op_source (high)
-    ]
-    tx_builder = create_test_transaction_builder(main_source_kp, ops)
-    tx_envelope = tx_builder.build()
+        ops = [
+            Payment(destination=Keypair.random().public_key, asset=Asset.native(), amount="10"), # Источник - main_source (medium)
+            SetOptions(low_threshold=1, source=op_source_kp.public_key) # Источник - op_source (high)
+        ]
+        tx_builder = create_test_transaction_builder(main_source_kp, ops)
+        tx_envelope = tx_builder.build()
 
-    sources = await extract_sources(tx_envelope.to_xdr())
-    print(sources)
+        sources = await extract_sources(tx_envelope.to_xdr())
+        print(sources)
 
-    assert len(sources) == 2
-    assert sources[main_source_kp.public_key]['threshold'] == 5 # medium
-    assert sources[op_source_kp.public_key]['threshold'] == 100 # high
+        assert len(sources) == 2
+        assert sources[main_source_kp.public_key]['threshold'] == 5 # medium
+        assert sources[op_source_kp.public_key]['threshold'] == 100 # high
 
 @pytest.mark.asyncio
 @patch('other.stellar_tools.http_session_manager.get_web_request')
-async def test_extract_sources_handles_network_error(mock_get):
+async def test_extract_sources_handles_network_error(mock_get, app):
     """Тест 4: Обработка ошибки сети."""
-    source_kp = Keypair.random()
-    mock_get.side_effect = Exception("Network Error")
+    async with app.app_context():
+        source_kp = Keypair.random()
+        mock_get.side_effect = Exception("Network Error")
 
-    ops = [Payment(destination=Keypair.random().public_key, asset=Asset.native(), amount="10")]
-    tx_builder = create_test_transaction_builder(source_kp, ops)
-    tx_envelope = tx_builder.build()
+        ops = [Payment(destination=Keypair.random().public_key, asset=Asset.native(), amount="10")]
+        tx_builder = create_test_transaction_builder(source_kp, ops)
+        tx_envelope = tx_builder.build()
 
-    sources = await extract_sources(tx_envelope.to_xdr())
-    print(sources)
+        sources = await extract_sources(tx_envelope.to_xdr())
+        print(sources)
 
-    assert sources[source_kp.public_key]['threshold'] == 0
+        assert sources[source_kp.public_key]['threshold'] == 0

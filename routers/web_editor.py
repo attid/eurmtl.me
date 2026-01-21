@@ -5,13 +5,13 @@ import uuid
 import aiohttp
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from sqlalchemy import select
 from loguru import logger
-from quart import Blueprint, request, render_template, jsonify, session, abort
+from quart import Blueprint, request, render_template, jsonify, session, abort, current_app
 from sulguk import SULGUK_PARSE_MODE
 
 from other.config_reader import config
 from db.sql_models import WebEditorMessages, WebEditorLogs
-from db.sql_pool import db_pool
 from other.telegram_tools import is_bot_admin, is_user_admin, check_response_webapp, skynet_bot, prepare_html_text
 from other.quart_tools import get_ip
 
@@ -33,16 +33,18 @@ async def web_editor():
             return 'Бот не является администратором в данном чате', 403
 
         # Затем ищем в базе текст для этого сообщения
-        with db_pool() as db_session:
+        async with current_app.db_pool() as db_session:
             if chat_id == 0:
-                message_record = db_session.query(WebEditorMessages).filter(
+                result = await db_session.execute(select(WebEditorMessages).filter(
                     WebEditorMessages.uuid == message_id
-                ).first()
+                ))
+                message_record = result.scalars().first()
             else:
-                message_record = db_session.query(WebEditorMessages).filter(
+                result = await db_session.execute(select(WebEditorMessages).filter(
                     WebEditorMessages.chat_id == chat_id,
                     WebEditorMessages.message_id == message_id
-                ).first()
+                ))
+                message_record = result.scalars().first()
 
         if message_record:
             # Если текст найден, отображаем его в редакторе
@@ -123,16 +125,18 @@ async def web_editor_action():
 
     # Если есть текст, это запрос на сохранение
     if 'text' in data:
-        with db_pool() as db_session:
+        async with current_app.db_pool() as db_session:
             if chat_id == 0:
-                message_record = db_session.query(WebEditorMessages).filter(
+                result = await db_session.execute(select(WebEditorMessages).filter(
                     WebEditorMessages.uuid == message_id
-                ).first()
+                ))
+                message_record = result.scalars().first()
             else:
-                message_record = db_session.query(WebEditorMessages).filter(
+                result = await db_session.execute(select(WebEditorMessages).filter(
                     WebEditorMessages.chat_id == chat_id,
                     WebEditorMessages.message_id == message_id
-                ).first()
+                ))
+                message_record = result.scalars().first()
 
             # Если запись найдена, обновляем текст
             if message_record:
@@ -154,7 +158,7 @@ async def web_editor_action():
                 db_session.add(new_message_record)
 
             # Сохраняем изменения в базе данных
-            db_session.commit()
+            await db_session.commit()
             if chat_id == 0:
                 return jsonify({'ok': True}), 200
             # tg_inquiry = transform_html(data['text'])
