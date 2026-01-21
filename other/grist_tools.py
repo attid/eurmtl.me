@@ -32,6 +32,9 @@ class MTLGrist:
 
     SP_USERS = GristTableConfig("3sFtdPU7Dcfw2XwTioLcJD", "SP_USERS")
     SP_CHATS = GristTableConfig("3sFtdPU7Dcfw2XwTioLcJD", "SP_CHATS")
+    QUESTIONS = GristTableConfig("3sFtdPU7Dcfw2XwTioLcJD", "QUESTIONS")
+    QUESTION_DATA = GristTableConfig("3sFtdPU7Dcfw2XwTioLcJD", "QUESTION_DATA")
+    QUESTION_TEMPLATES = GristTableConfig("3sFtdPU7Dcfw2XwTioLcJD", "QUESTION_TEMPLATES")
 
     MAIN_CHAT_INCOME = GristTableConfig("gnXfashifjtdExQoeQeij6", "Main_chat_income")
     MAIN_CHAT_OUTCOME = GristTableConfig("gnXfashifjtdExQoeQeij6", "Main_chat_outcome")

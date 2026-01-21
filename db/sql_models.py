@@ -6,8 +6,6 @@ from typing import Optional
 from sqlalchemy import String, Integer, Column, Text, DateTime, create_engine, ForeignKey, BigInteger
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from other.config_reader import config
-
 Base = declarative_base()
 metadata = Base.metadata
 
@@ -135,6 +133,8 @@ class Sep6Transactions(Base):
 
 if __name__ == '__main__':
     pass
+    from other.config_reader import config
+
     engine = create_engine(config.db_dsn, pool_pre_ping=True)
     db_pool = sessionmaker(bind=engine)
     Base.metadata.create_all(engine)
