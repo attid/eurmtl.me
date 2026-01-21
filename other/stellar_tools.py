@@ -29,6 +29,7 @@ from other.cache_tools import async_cache_with_ttl
 from other.grist_cache import grist_cache
 from other.grist_tools import grist_manager, MTLGrist, load_user_from_grist, get_secretaries, load_users_from_grist
 from db.sql_models import Signers, Transactions, Signatures
+from infrastructure.repositories.transaction_repository import TransactionRepository
 from quart import session, flash, current_app
 from sqlalchemy import select
 from other.config_reader import config
@@ -77,11 +78,11 @@ async def check_publish_state(tx_hash: str) -> (int, str):
             data = response.data
             date = data['created_at'].replace('T', ' ').replace('Z', '')
             async with current_app.db_pool() as db_session:
-                result = await db_session.execute(select(Transactions).filter(Transactions.hash == tx_hash))
-                transaction = result.scalars().first()
+                repo = TransactionRepository(db_session)
+                transaction = await repo.get_by_hash(tx_hash)
                 if transaction and transaction.state != 2:
                     transaction.state = 2
-                    await db_session.commit()
+                    await repo.commit()
             if data['successful']:
                 return 1, date
             else:
@@ -754,11 +755,9 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
 
     # Проверяем наличие других транзакций с таким же sequence
     async with current_app.db_pool() as db_session:
-        result = await db_session.execute(select(Transactions).filter(
-            Transactions.stellar_sequence == sequence,
-            Transactions.hash != transaction.hash_hex() if hasattr(transaction, 'hash_hex') else None
-        ))
-        same_sequence_txs = result.scalars().all()
+        repo = TransactionRepository(db_session)
+        exclude_hash = transaction.hash_hex() if hasattr(transaction, 'hash_hex') else None
+        same_sequence_txs = await repo.get_by_sequence(sequence, exclude_hash)
 
         if same_sequence_txs:
             links = [f'<a href="https://eurmtl.me/sign_tools/{tx.hash}">{tx.description[:10]}...</a>'
@@ -1420,9 +1419,10 @@ async def check_user_in_sign(tr_hash):
             return True
 
         async with current_app.db_pool() as db_session:
+            repo = TransactionRepository(db_session)
+            
             # Check if user is owner of transaction
-            result = await db_session.execute(select(Transactions).filter(Transactions.hash == tr_hash))
-            transaction = result.scalars().first()
+            transaction = await repo.get_by_hash(tr_hash)
             if transaction and transaction.owner_id and int(transaction.owner_id) == int(user_id):
                 return True
 
@@ -1434,17 +1434,12 @@ async def check_user_in_sign(tr_hash):
                     return True
 
             # Check if the user is a signer
-            result = await db_session.execute(select(Signers).filter(Signers.tg_id == user_id))
-            address = result.scalars().first()
+            address = await repo.get_signer_by_tg_id(user_id)
             if address is None:
                 return False
 
             # Check if the user has signed this transaction
-            result = await db_session.execute(select(Signatures).filter(
-                Signatures.transaction_hash == tr_hash,
-                Signatures.signer_id == address.id
-            ))
-            signature = result.scalars().first()
+            signature = await repo.get_signature(tr_hash, address.id)
 
             if signature:
                 return True
@@ -2041,8 +2036,9 @@ async def update_transaction_sources(transaction: "Transactions") -> bool:
 
         # Используем merge для безопасного обновления объекта в новой сессии
         async with current_app.db_pool() as db_session:
-            await db_session.merge(transaction)
-            await db_session.commit()
+            repo = TransactionRepository(db_session)
+            await repo.save(transaction)
+            # await repo.commit() # save calls commit
         logger.info(f"Successfully updated sources for transaction {transaction.hash}")
         return True
     except Exception as e:
@@ -2063,8 +2059,8 @@ async def add_transaction(tx_body, tx_description):
     tr.signatures.clear()
 
     async with current_app.db_pool() as db_session:
-        result = await db_session.execute(select(Transactions).filter(Transactions.hash == tx_hash))
-        existing_transaction = result.scalars().first()
+        repo = TransactionRepository(db_session)
+        existing_transaction = await repo.get_by_hash(tx_hash)
         if existing_transaction:
             return True, tx_hash
 
@@ -2078,16 +2074,20 @@ async def add_transaction(tx_body, tx_description):
             source_account=tr.transaction.source.account_id,
             owner_id=owner_id
         )
-        db_session.add(new_transaction)
+        await repo.add(new_transaction) # add is synchronous in SA, but wrapper might be async if I made it so? 
+        # Wait, I defined `save` for merge, but `add` for adding new. 
+        # My repo `add` implementation: `self.session.add(entity)`. It's async func but just calls session.add.
+        # But wait, `session.add` is sync. `TransactionRepository.add` is async? 
+        # Looking at my implementation: `async def add(self, entity: object) -> None: self.session.add(entity)`
+        # It's fine.
 
         if len(tr_full.signatures) > 0:
             for signature in tr_full.signatures:
-                result = await db_session.execute(select(Signers).filter(
-                    Signers.signature_hint == signature.signature_hint.hex()))
-                signer = result.scalars().first()
-                db_session.add(Signatures(signature_xdr=signature.to_xdr_object().to_xdr(),
+                signer = await repo.get_signer_by_signature_hint(signature.signature_hint.hex())
+                await repo.add_signature(Signatures(signature_xdr=signature.to_xdr_object().to_xdr(),
                                           signer_id=signer.id if signer else None,
                                           transaction_hash=tx_hash))
+        await repo.commit()
         await db_session.commit()
 
     return True, tx_hash

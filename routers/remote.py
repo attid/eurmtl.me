@@ -13,6 +13,7 @@ from other.stellar_tools import decode_xdr_to_text, is_valid_base64, add_transac
 from other.web_tools import cors_jsonify
 from routers.remote_sep07_auth import blueprint as sep07_blueprint_auth
 from routers.remote_sep07 import blueprint as sep07_blueprint
+from infrastructure.repositories.transaction_repository import TransactionRepository
 
 blueprint = Blueprint('remote', __name__)
 blueprint.register_blueprint(sep07_blueprint)
@@ -22,35 +23,25 @@ blueprint.register_blueprint(sep07_blueprint_auth)
 @blueprint.route('/remote/need_sign/<public_key>', methods=('GET',))
 async def remote_need_sign(public_key):
     async with current_app.db_pool() as db_session:
+        repo = TransactionRepository(db_session)
+        
         # Получаем подписанта по публичному ключу
-        result = await db_session.execute(select(Signers).filter(Signers.public_key == public_key))
-        signer = result.scalars().first()
+        signer = await repo.get_signer_by_public_key(public_key)
         if not signer:
             return jsonify({'error': 'Signer not found'}), 404
 
         # Получаем транзакции, требующие подписи этого подписанта
-        result = await db_session.execute(select(Transactions).filter(
-            Transactions.json.contains(public_key),
-            Transactions.state == 0
-        ).order_by(Transactions.add_dt.desc()))
-        transactions = result.scalars().all()
+        transactions = await repo.get_pending_for_signer(signer)
 
-        # Фильтруем транзакции, убирая те, для которых подпись уже существует
+        # Формируем ответ
         result_list = []
         for transaction in transactions:
-            sig_result = await db_session.execute(select(Signatures).filter(
-                Signatures.transaction_hash == transaction.hash,
-                Signatures.signer_id == signer.id
-            ))
-            signature_exists = sig_result.scalars().first() is not None
-
-            if not signature_exists:
-                result_list.append({
-                    'hash': transaction.hash,
-                    'body': transaction.body,
-                    'add_dt': transaction.add_dt.isoformat(),
-                    'description': transaction.description
-                })
+            result_list.append({
+                'hash': transaction.hash,
+                'body': transaction.body,
+                'add_dt': transaction.add_dt.isoformat(),
+                'description': transaction.description
+            })
 
         return jsonify(result_list)
 
@@ -92,11 +83,11 @@ async def remote_get_xdr(tr_hash):
         abort(404)
 
     async with current_app.db_pool() as db_session:
+        repo = TransactionRepository(db_session)
         if len(tr_hash) == 64:
-            result = await db_session.execute(select(Transactions).filter(Transactions.hash == tr_hash))
+            transaction = await repo.get_by_hash(tr_hash)
         else:
-            result = await db_session.execute(select(Transactions).filter(Transactions.uuid == tr_hash))
-        transaction = result.scalars().first()
+            transaction = await repo.get_by_uuid(tr_hash)
 
     if transaction is None:
         return 'Transaction not exist =('
