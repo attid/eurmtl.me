@@ -134,3 +134,5 @@ dmypy.json
 /*/mtl-google-doc.json
 /static/qr/*
 /static/tailscale*.deb
+/localdoc/d2.md
+/localdoc/mejor.md

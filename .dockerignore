@@ -45,6 +45,7 @@ requirements.txt
 
 # Documentation - НЕ исключаем README.md для Docker
 docs/
+localdoc/
 
 # Tests
 tests/
