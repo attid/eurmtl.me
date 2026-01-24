@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     mongo_dsn: str
     mongo_db_name: str
     test_user_id: int
+    port: int = 8000
     test_mode: bool = False
     grist_token: str
     grist_income: str

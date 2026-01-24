@@ -29,7 +29,7 @@ async def web_editor():
         session['WebEditor'] = (chat_id, message_id)
 
         # Проверяем, является ли бот администратором в чате
-        if chat_id > 0 and not is_bot_admin(chat_id):
+        if chat_id > 0 and not await is_bot_admin(chat_id):
             return 'Бот не является администратором в данном чате', 403
 
         # Затем ищем в базе текст для этого сообщения
@@ -120,7 +120,7 @@ async def web_editor_action():
         return jsonify({'ok': False, 'error': 'initData отсутствует'}), 400
 
     # Проверяем права пользователя на редактирование
-    if chat_id > 0 and not user_has_edit_permissions(init_data_str, chat_id):
+    if chat_id > 0 and not await user_has_edit_permissions(init_data_str, chat_id):
         return jsonify({'ok': False, 'error': 'Нет прав на редактирование'}), 403
 
     # Если есть текст, это запрос на сохранение
@@ -186,7 +186,7 @@ async def web_editor_action():
     return jsonify({'ok': True}), 200
 
 
-def user_has_edit_permissions(init_data_str, chat_id, return_user=False):
+async def user_has_edit_permissions(init_data_str, chat_id, return_user=False):
     # Декодируем URL-кодированную строку
     decoded_str = urllib.parse.unquote(init_data_str)
 
@@ -212,7 +212,7 @@ def user_has_edit_permissions(init_data_str, chat_id, return_user=False):
         return user_id
     else:
         # Проверяем, является ли пользователь администратором в чате
-        return is_user_admin(chat_id, user_id)
+        return await is_user_admin(chat_id, user_id)
 
 
 async def check_response_captcha(token, v2):
@@ -258,7 +258,7 @@ async def join_captcha():
         token = data.get('token')
         v2 = data.get('v2') == 'true'
 
-        user_id = user_has_edit_permissions(init_data_str, 0, True)
+        user_id = await user_has_edit_permissions(init_data_str, 0, True)
         logger.info(f'JoinCaptcha: {user_id} {token} {init_data_str} {v2}')
 
         if user_id and token and await check_response_captcha(token, v2=v2):
