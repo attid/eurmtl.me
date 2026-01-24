@@ -7,15 +7,16 @@
 - `db/`: SQLAlchemy models and DB pool.
 - `templates/` and `static/`: Jinja2 templates and assets (QR images under `static/qr/`).
 - `tests/`: Pytest suite (`test_*.py`).
-- `Makefile`, `Dockerfile`, `docker-compose.yml`: Dev/build tooling.
+- `justfile`, `Dockerfile`, `docker-compose.yml`: Dev/build tooling.
 
 ## Build, Test, and Development Commands
-- `make dev`: Start in dev mode (uses `uv` and `./dev.sh`).
-- `make run`: Run app locally (`uv run python start.py`).
-- `make test`: Run tests.
-- `make format` / `make lint`: Apply/check Black + isort + flake8.
-- `make docker-build` / `make docker-run`: Build and run with Docker Compose.
-- `make docker-test[-all]`: Run tests inside Docker (mounts `tests/` and `static/qr/`).
+- `just dev`: Start in dev mode (`uv run python start.py`).
+- `just test`: Run tests (`uv run pytest`).
+- `just format` / `just lint`: Apply/check Black + isort + flake8.
+- `just build`: Build Docker image.
+- `just run`: Build and run with Docker (includes tests).
+- `just docker-dev`: Run in Docker dev mode with code mounted.
+- `just docker-stop`: Stop Docker containers.
 
 ## Coding Style & Naming Conventions
 - Python 3.12; 4‑space indents; line length 120.
@@ -26,7 +27,7 @@
 
 ## Testing Guidelines
 - Framework: Pytest + pytest-asyncio. Tests live in `tests/`, files named `test_*.py`.
-- Run: `make test` or `uv run pytest`.
+- Run: `just test` or `uv run pytest`.
 - Async tests: use `pytest.mark.asyncio`. Prefer fast, isolated unit tests; mock network/IO.
 - Tests that write QR files should target `static/qr/` and clean up.
 
@@ -34,7 +35,7 @@
 - Commits: Conventional style (`feat|fix|refactor|chore(test)|docs(scope): subject`). Emojis optional (seen in history).
 - Subject in imperative mood; keep related changes together.
 - PRs: clear description, link issues, list changes, include screenshots for UI/template updates, and note DB/migration impacts.
-- Ensure: tests pass, `make lint` is clean, and no secrets committed.
+- Ensure: tests pass, `just lint` is clean, and no secrets committed.
 
 ## Security & Configuration Tips
 - Configuration via `.env` loaded by `other/config_reader.py` (pydantic-settings). Do not commit `.env`.

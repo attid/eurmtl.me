@@ -526,6 +526,11 @@ dev = [
     { name = "safety" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest-cov" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "aiogram" },
@@ -573,6 +578,9 @@ requires-dist = [
     { name = "uvloop", marker = "sys_platform != 'win32'" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest-cov", specifier = ">=6.2.1" }]
 
 [[package]]
 name = "fdb"

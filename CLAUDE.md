@@ -5,28 +5,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 
 ### Package Management
-- **Install dependencies**: `uv sync` (recommended) or `make install`
-- **Update dependencies**: `uv sync --upgrade` or `make update`
+- **Install dependencies**: `uv sync` (recommended)
+- **Update dependencies**: `uv sync --upgrade`
 - **Run with uv**: `uv run python start.py`
 
 ### Running the Application
-- **Development mode**: `make dev` or `./dev.sh`
-- **Production mode**: `make run` or `uv run python start.py`
-- **Docker development**: `make docker-dev`
-- **Docker production**: `make docker-run`
+- **Development mode**: `just dev` or `uv run python start.py`
+- **Production mode**: `uv run python start.py`
+- **Docker development**: `just docker-dev`
+- **Docker production**: `just run`
 
 ### Testing and Quality Assurance
-- **Run tests**: `make test` or `uv run pytest`
+- **Run tests**: `just test` or `uv run pytest`
 - **Run specific test**: `uv run pytest tests/test_specific_file.py -v`
-- **Format code**: `make format` (Black + isort)
-- **Lint code**: `make lint` (Black + isort + flake8)
+- **Format code**: `just format` (Black + isort)
+- **Lint code**: `just lint` (Black + isort + flake8)
 - **Type checking**: `uv run mypy .` (lenient mode)
 
 ### Docker Commands
-- **Build image**: `make docker-build`
-- **Run tests in Docker**: `make docker-test` (specific) or `make docker-test-all` (all tests)
-- **Docker shell**: `make docker-shell`
-- **Stop containers**: `make docker-stop`
+- **Build image**: `just build`
+- **Run in Docker**: `just run` (includes tests)
+- **Docker dev mode**: `just docker-dev`
+- **Docker shell**: `just shell`
+- **Stop containers**: `just docker-stop`
 
 ## Architecture Overview
 
