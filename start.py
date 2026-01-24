@@ -119,7 +119,7 @@ async def initialize_grist_cache():
 
 if __name__ == "__main__":
     if config.test_mode:
-        app.run(host="0.0.0.0", port=8000, debug=True)
+        app.run(host="0.0.0.0", port=config.port, debug=True)
     else:
         import uvicorn
         try:
@@ -127,5 +127,4 @@ if __name__ == "__main__":
             uvloop.install()  # Заменяет стандартный event loop
         except ImportError:
             pass  # Если uvloop не установлен, используем стандартный
-        uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False)
-
+        uvicorn.run(app, host="0.0.0.0", port=config.port, access_log=False)

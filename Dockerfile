@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y \
     git \
     build-essential \
     libpq-dev \
+    libfbclient2 \
+    fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*
 
 # Устанавливаем uv
@@ -31,6 +33,9 @@ RUN uv sync --frozen --no-dev
 
 # Копируем исходный код
 COPY --chown=app:app . .
+
+# Создаем необходимые директории
+RUN mkdir -p static/qr log
 
 # Открываем порт
 EXPOSE 8000
