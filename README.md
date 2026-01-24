@@ -16,8 +16,8 @@ uv run python start.py
 
 ```bash
 # Build and run tests
-make docker-test
+just test
 
 # Build and run application
-make docker-run
+just run
 ```
