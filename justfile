@@ -9,7 +9,7 @@ build tag="latest":
     # Build Docker image
     docker build -t {{IMAGE_NAME}}:{{tag}} .
 
-run:
+run: test
     # Build and Run Docker container
     docker build -t {{IMAGE_NAME}}:local .
     echo http://127.0.0.1:8000
