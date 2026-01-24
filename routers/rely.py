@@ -7,15 +7,11 @@ import traceback
 from dataclasses import dataclass
 from functools import wraps
 from typing import (
-    List,
-    Optional,
-    Tuple,
     cast,
-    Dict,
     Callable,
     TypeVar,
     Awaitable,
-    Union,
+    Any,
 )
 from decimal import Decimal
 
@@ -40,12 +36,13 @@ GRIST_BASE_URL = "https://mtl-rely.getgrist.com/api/docs"
 
 DEAL_ACCOUNT = "GCWCVYBHVDBZP7U4DDJBPEMWKYMUQDR6PKWS6EHYM2OB4YSZGBU3DEAL"
 DEAL_ASSET = "RELY-GC5WBT3D5GPZ3FU7MTUMVWTLAS3IUU7EPCTFJSLHI5RYMPTLEIX2RELY"
+RELY_ACCOUNT = "GC5WBT3D5GPZ3FU7MTUMVWTLAS3IUU7EPCTFJSLHI5RYMPTLEIX2RELY"
 
 # --- Concurrency Lock ---
-deal_locks: Dict[int, asyncio.Lock] = {}
+deal_locks: dict[int, asyncio.Lock] = {}
 
 # --- Typing for Decorator ---
-F = TypeVar("F", bound=Callable[..., Awaitable[Tuple[Response, int]]])
+F = TypeVar("F", bound=Callable[..., Awaitable[tuple[Response, int]]])
 
 
 class TelegramMessenger:
@@ -53,8 +50,8 @@ class TelegramMessenger:
 
     @staticmethod
     def parse_tg_url(
-        url: Optional[str],
-    ) -> Tuple[Optional[Union[int, str]], Optional[int]]:
+        url: str | None,
+    ) -> tuple[int | str | None, int | None]:
         """
         Parses a Telegram message URL to extract chat_id and message_id.
 
@@ -86,8 +83,8 @@ class TelegramMessenger:
     @staticmethod
     async def send_message(
         text: str,
-        chat_id: Optional[Union[int, str]] = None,
-        reply_to_message_id: Optional[int] = None,
+        chat_id: int | str | None = None,
+        reply_to_message_id: int | None = None,
         disable_web_page_preview: bool = True,
         parse_mode: str = "HTML",
     ) -> None:
@@ -149,7 +146,7 @@ def require_grist_auth(f: F) -> F:
     """
 
     @wraps(f)
-    async def decorated_function(*args, **kwargs) -> Tuple[Response, int]:
+    async def decorated_function(*args, **kwargs) -> tuple[Response, int]:
         """Wrapper that performs authentication before calling the original function."""
         ip = request.remote_addr
         auth_header = request.headers.get("Authorization")
@@ -157,11 +154,14 @@ def require_grist_auth(f: F) -> F:
             logger.warning(f"Grist webhook from {ip}: Authorization header is missing.")
             abort(401, "Authorization header is missing")
 
+        auth_header = cast(str, auth_header)
         token = auth_header.strip()
         if auth_header.startswith("Bearer "):
             token = auth_header[7:].strip()
         if not hmac.compare_digest(token.encode(), config.grist_income.encode()):
-            logger.warning(f"Grist webhook from {ip}: Invalid token provided: '{token}'")
+            logger.warning(
+                f"Grist webhook from {ip}: Invalid token provided: '{token}'"
+            )
             abort(403, "Invalid token")
 
         return await f(*args, **kwargs)
@@ -169,24 +169,27 @@ def require_grist_auth(f: F) -> F:
     return cast(F, decorated_function)
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class DealRecord:
     """Represents a single deal record from the Grist 'Deals' table."""
 
     id: int
     checked: bool
-    transaction: Optional[str]
-    message_url: Optional[str] = None
+    result_checked: bool
+    transaction: str | None = None
+    message_url: str | None = None
+    result_transaction: str | None = None
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class DealParticipant:
     """Represents an assembled participant of a deal with their details."""
 
     id: int
     amount: Decimal
-    stellar: Optional[str]
-    tg_username: Optional[str]
+    is_done: bool
+    stellar: str | None
+    tg_username: str | None
 
     @property
     def display_name(self) -> str:
@@ -199,7 +202,7 @@ class DealParticipant:
         return f"Participant ID:{self.id}"
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class DealParticipantEntry:
     """Represents a participant entry from the Grist 'Conditions' table."""
 
@@ -207,15 +210,25 @@ class DealParticipantEntry:
     deal_id: int
     holder_id: int
     amount: Decimal
+    is_done: bool
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
 class HolderEntry:
     """Represents a holder's record from the Grist 'Holders' table."""
 
     id: int
-    stellar: Optional[str]
-    telegram: Optional[str]
+    stellar: str | None
+    telegram: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionProcessResult:
+    """The result of a deal transaction process."""
+
+    success: bool
+    xdr: str | None = None
+    errors: list[str] | None = None
 
 
 class GristDealParticipantRepository:
@@ -240,7 +253,9 @@ class GristDealParticipantRepository:
             base_url=GRIST_BASE_URL,
         )
 
-    async def get_participants_by_deal_id(self, deal_id: int) -> List[DealParticipantEntry]:
+    async def get_participants_by_deal_id(
+        self, deal_id: int
+    ) -> list[DealParticipantEntry]:
         """
         Retrieve all participants for a specific deal.
 
@@ -251,9 +266,13 @@ class GristDealParticipantRepository:
             A list of DealParticipantEntry objects.
         """
         try:
-            records = await self._grist_api.fetch_data(table=self._table_config, filter_dict={"Deal": [deal_id]})
+            records = await self._grist_api.fetch_data(
+                table=self._table_config, filter_dict={"Deal": [deal_id]}
+            )
         except Exception as e:
-            logger.error(f"Failed to fetch participants for deal {deal_id} from Grist: {e}\n{traceback.format_exc()}")
+            logger.error(
+                f"Failed to fetch participants for deal {deal_id} from Grist: {e}\n{traceback.format_exc()}"
+            )
             return []
 
         participants = []
@@ -265,10 +284,13 @@ class GristDealParticipantRepository:
                         deal_id=record["Deal"],
                         holder_id=record["Participant"],
                         amount=Decimal(str(record["Amount"])),
+                        is_done=record["Done"],
                     )
                 )
             except (KeyError, TypeError, ValueError) as e:
-                logger.warning(f"Skipping malformed participant record for deal {deal_id}: {record}. Error: {e}")
+                logger.warning(
+                    f"Skipping malformed participant record for deal {deal_id}: {record}. Error: {e}"
+                )
 
         return participants
 
@@ -292,7 +314,7 @@ class GristHolderRepository:
             base_url=GRIST_BASE_URL,
         )
 
-    async def get_holders_by_ids(self, holder_ids: List[int]) -> Dict[int, HolderEntry]:
+    async def get_holders_by_ids(self, holder_ids: list[int]) -> dict[int, HolderEntry]:
         """
         Retrieve holders by their IDs.
 
@@ -306,9 +328,13 @@ class GristHolderRepository:
             return {}
 
         try:
-            records = await self._grist_api.fetch_data(table=self._table_config, filter_dict={"id": holder_ids})
+            records = await self._grist_api.fetch_data(
+                table=self._table_config, filter_dict={"id": holder_ids}
+            )
         except Exception as e:
-            logger.error(f"Failed to fetch holders by IDs {holder_ids} from Grist: {e}\n{traceback.format_exc()}")
+            logger.error(
+                f"Failed to fetch holders by IDs {holder_ids} from Grist: {e}\n{traceback.format_exc()}"
+            )
             return {}
 
         holders = {}
@@ -320,7 +346,9 @@ class GristHolderRepository:
                     telegram=record.get("Telegram"),
                 )
             except (KeyError, TypeError) as e:
-                logger.warning(f"Skipping malformed holder record: {record}. Error: {e}")
+                logger.warning(
+                    f"Skipping malformed holder record: {record}. Error: {e}"
+                )
         return holders
 
 
@@ -343,40 +371,29 @@ class GristDealRepository:
             base_url=GRIST_BASE_URL,
         )
 
-    async def set_transaction(self, deal_id: int, transaction_url: str) -> None:
+    async def update_fields(self, deal_id: int, fields: dict[str, Any]) -> bool:
         """
-        Sets the transaction URL for a specific deal in Grist.
+        Updates specific fields for a deal in Grist.
 
         Args:
             deal_id: The ID of the deal to update.
-            transaction_url: The URL of the transaction to set.
+            fields: A dictionary of fields to update.
+
+        Returns:
+            True if update was successful, False otherwise.
         """
         try:
             await self._grist_api.patch_data(
                 self._table_config,
-                {"records": [{"id": deal_id, "fields": {"Transaction": transaction_url}}]},
+                {"records": [{"id": deal_id, "fields": fields}]},
             )
-            logger.info(f"Successfully set transaction URL for deal {deal_id}.")
+            logger.info(f"Successfully updated fields for deal {deal_id}: {fields}")
+            return True
         except Exception as e:
-            logger.error(f"Failed to set transaction URL for deal {deal_id}: {e}\n{traceback.format_exc()}")
-
-    async def disable_checked(self, deal_id: int) -> None:
-        """
-        Disables the 'Checked' status for a specific deal in Grist.
-
-        This is typically used when a deal fails validation.
-
-        Args:
-            deal_id: The ID of the deal to update.
-        """
-        try:
-            await self._grist_api.patch_data(
-                self._table_config,
-                {"records": [{"id": deal_id, "fields": {"Checked": False}}]},
+            logger.error(
+                f"Failed to update fields for deal {deal_id}: {e}\n{traceback.format_exc()}"
             )
-            logger.info(f"Successfully disabled 'Checked' status for deal {deal_id}.")
-        except Exception as e:
-            logger.error(f"Failed to disable 'Checked' status for deal {deal_id}: {e}\n{traceback.format_exc()}")
+            return False
 
 
 # --- Module-level Repository Instantiation ---
@@ -398,7 +415,7 @@ class Deal:
             deal_record: The raw deal record from Grist.
         """
         self.deal_record = deal_record
-        self.participants: List[DealParticipant] = []
+        self.participants: list[DealParticipant] = []
 
     @property
     def mention_string(self) -> str:
@@ -410,7 +427,9 @@ class Deal:
         Loads and assembles participant objects for the deal from the repositories.
         """
         logger.info(f"Loading participants for deal {self.deal_record.id}.")
-        participant_entries = await participant_repo.get_participants_by_deal_id(self.deal_record.id)
+        participant_entries = await participant_repo.get_participants_by_deal_id(
+            self.deal_record.id
+        )
         if not participant_entries:
             logger.info(f"No participants found for deal {self.deal_record.id}.")
             return
@@ -428,6 +447,7 @@ class Deal:
                         amount=p_entry.amount,
                         stellar=holder.stellar,
                         tg_username=holder.telegram,
+                        is_done=p_entry.is_done,
                     )
                 )
             else:
@@ -436,9 +456,11 @@ class Deal:
                 raise HolderNotFoundException(error_msg)
 
         self.participants = assembled_participants
-        logger.info(f"Loaded and assembled {len(self.participants)} participants for deal {self.deal_record.id}.")
+        logger.info(
+            f"Loaded and assembled {len(self.participants)} participants for deal {self.deal_record.id}."
+        )
 
-    def _validate_preconditions(self) -> List[str]:
+    def _validate_preconditions(self) -> list[str]:
         """
         Validates that the deal meets the preconditions for processing.
 
@@ -447,17 +469,45 @@ class Deal:
         """
         errors = []
         if not self.participants:
-            errors.append(f"Deal {self.deal_record.id} has no participants.")
+            errors.append(f"❌ В сделке {self.deal_record.id} отсутствуют участники.")
             return errors
 
         for p in self.participants:
             if not p.stellar:
-                errors.append(f"Участник {p.display_name} в сделке {self.deal_record.id} не имеет stellar адреса.")
+                errors.append(
+                    f"⚠️ Участник {p.display_name} в сделке {self.deal_record.id} не имеет stellar адреса."
+                )
             if p.amount < Decimal("0.1"):
                 errors.append(
-                    f"Участник {p.display_name} в сделке {self.deal_record.id} имеет сумму {p.amount}, что меньше 0.1."
+                    f"⚠️ Участник {p.display_name} в сделке {self.deal_record.id} имеет сумму {p.amount}, что меньше 0.1."
                 )
         return errors
+
+    async def _build_envelope(self, operations: list[dict[str, Any]], memo: str) -> str:
+        """
+        Helper method to build a Stellar transaction envelope.
+
+        Args:
+            operations: A list of operation dictionaries.
+            memo: The memo text for the transaction.
+
+        Returns:
+            A base64-encoded XDR string.
+        """
+        async with ServerAsync(
+            horizon_url="https://horizon.stellar.org", client=AiohttpClient()
+        ) as server:
+            source_account = await server.load_account(DEAL_ACCOUNT)
+
+        tx_data = {
+            "publicKey": DEAL_ACCOUNT,
+            "sequence": str(source_account.sequence + 1),
+            "memo": memo,
+            "memo_type": "memo_text",
+            "operations": operations,
+        }
+        # The return type of stellar_build_xdr is not specific enough, hence the cast.
+        return cast(str, await stellar_build_xdr(tx_data))
 
     async def _build_transaction(self) -> str:
         """
@@ -477,111 +527,225 @@ class Deal:
             for p in self.participants
         ]
         memo_text = f"Deal #{self.deal_record.id}"
+        return await self._build_envelope(operations, memo_text)
 
-        async with ServerAsync(horizon_url="https://horizon.stellar.org", client=AiohttpClient()) as server:
-            source_account = await server.load_account(DEAL_ACCOUNT)
+    async def _build_result_transaction(self) -> str:
+        """
+        Builds a Stellar transaction XDR based on the deal's participants.
 
-        tx_data = {
-            "publicKey": DEAL_ACCOUNT,
-            "sequence": str(source_account.sequence + 1),
-            "memo": memo_text,
-            "memo_type": "memo_text",
-            "operations": operations,
-        }
-        # The return type of stellar_build_xdr is not specific enough, hence the cast.
-        return cast(str, await stellar_build_xdr(tx_data))
+        Returns:
+            A base64-encoded XDR string representing the transaction.
+        """
+        good_participants = [p for p in self.participants if p.is_done]
+        bad_amount = sum((p.amount for p in self.participants if not p.is_done))
 
-    async def process_transaction_creation(self) -> Tuple[bool, List[str] | str]:
+        if good_participants:
+            participant_reward = (bad_amount / Decimal(2)) / len(good_participants)
+            rely_reward = bad_amount - participant_reward * len(good_participants)
+        else:
+            participant_reward = 0
+            rely_reward = bad_amount
+
+        operations = [
+            {
+                "type": "payment",
+                "destination": p.stellar,
+                "asset": DEAL_ASSET,
+                "amount": str(p.amount + participant_reward),
+                "sourceAccount": DEAL_ACCOUNT,
+            }
+            for p in good_participants
+        ]
+        if len(good_participants) != len(self.participants):
+            operations.append(
+                {
+                    "type": "payment",
+                    "destination": RELY_ACCOUNT,
+                    "asset": DEAL_ASSET,
+                    "amount": str(rely_reward),
+                    "sourceAccount": DEAL_ACCOUNT,
+                }
+            )
+        memo_text = f"Deal #{self.deal_record.id} result"
+        return await self._build_envelope(operations, memo_text)
+
+    async def process_any_transaction(
+        self, is_result: bool = False
+    ) -> TransactionProcessResult:
         """
         Orchestrates loading, validation, and transaction creation for the deal.
 
         This is the main entry point for processing the business logic of the deal.
 
+        Args:
+            is_result: If True, builds a result transaction; otherwise, an initial transaction.
+
         Returns:
-            A tuple of (success, result), where `result` is a list of error
-            strings on failure, or the transaction XDR string on success.
+            A TransactionProcessResult containing success status, XDR string, or error messages.
         """
         try:
             await self._load_participants()
         except HolderNotFoundException as e:
-            return False, [str(e)]
+            return TransactionProcessResult(success=False, errors=[str(e)])
+
         validation_errors = self._validate_preconditions()
         if validation_errors:
-            return False, validation_errors
+            return TransactionProcessResult(success=False, errors=validation_errors)
 
         logger.info(f"Deal {self.deal_record.id} passed precondition validation.")
         try:
-            xdr = await self._build_transaction()
-            logger.info(f"Built transaction for deal {self.deal_record.id}: {xdr}")
-            return True, xdr
+            if is_result:
+                xdr = await self._build_result_transaction()
+            else:
+                xdr = await self._build_transaction()
+            logger.info(
+                f"Built {'result ' if is_result else ''}transaction for deal {self.deal_record.id}: {xdr}"
+            )
+            return TransactionProcessResult(success=True, xdr=xdr)
         except SdkError as e:
-            logger.error(f"Stellar SDK error while building transaction for deal {self.deal_record.id}: {e}")
-            return False, ["Stellar SDK error. Check logs for details."]
+            logger.error(
+                f"Stellar SDK error while building {'result ' if is_result else ''}transaction for deal {self.deal_record.id}: {e}"
+            )
+            return TransactionProcessResult(
+                success=False,
+                errors=[
+                    "❌ Ошибка Stellar SDK при создании транзакции. Пожалуйста, попробуйте позже."
+                ],
+            )
         except Exception as e:
             logger.error(
-                f"Unexpected error building transaction for deal {self.deal_record.id}: {e}\n{traceback.format_exc()}"
+                f"Unexpected error building {'result ' if is_result else ''}transaction for deal {self.deal_record.id}: {e}\n{traceback.format_exc()}"
             )
-            return False, ["Unexpected error. Check logs for details."]
+            return TransactionProcessResult(
+                success=False, errors=[f"❌ Непредвиденная ошибка: {str(e)}"]
+            )
 
 
-async def _handle_checked_empty_transaction(deal_record: DealRecord) -> None:
+async def _process_deal_transaction(
+    deal_record: DealRecord, is_result: bool = False
+) -> None:
     """
-    Handles the core logic for a deal that is 'Checked' but has no transaction.
-
-    It acquires a lock, processes the deal, and handles success or failure by
-    updating Grist and sending Telegram notifications.
+    Unified handler for processing deal transactions (both initial and result).
 
     Args:
         deal_record: The deal record to process.
+        is_result: If True, processes a result transaction; otherwise, an initial transaction.
     """
     deal_id = deal_record.id
-    lock = _get_deal_lock(deal_id)
+    try:
+        lock = _get_deal_lock(deal_id)
 
-    async with lock:
-        logger.info(f"Processing deal {deal_id}: {deal_record}")
-        deal_aggregate = Deal(deal_record)
-        success, result = await deal_aggregate.process_transaction_creation()
+        async with lock:
+            action_type = "result " if is_result else ""
+            logger.info(f"Processing {action_type}deal {deal_id}: {deal_record}")
+            deal_aggregate = Deal(deal_record)
 
-        if not success:
-            errors = result
-            logger.warning(f"Deal {deal_id} failed validation with errors: {errors}")
-            await deal_repo.disable_checked(deal_id)
-            errors_str = "\n".join([f"- {e}" for e in errors])
-            text = (
-                f"Проверка сделки #{deal_id} провалена. Ошибки:\n{errors_str}\n"
-                f"Автоматическое создание транзакции отменено."
+            proc_result = await deal_aggregate.process_any_transaction(
+                is_result=is_result
             )
-            await TelegramMessenger.send_message(text=text)
-            return
 
-        xdr = result
-        add_success, add_result = await add_transaction(xdr, f"Rely deal #{deal_id}")
-        if add_success:
-            transaction_url = f"https://eurmtl.me/sign_tools/{add_result}"
-            logger.info(f"Transaction for deal {deal_id} added with hash {add_result}. URL: {transaction_url}")
-            await deal_repo.set_transaction(deal_id, transaction_url)
-
-            chat_id, message_id = TelegramMessenger.parse_tg_url(deal_record.message_url)
-            mentions = deal_aggregate.mention_string
-            text = f'Пожалуйста, подпишите транзакцию {mentions}\n<a href="{transaction_url}">URL</a>'
-
-            if chat_id and message_id:
-                try:
-                    await TelegramMessenger.send_message(text=text, chat_id=chat_id, reply_to_message_id=message_id)
-                except TelegramBadRequest as e:
-                    await TelegramMessenger.send_message(f"Не смогли ответить на сообщение. {str(e)}")
+            if is_result:
+                check_field = "Result_Checked"
+                tx_field = "Result_Transaction"
+                tx_desc = f"Rely deal result #{deal_id}"
+                fail_msg_prefix = "⚠️ Проверка результата сделки"
+                fail_msg_suffix = (
+                    "Автоматическое создание транзакции результата отменено."
+                )
             else:
-                fallback_text = f'Создана транзакция для сделки #{deal_id}. <a href="{transaction_url}">URL</a>'
-                await TelegramMessenger.send_message(text=fallback_text)
+                check_field = "Checked"
+                tx_field = "Transaction"
+                tx_desc = f"Rely deal #{deal_id}"
+                fail_msg_prefix = "⚠️ Проверка сделки"
+                fail_msg_suffix = "Автоматическое создание транзакции отменено."
 
-        else:
-            logger.error(f"Failed to add transaction for deal {deal_id}: {add_result}")
-            await TelegramMessenger.send_message(
-                text=f"Ошибка добавления транзакции для сделки #{deal_id}. Детали: {add_result}"
-            )
+            if not proc_result.success or not proc_result.xdr:
+                errors = proc_result.errors or []
+                logger.warning(
+                    f"Deal {deal_id} {action_type}failed validation with errors: {errors}"
+                )
+
+                # Attempt to uncheck the flag in Grist so user sees it failed there too
+                update_success = await deal_repo.update_fields(
+                    deal_id, {check_field: False}
+                )
+
+                errors_str = "\n".join([f"- {e}" for e in errors])
+                text = (
+                    f"{fail_msg_prefix} #{deal_id} провалена. Ошибки:\n{errors_str}\n"
+                    f"{fail_msg_suffix}"
+                )
+                if not update_success:
+                    text += "\n\n‼️ Не удалось обновить статус в Grist. Проверьте таблицу вручную."
+
+                await TelegramMessenger.send_message(text=text)
+                return
+
+            add_success, add_result = await add_transaction(proc_result.xdr, tx_desc)
+
+            if add_success:
+                transaction_url = f"https://eurmtl.me/sign_tools/{add_result}"
+                logger.info(
+                    f"{action_type.capitalize()}transaction for deal {deal_id} added with hash {add_result}. URL: {transaction_url}"
+                )
+                update_success = await deal_repo.update_fields(
+                    deal_id, {tx_field: transaction_url}
+                )
+
+                if not is_result:
+                    # Specific logic for initial transaction notifications
+                    chat_id, message_id = TelegramMessenger.parse_tg_url(
+                        deal_record.message_url
+                    )
+                    mentions = deal_aggregate.mention_string
+                    text = f'✅ Пожалуйста, подпишите транзакцию {mentions}\n<a href="{transaction_url}">URL</a>'
+
+                    if not update_success:
+                        text += "\n\n‼️ Транзакция создана, но ссылка не сохранена в Grist. Скопируйте её отсюда."
+
+                    if chat_id and message_id:
+                        try:
+                            await TelegramMessenger.send_message(
+                                text=text,
+                                chat_id=chat_id,
+                                reply_to_message_id=message_id,
+                            )
+                        except TelegramBadRequest as e:
+                            logger.warning(
+                                f"Failed to reply to message in chat {chat_id}: {e}"
+                            )
+                            await TelegramMessenger.send_message(
+                                f"{text}\n\n(Не смогли ответить на исходное сообщение: {str(e)})"
+                            )
+                    else:
+                        fallback_text = f'✅ Создана транзакция для сделки #{deal_id}. <a href="{transaction_url}">URL</a>'
+                        if not update_success:
+                            fallback_text += "\n\n‼️ Ссылка не сохранена в Grist."
+                        await TelegramMessenger.send_message(text=fallback_text)
+                else:
+                    # Specific logic for result transaction notifications
+                    text = f'✅ Транзакция результата для сделки #{deal_id} создана.\n<a href="{transaction_url}">URL</a>'
+                    if not update_success:
+                        text += "\n\n‼️ Ссылка не сохранена в Grist."
+                    await TelegramMessenger.send_message(text=text)
+
+            else:
+                logger.error(
+                    f"Failed to add {action_type}transaction for deal {deal_id}: {add_result}"
+                )
+                await TelegramMessenger.send_message(
+                    text=f"❌ Ошибка добавления транзакции {action_type}для сделки #{deal_id}. Детали: {add_result}"
+                )
+    except Exception as e:
+        logger.error(
+            f"Critical error processing deal {deal_id}: {e}\n{traceback.format_exc()}"
+        )
+        await TelegramMessenger.send_message(
+            text=f"‼️ Критическая ошибка при обработке сделки #{deal_id}. Обратитесь к администратору.\nОшибка: {e}"
+        )
 
 
-async def _process_grist_payload(payload: List[Dict]) -> None:
+async def _process_grist_payload(payload: list[dict]) -> None:
     """
     Processes the Grist webhook payload, creating tasks to handle valid deals.
 
@@ -591,24 +755,47 @@ async def _process_grist_payload(payload: List[Dict]) -> None:
     Args:
         payload: The JSON payload (list of records) from the Grist webhook.
     """
-    if not isinstance(payload, list):
-        logger.warning(f"Webhook payload is not a list, skipping: {payload}")
-        return
+    try:
+        if not isinstance(payload, list):
+            msg = f"⚠️ Получен некорректный вебхук от Grist (ожидался список): {str(payload)[:200]}"
+            logger.warning(msg)
+            await TelegramMessenger.send_message(text=msg)
+            return
 
-    for item in payload:
-        try:
-            record = DealRecord(
-                id=item["id"],
-                checked=item.get("Checked", False),
-                transaction=item.get("Transaction"),
-                message_url=item.get("Message"),
-            )
-            if record.checked and not record.transaction:
-                asyncio.create_task(_handle_checked_empty_transaction(record))
-        except (KeyError, TypeError) as e:
-            logger.warning(f"Could not process record, skipping: {item}. Error: {e}")
+        for item in payload:
+            try:
+                record = DealRecord(
+                    id=item["id"],
+                    checked=item.get("Checked", False),
+                    transaction=item.get("Transaction"),
+                    message_url=item.get("Message"),
+                    result_checked=item.get("Result_Checked", False),
+                    result_transaction=item.get("Result_Transaction"),
+                )
+                if record.checked and not record.transaction:
+                    asyncio.create_task(
+                        _process_deal_transaction(record, is_result=False)
+                    )
+                elif record.result_checked and not record.result_transaction:
+                    asyncio.create_task(
+                        _process_deal_transaction(record, is_result=True)
+                    )
+            except (KeyError, TypeError) as e:
+                logger.warning(
+                    f"Could not process record, skipping: {item}. Error: {e}"
+                )
+                # Optional: notify about specific malformed records if critical,
+                # but might be too noisy. Logging is usually enough for data format issues
+                # unless it blocks the whole pipeline.
 
-    logger.info(f"Grist webhook payload processing initiated for {len(payload)} records.")
+        logger.info(
+            f"Grist webhook payload processing initiated for {len(payload)} records."
+        )
+    except Exception as e:
+        logger.error(f"Error processing Grist payload: {e}\n{traceback.format_exc()}")
+        await TelegramMessenger.send_message(
+            text=f"‼️ Ошибка при обработке вебхука Grist: {e}"
+        )
 
 
 blueprint = Blueprint("rely", __name__)
