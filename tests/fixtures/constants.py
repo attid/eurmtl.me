@@ -1,0 +1,21 @@
+"""
+Test constants and configuration values.
+"""
+
+# User IDs for testing
+ADMIN_USER_ID = "84131737"
+REGULAR_USER_ID = "12345"
+TRANSACTION_OWNER_ID = "999"
+SECRETARY_USER_ID = "54321"
+
+# Test Stellar accounts
+TEST_FUNDED_ACCOUNT = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+TEST_SOURCE_ACCOUNT = "G_SOURCE"
+
+# Port ranges for test servers
+HORIZON_PORT_START = 8000
+HORIZON_PORT_END = 9000
+HORIZON_PORT_RETRIES = 10
+
+# Test configuration
+TEST_SECRET_KEY = "test_secret_key"

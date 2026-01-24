@@ -1,7 +1,7 @@
 import os
 
 from environs import Env
-from pydantic import SecretStr
+from pydantic import SecretStr, ConfigDict
 from pydantic_settings import BaseSettings
 from quart import session
 
@@ -9,10 +9,14 @@ env = Env()
 env.read_env()
 
 start_path = os.path.dirname(os.path.dirname(__file__))
-dotenv_path = os.path.join(start_path, '.env')
+dotenv_path = os.path.join(start_path, ".env")
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(
+        env_file=dotenv_path, env_file_encoding="utf-8", extra="allow"
+    )
+
     db_dsn: str
     secret_key: SecretStr
     eurmtl_key: SecretStr
@@ -32,17 +36,10 @@ class Settings(BaseSettings):
     grist_token: str
     grist_income: str
 
-    class Config:
-        env_file = dotenv_path
-        env_file_encoding = 'utf-8'
-        extra='allow'
-
-
-
 
 config = Settings()
 
-if env.str('ENVIRONMENT', 'test') == 'production':
+if env.str("ENVIRONMENT", "test") == "production":
     config.test_mode = False
 else:
     config.test_mode = True
@@ -51,9 +48,9 @@ else:
 def update_test_user():
     if config.test_mode:
         data = {
-            'id': config.test_user_id,
-            'username': "itolstov",
-            'photo_url': "https://yastatic.net/s3/home/div/new_app/bender/weather/weather_new_2023/bkn_n.svg",
+            "id": config.test_user_id,
+            "username": "itolstov",
+            "photo_url": "https://yastatic.net/s3/home/div/new_app/bender/weather/weather_new_2023/bkn_n.svg",
         }
-        session['userdata'] = data
+        session["userdata"] = data
         session["user_id"] = data["id"]
