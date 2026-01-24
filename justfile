@@ -9,10 +9,11 @@ build tag="latest":
     # Build Docker image
     docker build -t {{IMAGE_NAME}}:{{tag}} .
 
-run: test
+run:
     # Build and Run Docker container
     docker build -t {{IMAGE_NAME}}:local .
-    docker run --rm {{IMAGE_NAME}}:local
+    echo http://127.0.0.1:8000
+    docker run --rm --network host --env-file .env {{IMAGE_NAME}}:local
 
 
 

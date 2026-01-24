@@ -134,10 +134,11 @@ async def cmd_trades(asset1, asset2):
             })
 
         # Здесь вы можете возвращать результаты, сохранять их или делать что-то еще
-        for i in range(0, len(results) - 1):
-            results[i]['up'] = results[i]['price'] > results[i + 1]['price']
+        if results:
+            for i in range(0, len(results) - 1):
+                results[i]['up'] = results[i]['price'] > results[i + 1]['price']
 
-        results[len(results) - 1]['up'] = False
+            results[len(results) - 1]['up'] = False
 
         asset_url = f'{asset1.code}-{asset1.issuer}/{asset2.code}-{asset2.issuer}'
         resp = await render_template('cup.trades.html', trades=results,

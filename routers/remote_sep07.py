@@ -15,10 +15,10 @@ from urllib.parse import urlparse, parse_qs, unquote
 from other.config_reader import config
 from db.sql_models import Transactions, Signers, Signatures, WebEditorMessages, MMWBTransactions
 from other.grist_tools import grist_manager, MTLGrist
-from routers.sign_tools import parse_xdr_for_signatures
 from services.xdr_parser import decode_xdr_to_text, is_valid_base64
 from services.stellar_client import add_transaction
 from other.web_tools import cors_jsonify
+from services.transaction_service import TransactionService
 
 blueprint = Blueprint('sep07', __name__, url_prefix='/remote/sep07')
 
@@ -58,7 +58,9 @@ async def remote_sep07():
         }, 400)  # Bad Request
 
     # Обрабатываем XDR и получаем результат
-    result = await parse_xdr_for_signatures(xdr)
+    async with current_app.db_pool() as db_session:
+        service = TransactionService(db_session)
+        result = await service.sign_transaction_from_xdr(xdr)
 
     # Формируем ответ на основе результата parse_xdr_for_signatures
     if result["SUCCESS"]:
