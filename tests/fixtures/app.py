@@ -4,20 +4,24 @@ Fixtures for Quart application and test client.
 
 import os
 import pytest
+import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock
 from quart import Quart
 from .constants import TEST_SECRET_KEY
 
 
-@pytest.fixture
-def app():
+@pytest_asyncio.fixture
+async def app(db_pool):
     """
     Create a test Quart application with all blueprints registered.
 
     This fixture provides a fully configured app for testing with:
     - All blueprints registered
-    - Mocked database pool
+    - REAL SQLite in-memory database pool
     - Test configuration
+
+    Args:
+        db_pool: SQLite in-memory database pool from database fixtures
     """
     from routers.remote_sep07 import blueprint as remote_sep07_bp
     from routers.index import blueprint as index_bp
@@ -56,10 +60,8 @@ def app():
     app.register_blueprint(helpers_bp)
     app.register_blueprint(remote_bp)
 
-    # Mock db_pool
-    app.db_pool = MagicMock()
-    app.db_pool.return_value.__aenter__ = AsyncMock(return_value=AsyncMock())
-    app.db_pool.return_value.__aexit__ = AsyncMock(return_value=None)
+    # Use REAL db_pool (SQLite in-memory) instead of mock
+    app.db_pool = db_pool
 
     return app
 

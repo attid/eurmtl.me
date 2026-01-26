@@ -124,6 +124,7 @@ def decode_xdr_to_base64(xdr, return_json=False):
             SetOptions,
             ManageData,
             ClaimClaimableBalance,
+            CreateClaimableBalance,
         )
 
         if isinstance(operation, Payment):
@@ -180,6 +181,61 @@ def decode_xdr_to_base64(xdr, return_json=False):
         elif isinstance(operation, ClaimClaimableBalance):
             op_json["attributes"] = {
                 "balanceId": operation.balance_id,
+                "sourceAccount": operation.source.account_id
+                if operation.source is not None
+                else None,
+            }
+        elif isinstance(operation, CreateClaimableBalance):
+            claimants_payload = []
+            for claimant in operation.claimants:
+                predicate = claimant.predicate
+                predicate_type = "unconditional"
+                predicate_value = None
+
+                if (
+                    predicate.claim_predicate_type
+                    == ClaimPredicateType.CLAIM_PREDICATE_BEFORE_ABSOLUTE_TIME
+                ):
+                    predicate_type = "abs_before"
+                    predicate_value = predicate.abs_before
+                elif (
+                    predicate.claim_predicate_type
+                    == ClaimPredicateType.CLAIM_PREDICATE_BEFORE_RELATIVE_TIME
+                ):
+                    predicate_type = "rel_before"
+                    predicate_value = predicate.rel_before
+                elif (
+                    predicate.claim_predicate_type
+                    == ClaimPredicateType.CLAIM_PREDICATE_NOT
+                ):
+                    inner = predicate.not_predicate
+                    if (
+                        inner
+                        and inner.claim_predicate_type
+                        == ClaimPredicateType.CLAIM_PREDICATE_BEFORE_ABSOLUTE_TIME
+                    ):
+                        predicate_type = "abs_after"
+                        predicate_value = inner.abs_before
+                    elif (
+                        inner
+                        and inner.claim_predicate_type
+                        == ClaimPredicateType.CLAIM_PREDICATE_BEFORE_RELATIVE_TIME
+                    ):
+                        predicate_type = "rel_after"
+                        predicate_value = inner.rel_before
+
+                claimants_payload.append(
+                    {
+                        "destination": claimant.destination,
+                        "predicate_type": predicate_type,
+                        "predicate_value": predicate_value,
+                    }
+                )
+
+            op_json["attributes"] = {
+                "asset": serialize_asset(operation.asset),
+                "amount": float2str(operation.amount),
+                "claimants": claimants_payload,
                 "sourceAccount": operation.source.account_id
                 if operation.source is not None
                 else None,
@@ -308,7 +364,7 @@ def pool_id_to_link(key) -> str:
 
 
 async def asset_to_link(operation_asset) -> str:
-    start_url = "https://viewer.eurmtl.me/assets/"
+    start_url = "https://viewer.eurmtl.me/asset/"
     if operation_asset.code == "XLM":
         return f'<a href="{start_url}{operation_asset.code}" target="_blank">{operation_asset.code}⭐</a>'
     else:

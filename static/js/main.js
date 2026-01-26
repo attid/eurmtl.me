@@ -392,6 +392,38 @@ function generateClaimableBalanceSelector(fieldName = "balanceId",
     `;
 }
 
+function generateClaimPredicateFields(claimantIndex) {
+    var uid = get_uid();
+    return `
+<div class="row mb-3">
+    <div class="col-md-6">
+        <label for="claimant_${claimantIndex}_predicate_type-${uid}" class="form-label">Claimant ${claimantIndex} Predicate</label>
+        <select id="claimant_${claimantIndex}_predicate_type-${uid}" class="form-select"
+                data-type="claimant_${claimantIndex}_predicate_type" data-validation="text"
+                onchange="updateClaimablePredicateFields(this)">
+            <option value="unconditional" selected>Unconditional</option>
+            <option value="abs_before">Before Absolute Time (UTC)</option>
+            <option value="rel_before">Before Relative Time (seconds)</option>
+            <option value="abs_after">After Absolute Time (UTC)</option>
+            <option value="rel_after">After Relative Time (seconds)</option>
+        </select>
+    </div>
+    <div class="col-md-6 claimable-predicate-value" style="display: none;">
+        <label for="claimant_${claimantIndex}_predicate_value-${uid}" class="form-label">Predicate Value</label>
+        <div class="input-group">
+            <input type="text" class="form-control" id="claimant_${claimantIndex}_predicate_value-${uid}"
+                   data-type="claimant_${claimantIndex}_predicate_value" data-validation="text_null"
+                   placeholder="2026-01-26T12:00:00Z or 3600">
+            <button type="button" class="btn btn-outline-secondary" onclick="setClaimablePredicateNow(this)">
+                Now (UTC)
+            </button>
+        </div>
+        <div class="form-text">ISO 8601 UTC (e.g., 2026-01-26T12:00:00Z) or seconds for relative time.</div>
+    </div>
+</div>
+    `;
+}
+
 function generateOfferSelector(fieldName = "offer_id", labelName = "Offer ID", fieldValue = "") {
     var uid = get_uid();
     return `
@@ -782,6 +814,30 @@ function generateCardCreateAccount() {
     `;
 }
 
+function generateCardCreateClaimableBalance() {
+    var blockId = getBlockCounter();
+    return `
+<div class="card">
+    <div class="card-body gather-block" data-type="create_claimable_balance" data-index="${blockId}">
+        ${generateCardHeader("Create Claimable Balance", blockId)}
+
+        ${generateAssetSelector("asset", "Asset", "", "Asset to lock in the claimable balance")}
+        ${generateInput("amount", "Amount", "float", "", "Amount to lock")}
+
+        <div class="mb-2 fw-bold">Claimant 1</div>
+        ${generateAccountSelector("claimant_1_destination", "Claimant 1 Account", "", "Primary recipient")}
+        ${generateClaimPredicateFields(1)}
+
+        <div class="mb-2 fw-bold">Claimant 2</div>
+        ${generateAccountSelector("claimant_2_destination", "Claimant 2 Account (optional)", "", "Refund / fallback recipient", "account_null")}
+        ${generateClaimPredicateFields(2)}
+
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
+    </div>
+</div>
+    `;
+}
+
 function generateCardManageData() {
     var blockId = getBlockCounter();
     var uid = get_uid();
@@ -1155,6 +1211,10 @@ function getCardByName(selectedOperation){
         case 'createAccount':
             newCardHTML = generateCardCreateAccount();
             break;
+        case 'create_claimable_balance':
+        case 'createClaimableBalance':
+            newCardHTML = generateCardCreateClaimableBalance();
+            break;
         case 'manage_data':
         case 'manageData':
                 newCardHTML = generateCardManageData();
@@ -1311,6 +1371,58 @@ function updateRevokeSponsorshipFields(selectElement) {
     });
 }
 
+function updateClaimablePredicateFields(selectElement) {
+    var $select = $(selectElement);
+    var selected = $select.val();
+    var $row = $select.closest('.row');
+    var $valueCol = $row.find('.claimable-predicate-value');
+    var $valueInput = $valueCol.find('input');
+    var needsValue = selected && selected !== 'unconditional';
+
+    if (needsValue) {
+        $valueCol.show();
+        $valueInput.prop('disabled', false);
+    } else {
+        $valueInput.val('');
+        $valueInput.prop('disabled', true);
+        $valueCol.hide();
+    }
+
+    if (selected && selected.includes('abs')) {
+        $valueInput.attr('placeholder', '2026-01-26T12:00:00Z');
+    } else if (selected && selected.includes('rel')) {
+        $valueInput.attr('placeholder', '3600');
+    }
+}
+
+function getIsoUtcNow() {
+    return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function setClaimablePredicateNow(buttonElement) {
+    var $button = $(buttonElement);
+    var $row = $button.closest('.row');
+    var $select = $row.find('select[data-type$="_predicate_type"]');
+    var $input = $row.find('input[data-type$="_predicate_value"]');
+    var predicateType = $select.val();
+
+    if (!predicateType || predicateType === 'unconditional') {
+        showToast('Сначала выберите тип предиката', 'warning');
+        return;
+    }
+
+    if (predicateType.includes('rel')) {
+        showToast('Для относительного времени нужны секунды', 'warning');
+        return;
+    }
+
+    if ($input.prop('disabled')) {
+        return;
+    }
+
+    $input.val(getIsoUtcNow());
+}
+
 function updateMemoField() {
     var $memoField = $('#memo');
     var selectedOperation = $('#memo_type').val();
@@ -1350,6 +1462,10 @@ function handleXDR() {
             showToast("An error occurred: " + error, 'warning');
         }
     });
+}
+
+function isIsoUtc(value) {
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value);
 }
 
 function validateInput(value, validationType, dataType, type, index) {
@@ -1471,6 +1587,47 @@ function gatherData() {
                 blockData[dataType] = value;
             });
 
+            if (type === 'create_claimable_balance') {
+                [1, 2].forEach((claimantIndex) => {
+                    const destinationKey = `claimant_${claimantIndex}_destination`;
+                    const typeKey = `claimant_${claimantIndex}_predicate_type`;
+                    const valueKey = `claimant_${claimantIndex}_predicate_value`;
+                    const destination = blockData[destinationKey];
+                    const predicateType = blockData[typeKey];
+                    const rawValue = blockData[valueKey] || '';
+                    const trimmedValue = String(rawValue).trim();
+
+                    if (claimantIndex === 2 && (!destination || !destination.trim())) {
+                        blockData[typeKey] = '';
+                        blockData[valueKey] = '';
+                        return;
+                    }
+
+                    if (!predicateType) {
+                        throw new Error(`Predicate type is required for claimant ${claimantIndex} in block ${type} #${index}`);
+                    }
+
+                    if (predicateType === 'unconditional') {
+                        blockData[valueKey] = '';
+                        return;
+                    }
+
+                    if (!trimmedValue) {
+                        throw new Error(`Predicate value is required for claimant ${claimantIndex} in block ${type} #${index}`);
+                    }
+
+                    if (predicateType.includes('abs') && !isIsoUtc(trimmedValue)) {
+                        throw new Error(`Predicate value must be ISO UTC for claimant ${claimantIndex} in block ${type} #${index}`);
+                    }
+
+                    if (predicateType.includes('rel') && !/^\d+$/.test(trimmedValue)) {
+                        throw new Error(`Predicate value must be seconds for claimant ${claimantIndex} in block ${type} #${index}`);
+                    }
+
+                    blockData[valueKey] = trimmedValue;
+                });
+            }
+
             operations.push(blockData);
         });
     } catch (error) {
@@ -1528,6 +1685,11 @@ function cloneBlock(element) {
             updateRevokeSponsorshipFields(revokeSelect[0]);
         }
     }
+    if (dataType === 'create_claimable_balance') {
+        newBlock.find('select[data-type$="_predicate_type"]').each(function() {
+            updateClaimablePredicateFields(this);
+        });
+    }
 
     $('.new-operation').before(newBlock.fadeIn());
     highlightAndFocusBlock(lastCounter);
@@ -1561,6 +1723,7 @@ function processOperations(jsonData) {
 
     jsonData.operations.forEach((op) => {
         const isChangeTrust = op.name === 'changeTrust' || op.name === 'change_trust';
+        const isCreateClaimableBalance = op.name === 'createClaimableBalance' || op.name === 'create_claimable_balance';
         const assetPayload = op.attributes ? op.attributes.asset : null;
         const isLpTrustline = isChangeTrust && assetPayload &&
             (assetPayload.liquidityPoolId || assetPayload.type === 'liquidity_pool_shares');
@@ -1573,6 +1736,43 @@ function processOperations(jsonData) {
         $block.find('input').each(function() {
             let dataType = $(this).data('type');
             let camelCaseDataType = toCamelCase(dataType);
+
+            if (isCreateClaimableBalance) {
+                if (dataType === 'amount') {
+                    $(this).val(op.attributes.amount || '');
+                    return;
+                }
+                if (dataType === 'asset') {
+                    let asset = op.attributes.asset;
+                    let value = '';
+                    if (asset && asset.type === 'native') {
+                        value = 'XLM';
+                    } else if (asset && asset.liquidityPoolId) {
+                        value = asset.liquidityPoolId;
+                    } else if (asset) {
+                        value = `${asset.code}-${asset.issuer}`;
+                    }
+                    $(this).val(value);
+                    return;
+                }
+
+                if (dataType && dataType.startsWith('claimant_')) {
+                    const match = dataType.match(/^claimant_(\d+)_(destination|predicate_value)$/);
+                    if (match) {
+                        const claimantIdx = parseInt(match[1], 10) - 1;
+                        const claimant = (op.attributes.claimants || [])[claimantIdx];
+                        if (claimant) {
+                            if (match[2] === 'destination') {
+                                $(this).val(claimant.destination || '');
+                            } else if (match[2] === 'predicate_value') {
+                                const value = claimant.predicate_value;
+                                $(this).val(value === null || value === undefined ? '' : String(value));
+                            }
+                        }
+                        return;
+                    }
+                }
+            }
 
             if (isLpTrustline) {
                 if (dataType === 'liquidity_pool_id') {
@@ -1606,6 +1806,24 @@ function processOperations(jsonData) {
                 $(this).val(value);
             }
         });
+
+        if (isCreateClaimableBalance) {
+            $block.find('select').each(function() {
+                let dataType = $(this).data('type');
+                if (dataType && dataType.startsWith('claimant_') && dataType.endsWith('_predicate_type')) {
+                    const match = dataType.match(/^claimant_(\d+)_predicate_type$/);
+                    if (!match) {
+                        return;
+                    }
+                    const claimantIdx = parseInt(match[1], 10) - 1;
+                    const claimant = (op.attributes.claimants || [])[claimantIdx];
+                    if (claimant && claimant.predicate_type) {
+                        $(this).val(claimant.predicate_type);
+                    }
+                    updateClaimablePredicateFields(this);
+                }
+            });
+        }
 
         $block.hide();
         $('.new-operation').before($block);

@@ -1,10 +1,7 @@
 import pytest
-import asyncio
-from unittest.mock import patch, MagicMock, AsyncMock
-from quart import Quart, current_app
+from unittest.mock import patch, MagicMock
 
 from stellar_sdk import (
-    TransactionEnvelope,
     Keypair,
     Asset,
     Network,
@@ -14,24 +11,6 @@ from stellar_sdk import (
 from stellar_sdk.operation import Payment, AccountMerge, SetOptions
 
 from services.stellar_client import extract_sources, main_fund_address
-
-
-# Конфигурация для асинхронных тестов
-@pytest.fixture
-def app():
-    app = Quart(__name__)
-    mock_db_pool = AsyncMock()
-    mock_db_session = MagicMock()
-    mock_db_session.commit = AsyncMock()
-    # Ensure execute returns a mock result
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.first.return_value = (
-        None  # Default no signer found
-    )
-    mock_db_session.execute = AsyncMock(return_value=mock_result)
-    mock_db_pool.__aenter__.return_value = mock_db_session
-    app.db_pool = MagicMock(return_value=mock_db_pool)
-    return app
 
 
 # --- Тест 0: Интеграционный тест с реальным Horizon API ---
