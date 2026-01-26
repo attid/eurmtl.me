@@ -11,6 +11,12 @@
 
 5 - добавляем в cmd_build_xdr
 
+Для create_claimable_balance:
+- добавьте 2 claimants (account_id), asset + amount
+- predicate_type: unconditional | abs_before | rel_before | abs_after | rel_after
+- abs_* принимает ISO UTC, например 2026-01-26T12:00:00Z
+- rel_* принимает количество секунд (int)
+
 
 
 ### Js
