@@ -897,9 +897,10 @@ async def stellar_build_xdr(data):
     if data["memo_type"] == "memo_hash":
         transaction.add_hash_memo(data["memo"])
     for operation in data["operations"]:
+        source_account_raw = operation.get("sourceAccount") or ""
         source_account = (
-            operation["sourceAccount"]
-            if len(operation["sourceAccount"]) == 56
+            source_account_raw
+            if isinstance(source_account_raw, str) and len(source_account_raw) == 56
             else None
         )
         if operation["type"] == "payment":
