@@ -134,7 +134,11 @@ async def show_transaction(tr_hash):
                 data={"tx": transaction_env.to_xdr()}
             )
             if transaction_resp.status == 200:
-                await flash(f'Successfully sent, accepted : {transaction_resp.data["successful"]}', 'good')
+                tx_hash = transaction_resp.data.get("hash")
+                msg = f'Successfully sent, accepted : {transaction_resp.data["successful"]}'
+                if tx_hash:
+                    msg += Markup(f' <a href="https://viewer.eurmtl.me/transaction/{tx_hash}" target="_blank">View in Explorer</a>')
+                await flash(msg, 'good')
             else:
                 if isinstance(transaction_resp.data, dict):
                     await flash(f'Failed to send. {transaction_resp.data.get("extras", {}).get("result_codes")}')
