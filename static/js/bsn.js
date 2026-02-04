@@ -146,7 +146,15 @@ async function getXDR() {
         transaction.addOperation(StellarSdk.Operation.manageData({ name: key, value: null }));
     });
 
-    document.querySelectorAll('.key-box').forEach(box => {
+    // Sort boxes: existing (with data-key) first, then new (without data-key)
+    const allBoxes = Array.from(document.querySelectorAll('.key-box'));
+    allBoxes.sort((a, b) => {
+        const aHasKey = a.dataset.key ? 1 : 0;
+        const bHasKey = b.dataset.key ? 1 : 0;
+        return bHasKey - aHasKey; // boxes with data-key come first
+    });
+
+    allBoxes.forEach(box => {
         if (box.dataset.delete === 'True') return;
 
         const keyInput = box.querySelector('.bor-key').value;
