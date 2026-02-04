@@ -13,11 +13,6 @@ async def test_web_editor_get_authorized_not_found(client, app):
     """Test /WebEditor with admin rights but message not in DB"""
     with patch("routers.web_editor.is_bot_admin", new=AsyncMock(return_value=True)):
         with patch("routers.web_editor.skynet_bot.edit_message_text", new=AsyncMock()) as mock_edit:
-            # Mock DB returning None
-            mock_result = MagicMock()
-            mock_result.scalars.return_value.first.return_value = None
-            app.db_pool.return_value.__aenter__.return_value.execute = AsyncMock(return_value=mock_result)
-            
             response = await client.get("/WebEditor?tgWebAppStartParam=123_456")
             # It tries to edit message and then render template
             assert response.status_code == 200
