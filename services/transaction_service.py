@@ -76,6 +76,7 @@ class TransactionService:
         signers_table = []
         bad_signers = []
         signatures_list = [] # For display
+        current_tg_id = user_id if user_id and user_id > 0 else None
 
         # Process signers and thresholds
         for address in json_transaction:
@@ -94,8 +95,16 @@ class TransactionService:
                 signature_dt = await self.repo.get_latest_signature_by_signer(public_key)
                 signature_source_dt = await self.repo.get_latest_signature_for_source(public_key, address)
 
-                user = user_map.get(db_signer.public_key) if db_signer else None
+                user = user_map.get(public_key)
                 username = user.username if user else None
+                user_tg_id = user.telegram_id if user else None
+                if user_tg_id is None and db_signer and db_signer.tg_id:
+                    user_tg_id = db_signer.tg_id
+                is_current_user = bool(
+                    current_tg_id is not None
+                    and user_tg_id is not None
+                    and int(user_tg_id) == int(current_tg_id)
+                )
 
                 signature_days_any = (datetime.now() - signature_dt.add_dt).days if signature_dt else None
                 signature_days_source = (datetime.now() - signature_source_dt.add_dt).days if signature_source_dt else None
@@ -120,7 +129,8 @@ class TransactionService:
                             "any": signature_days_any
                         },
                         weight,
-                        signature
+                        signature,
+                        is_current_user
                     ])
             
             signers.sort(key=lambda k: k[3], reverse=True)

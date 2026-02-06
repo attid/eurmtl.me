@@ -133,14 +133,18 @@
                     <th>Telegram</th>
                     <th>Signs days ago</th>
                     <th>Weight</th>
-                    <th>Did sign?</th>
                 </tr>
                 </thead>
                 <tbody>
                 {% for signer in record['signers'] %}
-                <tr>
-                    <td><a href="https://viewer.eurmtl.me/account/{{ signer[0] }}">{{ signer[0][:4] }}..{{
-                        signer[0][-8:-4] }}..{{ signer[0][-4:] }}</a></td>
+                <tr class="{% if signer[4] %}table-success{% else %}{% if publish_state[0] > 0 %}table-danger{% else %}table-warning{% endif %}{% endif %}">
+                    <td>
+                        {% if signer[5] %}
+                        <i class="ti ti-user-check text-primary me-2" title="You"></i>
+                        {% endif %}
+                        <a href="https://viewer.eurmtl.me/account/{{ signer[0] }}">{{ signer[0][:4] }}..{{
+                            signer[0][-8:-4] }}..{{ signer[0][-4:] }}</a>
+                    </td>
                     <td>
                         {% if admin_weight == 0 %}
                         FaceLess
@@ -156,17 +160,6 @@
                         {{ source_days if source_days is not none else 'Never' }}&nbsp;|&nbsp;{{ any_days if any_days is not none else 'Never' }}
                     </td>
                     <td>{{ signer[3] }}</td>
-                    <td>
-                        {% if signer[4] %}
-                        <i class="ti ti-clock-filled icon text-success"></i>
-                        {% else %}
-                        {% if publish_state[0] > 0 %}
-                        <i class="ti ti-clock-filled icon text-danger"></i>
-                        {% else %}
-                        <i class="ti ti-clock-filled icon text-warning"></i>
-                        {% endif %}
-                        {% endif %}
-                    </td>
                 </tr>
                 {% endfor %}
                 </tbody>
