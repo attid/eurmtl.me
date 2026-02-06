@@ -31,8 +31,22 @@ USER app
 # Устанавливаем зависимости Python
 RUN uv sync --frozen --no-dev
 
-# Копируем исходный код
+# Build args for git version
+ARG GIT_COMMIT=unknown
+ARG CACHEBUST=unknown
+
+# Копируем исходный код (CACHEBUST invalidates cache when code changes)
 COPY --chown=app:app . .
+
+# Сохраняем git версию в файл
+RUN echo "${GIT_COMMIT}" > /app/.git_commit
+
+# Метаданные образа
+LABEL org.opencontainers.image.revision="${GIT_COMMIT}"
+
+# Компилируем байткод и отключаем запись __pycache__ в рантайме
+RUN .venv/bin/python -m compileall -q .
+ENV PYTHONDONTWRITEBYTECODE=1
 
 # Создаем необходимые директории
 RUN mkdir -p static/qr log
@@ -44,5 +58,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/ || exit 1
 
-# Запускаем приложение
-CMD ["uv", "run", "start.py"]
+# Запускаем приложение напрямую без uv run (зависимости уже установлены)
+CMD [".venv/bin/python", "start.py"]
