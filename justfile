@@ -55,7 +55,9 @@ clean-docker:
 
 # Publishing
 push-gitdocker tag="latest":
-    # Build and push image to GitHub Container Registry
-    docker build -t {{IMAGE_NAME}}:{{tag}} .
+    # Build with fresh code (keeps dependency cache) and push
+    docker build --build-arg GIT_COMMIT=$(git rev-parse --short HEAD) \
+                 --build-arg CACHEBUST=$(git rev-parse HEAD) \
+                 -t {{IMAGE_NAME}}:{{tag}} .
     docker tag {{IMAGE_NAME}} ghcr.io/montelibero/{{IMAGE_NAME}}:{{tag}}
     docker push ghcr.io/montelibero/{{IMAGE_NAME}}:{{tag}}

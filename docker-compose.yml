@@ -11,6 +11,7 @@ services:
     volumes:
       - ./log:/app/log
       - ./static/qr:/app/static/qr
+    read_only: true
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
