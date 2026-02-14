@@ -25,7 +25,6 @@ dependencies = [
     "markupsafe",
     "pillow",
     "qrcode[pil]",
-    "pymongo",
     "gspread",
     "google-auth",
     "uvloop; sys_platform != 'win32'",
