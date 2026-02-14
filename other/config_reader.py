@@ -28,9 +28,7 @@ class Settings(BaseSettings):
     cloudflare_secret_key: SecretStr
     yandex_secret_key: SecretStr
     sentry_dsn: str
-    mongo_dsn: str
-    mongo_db_name: str
-    test_user_id: int
+    test_user_id: int = 0
     port: int = 8000
     test_mode: bool = False
     grist_token: str
