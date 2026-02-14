@@ -14,7 +14,8 @@ dotenv_path = os.path.join(start_path, ".env")
 
 class Settings(BaseSettings):
     model_config = ConfigDict(
-        env_file=dotenv_path, env_file_encoding="utf-8", extra="allow"
+        env_file=dotenv_path, env_file_encoding="utf-8", extra="allow",
+        secrets_dir="/run/secrets",
     )
 
     db_dsn: str
