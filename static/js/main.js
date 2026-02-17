@@ -751,7 +751,7 @@ function generateCardBuy() {
         ${generateAssetSelector("selling", "Selling", "", "Asset you will pay with")}
 
         ${generateInput("amount", "Amount you are buying (zero to delete offer)", "float_trade", "", "Amount of buying asset; 0 deletes offer")}
-        ${generateInput("price", "Price per unit (buying in terms of selling)", "float_trade","","Тут будет расчет получаемого")}
+        ${generateInput("price", "Price of 1 unit of buying in terms of selling", "float_trade","","Тут будет расчет получаемого")}
 
         ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
@@ -772,7 +772,7 @@ function generateCardSell() {
         ${generateAssetSelector("buying", "Buying", "", "Asset you want to receive")}
 
         ${generateInput("amount", "Amount you are selling (zero to delete offer)", "float_trade", "", "Amount of selling asset; 0 deletes offer")}
-        ${generateInput("price", "Price per unit (buying in terms of selling)", "float_trade","","Тут будет расчет получаемого")}
+        ${generateInput("price", "Price of 1 unit of selling in terms of buying", "float_trade","","Тут будет расчет получаемого")}
 
         ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
@@ -790,7 +790,7 @@ function generateCardSellPassive() {
         ${generateAssetSelector("buying", "Buying", "", "Asset you want to receive")}
 
         ${generateInput("amount", "Amount you are selling (zero to delete offer)", "float_trade", "", "Amount of selling asset; 0 deletes offer")}
-        ${generateInput("price", "Price per unit (buying in terms of selling)", "float_trade","","Тут будет расчет получаемого")}
+        ${generateInput("price", "Price of 1 unit of selling in terms of buying", "float_trade","","Тут будет расчет получаемого")}
 
         ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; defaults to top-level public key")}
     </div>
