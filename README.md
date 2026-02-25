@@ -4,6 +4,24 @@
 
 Platform for Stellar network operations and MTL token management. Provides transaction signing tools, Grist integration, Telegram bot interface, and various Stellar-related utilities.
 
+## AI-First Workflow
+
+Repository evolves in agent-first mode with predictable, mechanically verifiable steps.
+
+- Start from `AGENTS.md` for navigation.
+- Use detailed rules in `docs/` as source of truth.
+- For non-trivial work, create an execution plan in `docs/exec-plans/active/`.
+- Migrate incrementally by touch: each changed file must not degrade and should improve.
+- Validate changes with project commands before finishing.
+
+Core docs:
+
+- `docs/architecture.md`
+- `docs/conventions.md`
+- `docs/golden-principles.md`
+- `docs/quality-grades.md`
+- `docs/glossary.md`
+
 ## Requirements
 
 - Python 3.12+
@@ -27,18 +45,31 @@ cp .env_sample .env
 
 ```bash
 # Run application
-just dev
-# or directly
 uv run python start.py
 
 # Run tests
 just test
 
-# Format code (Black + isort)
+# Run fast test subset
+just test-fast
+
+# Format code (ruff format)
 just format
 
-# Lint code (Black + isort + flake8)
+# Check formatting without changing files
+just fmt
+
+# Lint code (ruff check)
 just lint
+
+# Run architecture checks
+just arch-test
+
+# Run checks only for changed Python files
+just check-changed
+
+# Full gate before PR
+just check
 
 # Run specific test file
 uv run pytest tests/test_specific_file.py -v
@@ -49,18 +80,6 @@ uv run pytest tests/test_specific_file.py -v
 ```bash
 # Build and run tests, then start application
 just run
-
-# Development mode with code hot-reload
-just docker-dev
-
-# Build Docker image
-just build
-
-# Stop Docker containers
-just docker-stop
-
-# Open shell in running container
-just shell
 ```
 
 ## Project Structure
@@ -106,22 +125,29 @@ By default (when `ENVIRONMENT` is not set to `production`), the application runs
 ## Documentation
 
 For detailed documentation, architecture overview, and advanced usage:
-- **[CLAUDE.md](CLAUDE.md)** - Complete development guide and architecture
-- **[AGENTS.md](AGENTS.md)** - Repository guidelines and conventions
+- **[AGENTS.md](AGENTS.md)** - Short index for agents
+- **[docs/architecture.md](docs/architecture.md)** - Current and target architecture
+- **[docs/conventions.md](docs/conventions.md)** - Coding conventions and templates
+- **[docs/golden-principles.md](docs/golden-principles.md)** - Immutable project principles
+- **[docs/quality-grades.md](docs/quality-grades.md)** - Quality level by area
+- **[docs/glossary.md](docs/glossary.md)** - Ubiquitous language
+- **[CLAUDE.md](CLAUDE.md)** - Global local-agent constraints
 
 ## Available Commands
 
 Run `just` or `just --list` to see all available commands:
 
 ```bash
-just dev         # Run in development mode
-just test        # Run tests
-just format      # Format code
-just lint        # Lint code
-just build       # Build Docker image
-just run         # Build and run in Docker
-just docker-dev  # Docker dev mode with hot-reload
-just docker-stop # Stop containers
+just test        # Run full test suite
+just test-fast   # Run quick test subset
+just format      # Apply formatting
+just fmt         # Check formatting (no writes)
+just lint        # Run linter
+just types       # Run pyright type checks
+just arch-test   # Run structural architecture checks
+just check-changed # Run checks for changed Python files
+just check       # fmt + lint + types + test + arch-test
+just run         # Build and run Docker image (runs tests first)
 ```
 
 ## License
