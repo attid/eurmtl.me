@@ -6,14 +6,30 @@ default:
 test:
     uv run --extra dev pytest
 
+test-fast:
+    uv run --extra dev pytest tests -q --maxfail=1
+
 lint:
     uv run --extra dev ruff check .
 
 format:
     uv run --extra dev ruff format .
 
+fmt: fmt-check
+
+fmt-check:
+    uv run --extra dev ruff format --check .
+
 types:
     uv run --extra dev pyright
+
+arch-test:
+    uv run --extra dev python .linters/arch_test.py
+
+check-changed:
+    uv run --extra dev python .linters/check_changed.py
+
+check: fmt-check lint types test arch-test
 
 run: test
     docker build -t {{IMAGE_NAME}}:local .
