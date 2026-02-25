@@ -1,0 +1,156 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}IPFS Preview{% endblock %}
+
+{% block head_scripts %}
+<style>
+  .json-panel {
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    background: var(--tblr-bg-surface);
+    color: var(--tblr-body-color);
+    padding: 1rem;
+  }
+  .json-panel pre,
+  .json-panel code {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: transparent;
+    color: inherit;
+  }
+  .json-panel {
+    max-height: 22rem;
+    overflow: auto;
+  }
+  .json-details {
+    margin-top: 0.75rem;
+  }
+  .json-details summary {
+    cursor: pointer;
+    color: var(--tblr-primary);
+    user-select: none;
+  }
+  .fd-panel {
+    border: 1px solid var(--tblr-border-color);
+    border-radius: var(--tblr-border-radius);
+    background: var(--tblr-bg-surface);
+    color: var(--tblr-body-color);
+    padding: 1rem;
+  }
+  .fd-raw {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    background: transparent;
+    color: inherit;
+  }
+  .fd-pretty {
+    line-height: 1.5;
+    word-break: break-word;
+  }
+  .fd-pretty h1,
+  .fd-pretty h2,
+  .fd-pretty h3,
+  .fd-pretty h4,
+  .fd-pretty h5,
+  .fd-pretty h6 {
+    margin-top: 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+  .fd-pretty p,
+  .fd-pretty ul {
+    margin-bottom: 0.75rem;
+  }
+  .fd-pretty code {
+    padding: 0.1rem 0.35rem;
+    border-radius: 0.25rem;
+    background: color-mix(in srgb, var(--tblr-body-color) 10%, transparent);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-body">
+  <div class="container-xl">
+    <div class="card mb-3">
+      <div class="card-body">
+        <h3 class="card-title">IPFS Metadata Preview</h3>
+        <p class="mb-1"><strong>CID:</strong> <code>{{ cid }}</code></p>
+        {% if fetched_from %}
+        <p class="mb-0"><strong>Fetched from:</strong> <a href="{{ fetched_from }}" target="_blank">{{ fetched_from }}</a></p>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if error_message %}
+    <div class="alert alert-warning" role="alert">
+      Не удалось загрузить metadata: {{ error_message }}
+    </div>
+    {% endif %}
+
+    {% if metadata %}
+    <div class="card mb-3">
+      <div class="card-header">
+        <h4 class="card-title">Metadata JSON</h4>
+      </div>
+      <div class="card-body">
+        <div class="json-panel">
+          <pre><code>{{ metadata_preview | tojson(indent=2) }}</code></pre>
+        </div>
+        <details class="json-details">
+          <summary>Show full metadata JSON</summary>
+          <div class="json-panel mt-2">
+            <pre><code>{{ metadata | tojson(indent=2) }}</code></pre>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    {% if decoded_fulldescription %}
+    <div class="card">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <h4 class="card-title mb-0">fulldescription (decoded)</h4>
+        <div class="btn-group" role="group" aria-label="fulldescription view switch">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="fd-raw-btn" onclick="switchFdView('raw')">Raw Text</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="fd-pretty-btn" onclick="switchFdView('pretty')">Formatted View</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="fd-raw" class="fd-panel">
+          <pre class="fd-raw"><code>{{ decoded_fulldescription }}</code></pre>
+        </div>
+        <div id="fd-pretty" class="fd-panel" style="display: none;">
+          {% if pretty_fulldescription %}
+          <div class="fd-pretty">{{ pretty_fulldescription | safe }}</div>
+          {% else %}
+          <div class="text-muted">Для этого текста не найден markdown-паттерн, показываем только raw.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  function switchFdView(mode) {
+    const raw = document.getElementById('fd-raw');
+    const pretty = document.getElementById('fd-pretty');
+    const rawBtn = document.getElementById('fd-raw-btn');
+    const prettyBtn = document.getElementById('fd-pretty-btn');
+    if (!raw || !pretty || !rawBtn || !prettyBtn) {
+      return;
+    }
+
+    const showPretty = mode === 'pretty';
+    raw.style.display = showPretty ? 'none' : '';
+    pretty.style.display = showPretty ? '' : 'none';
+    rawBtn.classList.toggle('active', !showPretty);
+    prettyBtn.classList.toggle('active', showPretty);
+  }
+
+  switchFdView('raw');
+</script>
+{% endblock %}
