@@ -386,7 +386,7 @@ async def asset_to_link(operation_asset) -> str:
                 if asset[0]["issuer"] == operation_asset.issuer:
                     star = "⭐"
 
-        return f'<a href="{start_url}/{operation_asset.code}-{operation_asset.issuer}" target="_blank">{operation_asset.code}{star}</a>'
+        return f'<a href="{start_url}{operation_asset.code}-{operation_asset.issuer}" target="_blank">{operation_asset.code}{star}</a>'
 
 
 class SimulatedLedger:
