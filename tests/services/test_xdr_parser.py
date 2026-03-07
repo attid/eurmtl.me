@@ -4,9 +4,11 @@
 
 import base64
 import pytest
+from unittest.mock import patch
 from stellar_sdk import Keypair, TransactionBuilder, Network, Account, Asset
 
 from services.xdr_parser import (
+    _parse_transaction_envelope,
     is_valid_base64,
     decode_data_value,
     construct_payload,
@@ -15,6 +17,8 @@ from services.xdr_parser import (
     address_id_to_link,
     pool_id_to_link,
 )
+
+INVALID_STELLAR_XDR = "AAAAAgAAAAA+gj+9R9RakwtxBG6Up8jAewUfdurumKJARnpcMG9VBgAAAZADqmC9AAAACQAAAAEAAAAAAAAAAAAAAABprWevAAAAAQAAAARleGNoAAAAAgAAAAAAAAABAAAAAOULguv++61OnAUgnSV24FKlgUt80KvaUijNM9Fdx2wmAAAAAkVVUk1UTAAAAAAAAAAAAAAEqbejBk1rxsHVls854RnAyfpJaZacvgwmQ0jxNDBvqgAAAAFloLwAAAAAAAAAAAMAAAACRVVSTVRMAAAAAAAAAAAAAASpt6MGTWvGwdWWzznhGcDJ+klplpy+DCZDSPE0MG+qAAAAAVVTRE0AAAAAzjFwwWvYRuQOCHjRQ12ZsvHFXsmtQ0ka1OpQTcuL5UoAAAAAAAAAAAAAAAEAAAABAAAAAGzhWBAAAAAAAAAAAjBvVQYAAABA8ngRn6FosWJoKr+CiNwUecKAkHp4oOTfCc3hSeFBWUNfbddyxouSs9LrkX6Yym7KUpqlbr35eypU0gUOs9bEBVpCAfwAAABAKQso0UED2q9QpUa1jIHCGtWkFCgHu7OAzYodR4L3K+HOY0OGtqIRomGNwJ2/hSP6CUc7uAJryU33J1osSvUwDQ=="
 
 
 class TestUtilityFunctions:
@@ -224,19 +228,31 @@ class TestSEP7Signing:
         # Разные ключи должны давать разные подписи
         assert signature1 != signature2
 
-    def test_uri_sign_url_encoded(self):
-        """Тест что результат URL-encoded"""
-        keypair = Keypair.random()
-        test_data = "web+stellar:pay?destination=GABC&amount=100"
 
-        result = uri_sign(test_data, keypair.secret)
+@pytest.mark.asyncio
+async def test_decode_xdr_to_text_invalid_stellar_xdr_raises_clear_error():
+    """Невалидный Stellar XDR должен приводить к контролируемому ValueError."""
+    with patch(
+        "services.xdr_parser.FeeBumpTransactionEnvelope.is_fee_bump_transaction_envelope",
+        side_effect=ValueError("1175155856 is not a valid CryptoKeyType"),
+    ):
+        with pytest.raises(ValueError, match="Invalid Stellar XDR"):
+            _parse_transaction_envelope(INVALID_STELLAR_XDR)
 
-        # URL-encoded строка не должна содержать символы, требующие кодирования
-        # Base64 может содержать +, /, =, которые кодируются как %2B, %2F, %3D
-        # Но не должна содержать raw + или / или =
-        # (На самом деле может, если base64 не содержал этих символов)
-        # Проверим просто что это строка ASCII
-        assert result.isascii()
+
+def test_uri_sign_url_encoded():
+    """Тест что результат URL-encoded"""
+    keypair = Keypair.random()
+    test_data = "web+stellar:pay?destination=GABC&amount=100"
+
+    result = uri_sign(test_data, keypair.secret)
+
+    # URL-encoded строка не должна содержать символы, требующие кодирования
+    # Base64 может содержать +, /, =, которые кодируются как %2B, %2F, %3D
+    # Но не должна содержать raw + или / или =
+    # (На самом деле может, если base64 не содержал этих символов)
+    # Проверим просто что это строка ASCII
+    assert result.isascii()
 
 
 class TestXDRConversion:
