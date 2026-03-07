@@ -1,0 +1,274 @@
+EURMTL machine API guide
+
+Use HTTP endpoints directly. Prefer JSON or plain text responses. Do not rely on HTML pages if an API route exists.
+
+Entry point:
+- GET /llm.txt : this file
+
+Useful machine routes:
+- POST /remote/decode : decode Stellar XDR from JSON body {"xdr": "<base64 xdr>"}
+- POST /remote/update_signature : submit signed XDR from JSON body {"xdr": "<base64 xdr>"}
+- GET /remote/need_sign/<public_key> : list pending transactions for signer
+- GET /remote/get_xdr/<hash> : fetch stored XDR by transaction hash
+- POST /remote/add_transaction : add transaction, requires Authorization Bearer token, JSON body {"tx_body": "...", "tx_description": "..."}
+
+SEP-7 routes:
+- POST /remote/sep07/add : store SEP-7 transaction URI
+- GET /remote/sep07/get/<uuid> : fetch stored SEP-7 URI
+- POST /remote/sep07/parse-uri : parse submitted SEP-7 URI
+- POST /remote/sep07/submit-signed : submit signed SEP-7 transaction
+- POST /remote/sep07/auth/init : initialize SEP-7 auth flow with JSON body {"domain": "...", "nonce": "...", "salt": "..."}
+- GET /remote/sep07/auth/status/<nonce>/<salt> : poll SEP-7 auth status
+
+Federation and wallet integration:
+- GET /.well-known/stellar.toml : Stellar TOML metadata
+- GET /federation : federation endpoint
+- GET /sep6/info : SEP-6 capability info
+- GET or POST /sep6/deposit : SEP-6 deposit details
+- GET or POST /sep6/withdraw : SEP-6 withdraw details
+- GET or POST /auth : SEP-10 style auth endpoint
+
+Utility routes:
+- POST /lab/build_xdr : build XDR from JSON payload, see full contract below
+- POST /lab/xdr_to_json : convert XDR to JSON
+- GET /uuid : generate random request correlation id
+- GET /myip : return caller IP
+
+Auth notes:
+- Some /remote/* routes require Authorization: Bearer <token>.
+- Session-based HTML pages exist, but they are for browsers, not agents.
+
+Response handling:
+- 200 means success.
+- 400 means invalid input.
+- 401 means missing or invalid bearer token.
+- 404 means missing object or unsupported route.
+
+POST /lab/build_xdr
+
+Purpose:
+- Build a Stellar transaction XDR from structured JSON.
+
+Top-level JSON fields:
+- publicKey: string, required. Source account used to load the base account from Horizon.
+- sequence: integer or numeric string, optional. If present and > 0, builder sets account sequence to sequence - 1 before building.
+- memo_type: string, optional. Supported values used by current code:
+  - memo_text
+  - memo_hash
+- memo: string, optional. Used with memo_type.
+- operations: array, required. Each item is one operation object.
+
+Top-level memo rules:
+- If memo_type == memo_text, memo is passed to add_text_memo().
+- If memo_type == memo_hash, memo is passed to add_hash_memo().
+- /lab/build_xdr itself rejects invalid memo_hash values before calling builder.
+
+Common operation fields:
+- type: string, required. Operation kind.
+- sourceAccount: string, optional. Must be a 56-char Stellar account id to be used as operation source. Otherwise ignored.
+
+Asset encoding:
+- Native XLM is encoded as "XLM".
+- Issued asset is encoded as "CODE-ISSUER".
+
+Supported operation types:
+
+1. payment
+- destination: string, required
+- asset: string, required
+- amount: number or numeric string, required
+
+2. clawback
+- from: string, required
+- asset: string, required
+- amount: number or numeric string, required
+
+3. claim_claimable_balance
+- balanceId: string, required
+- If balanceId length is 64, code left-pads it to 72 chars with zeroes.
+
+4. copy_multi_sign
+- from: string, required
+- Copies multisig setup from account "from" to current operation source or top-level publicKey.
+
+5. trust_payment
+- destination: string, required
+- asset: string, required
+- amount: number or numeric string, required
+- Builder emits 3 operations:
+  - set trust line flags AUTHORIZED
+  - payment
+  - clear trust line flags AUTHORIZED
+
+6. change_trust
+- asset: string, required
+- limit: string, optional. Empty string means None.
+
+7. create_account
+- destination: string, required
+- startingBalance: string or number, required
+
+8. create_claimable_balance
+- asset: string, required
+- amount: string or number, required
+- claimant_1_destination: string, optional but at least one claimant destination is required overall
+- claimant_1_predicate_type: string, optional. Supported:
+  - unconditional
+  - abs_before
+  - abs_after
+  - rel_before
+  - rel_after
+- claimant_1_predicate_value: string, optional depending on predicate type
+- claimant_2_destination: string, optional
+- claimant_2_predicate_type: string, optional
+- claimant_2_predicate_value: string, optional
+- Predicate value rules:
+  - abs_before / abs_after: ISO datetime string, example 2026-03-07T18:00:00Z
+  - rel_before / rel_after: integer seconds as string or number-like string
+- If no claimant destination is provided, builder raises "At least one claimant is required."
+
+9. sell
+- selling: string, required
+- buying: string, required
+- amount: string or number, required
+- price: string or number, required
+- offer_id: integer or numeric string, required
+
+10. swap
+- selling: string, required
+- buying: string, required
+- amount: string or number, required
+- destination: string or number, required. Used as dest_min.
+- path: JSON string, required. Must decode into an array of assets.
+- Path element format:
+  - {"asset_type":"native"}
+  - or {"asset_code":"USD","asset_issuer":"G..."}
+- Destination account for strict send is operation sourceAccount if present, else top-level publicKey.
+
+11. sell_passive
+- selling: string, required
+- buying: string, required
+- amount: string or number, required
+- price: string or number, required
+
+12. buy
+- selling: string, required
+- buying: string, required
+- amount: string or number, required
+- price: string or number, required
+- offer_id: integer or numeric string, required
+
+13. manage_data
+- data_name: string, required
+- data_value: string, required by current code shape, but empty string becomes None and removes data entry
+
+14. set_options
+- threshold: string, optional
+- threshold supports:
+  - single integer string, example "1"
+  - slash form low/med/high, example "1/2/2"
+- master: string, optional. Empty means None.
+- home: string, optional. Empty means None.
+
+15. set_options_signer
+- signerAccount: string, required
+- weight: string, optional. Empty means None.
+- signerAccount is only passed through if its length is > 55.
+
+16. set_trust_line_flags
+- trustor: string, required
+- asset: string, required
+- setFlags: string, optional. Empty means None.
+- clearFlags: string, optional. Empty means None.
+- Flags are decoded from integer bitmask into Stellar TrustLineFlags.
+
+17. bump_sequence
+- bump_to: integer or numeric string, required
+
+18. begin_sponsoring_future_reserves
+- sponsored_id: string, required
+
+19. end_sponsoring_future_reserves
+- No extra fields.
+
+20. revoke_sponsorship
+- revoke_type: string, required. Supported values:
+  - account
+  - trustline
+  - data
+  - offer
+  - claimable_balance
+  - liquidity_pool
+  - signer
+- Additional fields by revoke_type:
+  - account:
+    - revoke_account_id
+  - trustline:
+    - revoke_trustline_account
+    - revoke_trustline_asset
+  - data:
+    - revoke_data_account
+    - revoke_data_name
+  - offer:
+    - revoke_offer_seller
+    - revoke_offer_id
+  - claimable_balance:
+    - revoke_claimable_balance_id
+    - if length is 64, it is left-padded to 72 chars with zeroes
+  - liquidity_pool:
+    - revoke_liquidity_pool_id
+  - signer:
+    - revoke_signer_account
+    - revoke_signer_key
+
+21. pay_divs
+- holders: string, required. Asset whose holders receive payouts.
+- asset: string, required. Asset used for payout.
+- amount: string or number, required. Total amount to distribute.
+- require_trustline or requireTrustline: optional. If present, parsed as int then bool.
+- Builder expands this into multiple payment operations based on live holder data.
+
+22. liquidity_pool_deposit
+- liquidity_pool_id: string, required
+- max_amount_a: string or number, required
+- max_amount_b: string or number, required
+- min_price: string or number, required
+- max_price: string or number, required
+- If min_price == 0 or max_price == 0, builder loads current pool price and derives fallback bounds.
+
+23. liquidity_pool_withdraw
+- liquidity_pool_id: string, required
+- amount: string or number, required
+- min_amount_a: string or number, required
+- min_amount_b: string or number, required
+- If min_amount_a == 0 or min_amount_b == 0, builder loads live pool data and derives fallback minimums.
+
+24. liquidity_pool_trustline
+- liquidity_pool_id: string, required
+- limit: string, optional. Empty string means None.
+- Builder loads pool data and creates a trustline for the LiquidityPoolAsset.
+
+Notes:
+- Builder loads live Horizon data for the root account and for some pool/dividend operations.
+- Numeric values are normalized through float2str() in many operations.
+- Unknown operation types are ignored by current code only if no branch matches; there is no explicit validation error for unknown type in stellar_build_xdr().
+
+Minimal payload example:
+{
+  "publicKey": "GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+  "memo_type": "memo_text",
+  "memo": "example",
+  "operations": [
+    {
+      "type": "payment",
+      "destination": "GYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY",
+      "asset": "XLM",
+      "amount": "10"
+    },
+    {
+      "type": "change_trust",
+      "asset": "EURMTL-GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "limit": "1000"
+    }
+  ]
+}
