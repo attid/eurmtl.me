@@ -10,12 +10,21 @@ env.read_env()
 
 start_path = os.path.dirname(os.path.dirname(__file__))
 dotenv_path = os.path.join(start_path, ".env")
+SECRETS_DIR = "/run/secrets"
+
+
+def get_secrets_dir() -> str | None:
+    if os.path.isdir(SECRETS_DIR):
+        return SECRETS_DIR
+    return None
 
 
 class Settings(BaseSettings):
     model_config = ConfigDict(
-        env_file=dotenv_path, env_file_encoding="utf-8", extra="allow",
-        secrets_dir="/run/secrets",
+        env_file=dotenv_path,
+        env_file_encoding="utf-8",
+        extra="allow",
+        secrets_dir=get_secrets_dir(),
     )
 
     db_dsn: str
