@@ -18,33 +18,18 @@ from stellar_sdk import (
     Transaction,
     Keypair,
     Asset,
+    CreateClaimableBalance,
     LiquidityPoolAsset,
     CreatePassiveSellOffer,
     ManageBuyOffer,
     Clawback,
     SetTrustLineFlags,
-    TrustLineFlags,
     LiquidityPoolWithdraw,
     LiquidityPoolDeposit,
     StrKey,
 )
-from stellar_sdk.operation import (
-    SetOptions,
-    AccountMerge,
-    Payment,
-    PathPaymentStrictReceive,
-    ManageSellOffer,
-    ManageBuyOffer,
-    CreatePassiveSellOffer,
-    ChangeTrust,
-    Inflation,
-    ManageData,
-    BumpSequence,
-    CreateClaimableBalance,
-)
 from stellar_sdk.operation.create_claimable_balance import ClaimPredicateType
 
-from db.sql_models import Transactions
 from infrastructure.repositories.transaction_repository import TransactionRepository
 from other.grist_cache import grist_cache
 from services.stellar_client import (
@@ -66,14 +51,28 @@ def get_key_sort(key, idx=1):
     return key[idx]
 
 
+def _parse_transaction_envelope(xdr: str):
+    try:
+        if FeeBumpTransactionEnvelope.is_fee_bump_transaction_envelope(xdr):
+            fee_transaction = FeeBumpTransactionEnvelope.from_xdr(
+                xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+            )
+            return fee_transaction.transaction.inner_transaction_envelope
+
+        return TransactionEnvelope.from_xdr(
+            xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
+        )
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Invalid Stellar XDR") from exc
+
+
 def decode_xdr_from_base64(xdr):
     import base64
 
     xdr = xdr.replace("%3D", "=")
     decoded_bytes = base64.urlsafe_b64decode(xdr)
     decoded_str = decoded_bytes.decode("utf-8")
-    decoded_json = json.loads(decoded_str)
-    # print(decoded_json)
+    json.loads(decoded_str)
 
 
 def decode_xdr_to_base64(xdr, return_json=False):
@@ -736,15 +735,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
 
         return [f"{prefix}Неизвестный тип условия"]
 
-    if FeeBumpTransactionEnvelope.is_fee_bump_transaction_envelope(xdr):
-        fee_transaction = FeeBumpTransactionEnvelope.from_xdr(
-            xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
-        )
-        transaction = fee_transaction.transaction.inner_transaction_envelope
-    else:
-        transaction = TransactionEnvelope.from_xdr(
-            xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
-        )
+    transaction = _parse_transaction_envelope(xdr)
     sequence = transaction.transaction.sequence
 
     balance_str = await get_available_balance_str(
@@ -982,7 +973,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
 
                 if operation.asset.issuer == source_id:
                     result.append(
-                        f'<div style="color: red;">MELFORMED: You can`t open trustline for yourself!</div>'
+                        '<div style="color: red;">MELFORMED: You can`t open trustline for yourself!</div>'
                     )
 
                 if operation.limit == "0":
@@ -1252,7 +1243,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             continue
         if type(operation).__name__ == "EndSponsoringFutureReserves":
             data_exist = True
-            result.append(f"    EndSponsoringFutureReserves")
+            result.append("    EndSponsoringFutureReserves")
             continue
         if type(operation).__name__ == "Clawback":
             data_exist = True
@@ -1356,7 +1347,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             continue
 
         data_exist = True
-        result.append(f"Прости хозяин, не понимаю")
+        result.append("Прости хозяин, не понимаю")
         print("bad xdr", idx, operation)
     if data_exist:
         result = [item for item in result if item != ""]
