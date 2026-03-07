@@ -42,6 +42,7 @@
 - `just check-changed` - проверки только для измененных Python-файлов.
 - `just check` - полная проверка (`fmt-check + lint + types + test + arch-test`).
 - `just run` - контейнерный запуск с предварительным `test`.
+- После `git push` агент должен по умолчанию выполнять `just push-gitdocker`, если пользователь явно не отменил этот шаг.
 
 ## 4) Working Rules For Agents
 - Сначала анализ и явный список файлов, которые нужно менять.
