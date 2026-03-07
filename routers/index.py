@@ -25,53 +25,6 @@ from loguru import logger
 
 blueprint = Blueprint("index", __name__)
 
-LLM_TXT = """EURMTL machine API guide
-
-Use HTTP endpoints directly. Prefer JSON or plain text responses. Do not rely on HTML pages if an API route exists.
-
-Entry point:
-- GET /llm.txt : this file
-
-Useful machine routes:
-- POST /remote/decode : decode Stellar XDR from JSON body {"xdr": "<base64 xdr>"}
-- POST /remote/update_signature : submit signed XDR from JSON body {"xdr": "<base64 xdr>"}
-- GET /remote/need_sign/<public_key> : list pending transactions for signer
-- GET /remote/get_xdr/<hash> : fetch stored XDR by transaction hash
-- POST /remote/add_transaction : add transaction, requires Authorization Bearer token, JSON body {"tx_body": "...", "tx_description": "..."}
-
-SEP-7 routes:
-- POST /remote/sep07/add : store SEP-7 transaction URI
-- GET /remote/sep07/get/<uuid> : fetch stored SEP-7 URI
-- POST /remote/sep07/parse-uri : parse submitted SEP-7 URI
-- POST /remote/sep07/submit-signed : submit signed SEP-7 transaction
-- POST /remote/sep07/auth/init : initialize SEP-7 auth flow with JSON body {"domain": "...", "nonce": "...", "salt": "..."}
-- GET /remote/sep07/auth/status/<nonce>/<salt> : poll SEP-7 auth status
-
-Federation and wallet integration:
-- GET /.well-known/stellar.toml : Stellar TOML metadata
-- GET /federation : federation endpoint
-- GET /sep6/info : SEP-6 capability info
-- GET or POST /sep6/deposit : SEP-6 deposit details
-- GET or POST /sep6/withdraw : SEP-6 withdraw details
-- GET or POST /auth : SEP-10 style auth endpoint
-
-Utility routes:
-- POST /lab/build_xdr : build XDR from JSON payload
-- POST /lab/xdr_to_json : convert XDR to JSON
-- GET /uuid : generate random request correlation id
-- GET /myip : return caller IP
-
-Auth notes:
-- Some /remote/* routes require Authorization: Bearer <token>.
-- Session-based HTML pages exist, but they are for browsers, not agents.
-
-Response handling:
-- 200 means success.
-- 400 means invalid input.
-- 401 means missing or invalid bearer token.
-- 404 means missing object or unsupported route.
-"""
-
 
 @blueprint.route("/tailscale", methods=("GET", "POST"))
 @blueprint.route("/ts", methods=("GET", "POST"))
@@ -104,7 +57,7 @@ async def cmd_index():
 
 @blueprint.route("/llm.txt")
 async def llm_txt():
-    return Response(LLM_TXT, mimetype="text/plain")
+    return Response(await render_template("llm.txt"), mimetype="text/plain")
 
 
 @blueprint.route("/mytest", methods=("GET", "POST"))

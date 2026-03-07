@@ -25,6 +25,16 @@ async def test_get_transaction_details_not_found(transaction_service):
 
 
 @pytest.mark.asyncio
+async def test_get_transaction_by_hash_uses_uuid_branch(transaction_service):
+    transaction_service.repo.get_by_uuid = AsyncMock(return_value="tx-by-uuid")
+
+    result = await transaction_service.get_transaction_by_hash("short-uuid")
+
+    assert result == "tx-by-uuid"
+    transaction_service.repo.get_by_uuid.assert_awaited_once_with("short-uuid")
+
+
+@pytest.mark.asyncio
 async def test_get_pending_transactions(transaction_service):
     # Setup
     mock_signer = Signers(id=1, public_key="GABC")
@@ -61,6 +71,87 @@ async def test_update_signature_visibility(transaction_service, mock_session):
     # Verify
     assert mock_sig.hidden == 1
     mock_session.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_update_signature_visibility_returns_false_when_signature_missing(
+    transaction_service, mock_session
+):
+    mock_result = MagicMock()
+    mock_result.scalars().first.return_value = None
+    mock_session.execute.return_value = mock_result
+
+    result = await transaction_service.update_signature_visibility(999, True)
+
+    assert result is False
+    mock_session.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_sign_transaction_from_xdr_rejects_bad_xdr(transaction_service):
+    result = await transaction_service.sign_transaction_from_xdr("not-xdr")
+
+    assert result["SUCCESS"] is False
+    assert result["MESSAGES"] == ["BAD xdr. Can`t load"]
+
+
+@pytest.mark.asyncio
+async def test_sign_transaction_from_xdr_returns_not_found_for_unknown_transaction(
+    transaction_service,
+):
+    with patch("services.transaction_service.TransactionEnvelope") as envelope_cls:
+        envelope = MagicMock()
+        envelope.hash_hex.return_value = "a" * 64
+        envelope_cls.from_xdr.return_value = envelope
+        transaction_service.repo.get_by_hash = AsyncMock(return_value=None)
+
+        result = await transaction_service.sign_transaction_from_xdr("AAAA")
+
+    assert result["SUCCESS"] is False
+    assert result["hash"] == "a" * 64
+    assert result["MESSAGES"] == ["Transaction not found"]
+
+
+@pytest.mark.asyncio
+async def test_sign_transaction_from_xdr_returns_error_for_bad_transaction_json(
+    transaction_service,
+):
+    with patch("services.transaction_service.TransactionEnvelope") as envelope_cls:
+        envelope = MagicMock()
+        envelope.hash_hex.return_value = "a" * 64
+        envelope.signatures = []
+        envelope_cls.from_xdr.return_value = envelope
+
+        transaction = Transactions(hash="a" * 64, body="AAAA", json="{bad-json")
+        transaction_service.repo.get_by_hash = AsyncMock(return_value=transaction)
+
+        result = await transaction_service.sign_transaction_from_xdr("AAAA")
+
+    assert result["SUCCESS"] is False
+    assert result["MESSAGES"] == ["Can`t load json"]
+
+
+@pytest.mark.asyncio
+async def test_create_transaction_uri_returns_none_when_transaction_missing(
+    transaction_service,
+):
+    transaction_service.repo.get_by_hash = AsyncMock(return_value=None)
+
+    result = await transaction_service.create_transaction_uri("a" * 64)
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_add_or_remove_alert_returns_error_on_session_failure(
+    transaction_service, mock_session
+):
+    mock_session.execute.side_effect = RuntimeError("db failed")
+
+    result = await transaction_service.add_or_remove_alert("hash", 123)
+
+    assert result["success"] is False
+    assert "db failed" in result["message"]
 
 
 # ===== New tests with real SQLite DB =====
