@@ -1,17 +1,19 @@
 import secrets
 from datetime import datetime, timedelta
-from urllib.parse import quote
 from loguru import logger
 
 from quart import Blueprint, jsonify, request, render_template
 
 from other.config_reader import config
 from other.qr_tools import create_beautiful_code
-from services.stellar_client import create_sep7_auth_transaction, process_xdr_transaction
+from services.stellar_client import (
+    create_sep7_auth_transaction,
+    process_xdr_transaction,
+)
 from services.xdr_parser import is_valid_base64
 from other.web_tools import cors_jsonify
 
-blueprint = Blueprint('sep07_auth', __name__, url_prefix='/remote/sep07/auth')
+blueprint = Blueprint("sep07_auth", __name__, url_prefix="/remote/sep07/auth")
 
 # Хранилище nonce
 nonce_store = {}
@@ -22,13 +24,15 @@ NONCE_LIFETIME = timedelta(minutes=5)
 def cleanup_nonce_store():
     """Очистка устаревших nonce"""
     now = datetime.now()
-    expired = [n for n, t in nonce_store.items() if now - t['created'] > NONCE_LIFETIME]
+    expired = [n for n, t in nonce_store.items() if now - t["created"] > NONCE_LIFETIME]
     for n in expired:
         del nonce_store[n]
 
     # Если хранилище переполнено, удаляем самые старые записи
     if len(nonce_store) > MAX_NONCE_STORE_SIZE:
-        oldest = sorted(nonce_store.items(), key=lambda x: x[1]['created'])[:len(nonce_store) - MAX_NONCE_STORE_SIZE]
+        oldest = sorted(nonce_store.items(), key=lambda x: x[1]["created"])[
+            : len(nonce_store) - MAX_NONCE_STORE_SIZE
+        ]
         for n, _ in oldest:
             del nonce_store[n]
 
@@ -36,59 +40,61 @@ def cleanup_nonce_store():
 @blueprint.route("/test")
 @blueprint.route("/test/")
 async def auth_test():
-    return await render_template('sep07test.html')
+    return await render_template("sep07test.html")
 
 
-@blueprint.route('/init', methods=['POST', 'OPTIONS'])
+@blueprint.route("/init", methods=["POST", "OPTIONS"])
 async def auth_init():
-    if request.method == 'OPTIONS':
+    if request.method == "OPTIONS":
         return cors_jsonify({})  # пустой ответ, но с CORS-заголовками
     # Очищаем хранилище от старых nonce
     cleanup_nonce_store()
 
     data = await request.json
-    domain = data.get('domain')
-    nonce = data.get('nonce')
-    salt = data.get('salt', secrets.token_hex(4))
+    domain = data.get("domain")
+    nonce = data.get("nonce")
+    salt = data.get("salt", secrets.token_hex(4))
 
     if not domain or not nonce:
-        return jsonify({'error': 'domain and nonce are required'}), 400
+        return jsonify({"error": "domain and nonce are required"}), 400
 
     # Проверяем длину nonce и salt
     if len(nonce) > 64:
-        return jsonify({'error': 'nonce length should not exceed 64 characters'}), 400
+        return jsonify({"error": "nonce length should not exceed 64 characters"}), 400
 
     if len(salt) > 64:
-        return jsonify({'error': 'salt length should not exceed 64 characters'}), 400
+        return jsonify({"error": "salt length should not exceed 64 characters"}), 400
 
     # Сохраняем nonce в хранилище
     nonce_store[nonce] = {
         "created": datetime.now(),
         "domain": domain,
         "salt": str(salt),  # Преобразуем в строку для корректной сериализации
-        "tx_info": None
+        "tx_info": None,
     }
 
-    callback_url = f'https://{config.domain}/remote/sep07/auth/callback'
+    callback_url = f"https://{config.domain}/remote/sep07/auth/callback"
 
     # Generate transaction URI
     uri = await create_sep7_auth_transaction(domain, nonce, callback=callback_url)
 
     # Generate QR code
     qr_uuid = secrets.token_hex(8)
-    qr_path = f'/static/qr/{qr_uuid}.png'
+    qr_path = f"/static/qr/{qr_uuid}.png"
     create_beautiful_code(file_name=qr_path, logo_text=domain, qr_text=uri)
 
-    return cors_jsonify({
-        'qr_path': qr_path,
-        'uri': uri,
-        'status_url': f'/remote/sep07/auth/status/{nonce}/{salt}'
-    })
+    return cors_jsonify(
+        {
+            "qr_path": qr_path,
+            "uri": uri,
+            "status_url": f"/remote/sep07/auth/status/{nonce}/{salt}",
+        }
+    )
 
 
-@blueprint.route('/status/<nonce>/<salt>', methods=['GET', 'OPTIONS'])
+@blueprint.route("/status/<nonce>/<salt>", methods=["GET", "OPTIONS"])
 async def auth_status(nonce, salt):
-    if request.method == 'OPTIONS':
+    if request.method == "OPTIONS":
         return cors_jsonify({})  # пустой ответ, но с CORS-заголовками
     # Ищем nonce в хранилище
     if nonce not in nonce_store:
@@ -102,25 +108,24 @@ async def auth_status(nonce, salt):
     # Если есть информация о транзакции
     if nonce_data["tx_info"]:
         del nonce_store[nonce]
-        return cors_jsonify({
-            "authenticated": True,
-            "nonce": nonce,
-            "hash": nonce_data["tx_info"]["hash"],
-            "client_address": nonce_data["tx_info"]["client_address"],
-            "timestamp": nonce_data["tx_info"]["timestamp"],
-            "domain": nonce_data["tx_info"]["domain"]
-        })
+        return cors_jsonify(
+            {
+                "authenticated": True,
+                "nonce": nonce,
+                "hash": nonce_data["tx_info"]["hash"],
+                "client_address": nonce_data["tx_info"]["client_address"],
+                "timestamp": nonce_data["tx_info"]["timestamp"],
+                "domain": nonce_data["tx_info"]["domain"],
+            }
+        )
 
-    return cors_jsonify({
-        "authenticated": False,
-        "nonce": nonce
-    })
+    return cors_jsonify({"authenticated": False, "nonce": nonce})
 
 
-@blueprint.route('/callback', methods=['POST', 'OPTIONS'])
+@blueprint.route("/callback", methods=["POST", "OPTIONS"])
 async def auth_callback():
     # Обработка OPTIONS запроса для CORS preflight
-    if request.method == 'OPTIONS':
+    if request.method == "OPTIONS":
         return cors_jsonify({})
 
     form_data = await request.form
@@ -165,14 +170,11 @@ async def auth_callback():
             "hash": tx_info["hash"],
             "client_address": tx_info["client_address"],
             "timestamp": tx_info["timestamp"],
-            "domain": tx_info["domain"]
+            "domain": tx_info["domain"],
         }
         logger.info(f"Nonce {nonce_value} validated and tx info saved")
 
-        return cors_jsonify({
-            "status": "pending",
-            "hash": tx_info["hash"]
-        })
+        return cors_jsonify({"status": "pending", "hash": tx_info["hash"]})
     except Exception as e:
         logger.error(f"Error processing callback: {str(e)}", exc_info=True)
         return jsonify({"error": str(e)}), 400

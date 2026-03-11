@@ -1,5 +1,3 @@
-import asyncio
-import base64
 import json
 from datetime import datetime
 from loguru import logger
@@ -20,7 +18,6 @@ from stellar_sdk.sep import stellar_uri
 from sqlalchemy import select
 
 from other.cache_tools import async_cache_with_ttl
-from other.grist_cache import grist_cache
 from other.grist_tools import (
     get_secretaries,
     load_users_from_grist,
@@ -41,9 +38,9 @@ def float2str(f) -> str:
         f = float(f)
     s = "%.7f" % f
     while len(s) > 1 and s[-1] in ("0", "."):
-        l = s[-1]
+        last_char = s[-1]
         s = s[0:-1]
-        if l == ".":
+        if last_char == ".":
             break
     return s
 
@@ -873,7 +870,9 @@ async def stellar_build_xdr(data):
     )
     transaction.set_timeout(60 * 60 * 24 * 7)
 
-    def build_claim_predicate(predicate_type: str, predicate_value: str) -> ClaimPredicate:
+    def build_claim_predicate(
+        predicate_type: str, predicate_value: str
+    ) -> ClaimPredicate:
         if predicate_type == "unconditional":
             return ClaimPredicate.predicate_unconditional()
 
@@ -884,14 +883,23 @@ async def stellar_build_xdr(data):
             dt_value = datetime.fromisoformat(predicate_value.replace("Z", "+00:00"))
             abs_before = int(dt_value.timestamp())
             predicate = ClaimPredicate.predicate_before_absolute_time(abs_before)
-            return ClaimPredicate.predicate_not(predicate) if predicate_type == "abs_after" else predicate
+            return (
+                ClaimPredicate.predicate_not(predicate)
+                if predicate_type == "abs_after"
+                else predicate
+            )
 
         if predicate_type in ("rel_before", "rel_after"):
             rel_before = int(predicate_value)
             predicate = ClaimPredicate.predicate_before_relative_time(rel_before)
-            return ClaimPredicate.predicate_not(predicate) if predicate_type == "rel_after" else predicate
+            return (
+                ClaimPredicate.predicate_not(predicate)
+                if predicate_type == "rel_after"
+                else predicate
+            )
 
         raise ValueError(f"Unknown claim predicate type: {predicate_type}")
+
     if data["memo_type"] == "memo_text":
         transaction.add_text_memo(data["memo"])
     if data["memo_type"] == "memo_hash":
@@ -1019,7 +1027,7 @@ async def stellar_build_xdr(data):
             asset_path = []
             for asset in json.loads(operation["path"]):
                 if asset["asset_type"] == "native":
-                    asset_path.append(decode_asset(f"XLM"))
+                    asset_path.append(decode_asset("XLM"))
                 else:
                     asset_path.append(
                         decode_asset(f"{asset['asset_code']}-{asset['asset_issuer']}")

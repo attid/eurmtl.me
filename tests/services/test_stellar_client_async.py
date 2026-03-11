@@ -8,13 +8,20 @@ This module contains async tests for:
 """
 
 import pytest
-import pytest_asyncio
 from unittest.mock import patch, AsyncMock, MagicMock
 from sqlalchemy import select
-from datetime import datetime
 from stellar_sdk import Keypair
 
-from services.stellar_client import check_publish_state, check_user_weight, add_signer
+from services.stellar_client import (
+    _fetch_account,
+    add_signer,
+    check_asset,
+    check_publish_state,
+    check_user_weight,
+    get_available_balance_str,
+    get_fund_signers,
+    get_offers,
+)
 from db.sql_models import Signers, Transactions
 from other.grist_tools import User
 
@@ -482,3 +489,116 @@ class TestAddSigner:
             assert signer is not None
             assert signer.username == "@alice"
             assert signer.tg_id == 77777
+
+
+class TestAccountHelpers:
+    @pytest.mark.asyncio
+    @patch("services.stellar_client.get_account", new_callable=AsyncMock)
+    async def test_get_available_balance_str_calculates_reserve(self, mock_get_account):
+        mock_get_account.return_value = {
+            "balances": [
+                {
+                    "asset_type": "native",
+                    "balance": "20",
+                    "selling_liabilities": "1.5",
+                }
+            ],
+            "subentry_count": 3,
+            "num_sponsoring": 1,
+            "num_sponsored": 0,
+        }
+
+        result = await get_available_balance_str("G" + "A" * 55)
+
+        assert result == "(свободно 15.5 XLM)"
+
+    @pytest.mark.asyncio
+    @patch("services.stellar_client.get_account", new_callable=AsyncMock)
+    async def test_get_available_balance_str_handles_negative_and_invalid_payload(
+        self, mock_get_account
+    ):
+        mock_get_account.return_value = {
+            "balances": [
+                {"asset_type": "native", "balance": "1", "selling_liabilities": "9"}
+            ],
+            "subentry_count": 5,
+            "num_sponsoring": 0,
+            "num_sponsored": 0,
+        }
+        assert await get_available_balance_str("G" + "B" * 55) == "(свободно 0 XLM)"
+
+        mock_get_account.return_value = {
+            "balances": [{"asset_type": "native", "balance": "bad"}]
+        }
+        assert await get_available_balance_str("G" + "C" * 55) == ""
+
+    @pytest.mark.asyncio
+    async def test_fetch_account_and_offers_fallbacks(self):
+        response = MagicMock(status=200, data={"balances": [{"asset_type": "native"}]})
+        offers_response = MagicMock(
+            status=200, data={"_embedded": {"records": [{"id": "1"}]}}
+        )
+
+        with patch(
+            "services.stellar_client.http_session_manager.get_web_request",
+            side_effect=[
+                response,
+                offers_response,
+                Exception("boom"),
+                Exception("boom"),
+            ],
+        ):
+            assert await _fetch_account("acc") == {
+                "balances": [{"asset_type": "native"}]
+            }
+            assert await get_offers.__wrapped__("acc") == {
+                "_embedded": {"records": [{"id": "1"}]}
+            }
+            assert await _fetch_account("missing") == {"balances": []}
+            assert await get_offers.__wrapped__("missing") == {
+                "_embedded": {"records": []}
+            }
+
+    @pytest.mark.asyncio
+    async def test_check_asset_and_fund_signers(self):
+        asset = User
+        asset_obj = MagicMock(code="USD", issuer=Keypair.random().public_key)
+        signer_key = Keypair.random().public_key
+        success_response = MagicMock(
+            status=200,
+            data={
+                "_embedded": {"records": [{"id": 1}]},
+                "signers": [{"key": signer_key, "weight": 5}],
+            },
+        )
+
+        with (
+            patch(
+                "services.stellar_client.http_session_manager.get_web_request",
+                side_effect=[
+                    success_response,
+                    MagicMock(status=404, data={}),
+                    MagicMock(
+                        status=200, data={"signers": [{"key": signer_key, "weight": 5}]}
+                    ),
+                ],
+            ),
+            patch(
+                "services.stellar_client.load_users_from_grist",
+                AsyncMock(
+                    return_value={
+                        signer_key: asset(
+                            telegram_id=77, account_id=signer_key, username="u"
+                        )
+                    }
+                ),
+            ),
+        ):
+            assert await check_asset(asset_obj) == ""
+            missing = await check_asset(
+                MagicMock(code="EUR", issuer=Keypair.random().public_key)
+            )
+            signers = await get_fund_signers.__wrapped__()
+
+        assert "Asset EUR not exist" in missing
+        assert signers["signers"][0]["telegram_id"] == 77

@@ -7,15 +7,17 @@ from google.oauth2.service_account import Credentials
 def get_creds():
     # To obtain a service account JSON file, follow these steps:
     # https://gspread.readthedocs.io/en/latest/oauth2.html#for-bots-using-service-account
-    key_path = os.path.join(os.path.dirname(__file__), 'mtl-google-doc.json')
+    key_path = os.path.join(os.path.dirname(__file__), "mtl-google-doc.json")
     # print(start_path, key_path)
 
     creds = Credentials.from_service_account_file(key_path)
-    scoped = creds.with_scopes([
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ])
+    scoped = creds.with_scopes(
+        [
+            "https://spreadsheets.google.com/feeds",
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+    )
     return scoped
 
 
@@ -37,8 +39,11 @@ async def gs_save_new_decision(decision_id, short_name, url, username):
     ss = await agc.open("MTL_decisions")
     ws = await ss.worksheet("MTLFUND")
     # 155	Обновление голосов  https://t.me/c/1649743884/243	@SomeoneAny
-    await ws.update(values=[[decision_id, short_name, url, username]], range_name=f'A{last_col + 1}',
-                    value_input_option='USER_ENTERED')
+    await ws.update(
+        values=[[decision_id, short_name, url, username]],
+        range_name=f"A{last_col + 1}",
+        value_input_option="USER_ENTERED",
+    )
     # await ws.update(f'A{last_col + 1}', [[last_number + 1, datetime.now().strftime('%d.%m'), username, user_id, url,
     #                                      None, None, None, None, None, None, None, None, None, agent_username]],
     #                                      value_input_option='USER_ENTERED')
@@ -75,11 +80,12 @@ async def gs_get_asset(asset_code):
     if cell:
         row_number = cell.row
         row_data = await ws.row_values(row_number)
-        if row_data[13] == 'TRUE':
+        if row_data[13] == "TRUE":
             return row_data[5]
         # ['EURMTL', 'EURMTL', 'tokenized', 'F', '', 'GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V', 'mtl.montelibero.org', '45\xa0500', '1', '', 'https://t.me/eurmtl_club', '', '', 'TRUE', 'https://eurmtl.me/asset/EURMTL']
         # code	name	descr	status	stellar	issuer	domain	MTL-fund	e-rate	b-rate	chat	contract	person	eurmtl.me
 
+
 if __name__ == "__main__":
     #     await gs_update_decision(decision.num, 6, url)
-    print(asyncio.run(gs_update_decision(353, 6, 'https://t.me/c/1649743884/243')))
+    print(asyncio.run(gs_update_decision(353, 6, "https://t.me/c/1649743884/243")))

@@ -38,5 +38,7 @@ def create_async_pool(db_dsn: str):
         pool_timeout=10,
     )
 
-    db_pool = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+    db_pool = async_sessionmaker(
+        bind=engine, class_=AsyncSession, expire_on_commit=False
+    )
     return db_pool, engine

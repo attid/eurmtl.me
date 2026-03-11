@@ -113,6 +113,7 @@ async def before_request():
 async def initialize_grist_cache():
     """Инициализация кеша Grist при запуске приложения"""
     from other.grist_cache import grist_cache
+
     if not config.test_mode:
         await grist_cache.initialize_cache()
 
@@ -122,8 +123,10 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=config.port, debug=True)
     else:
         import uvicorn
+
         try:
             import uvloop
+
             uvloop.install()  # Заменяет стандартный event loop
         except ImportError:
             pass  # Если uvloop не установлен, используем стандартный

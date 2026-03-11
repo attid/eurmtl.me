@@ -3,29 +3,31 @@ import json
 from datetime import datetime, timedelta, timezone
 from loguru import logger
 
-from sqlalchemy import select
 from quart import Blueprint, request, render_template, jsonify, session, current_app
 from stellar_sdk import Server
 from stellar_sdk.utils import is_valid_hash
 
-from db.sql_models import Transactions
 from infrastructure.repositories.transaction_repository import TransactionRepository
 from other.grist_tools import MTLGrist, grist_manager
-from services.xdr_parser import (decode_xdr_to_base64, is_valid_base64, 
-                                 update_memo_in_xdr, decode_data_value)
+from services.xdr_parser import (
+    decode_xdr_to_base64,
+    is_valid_base64,
+    update_memo_in_xdr,
+    decode_data_value,
+)
 from services.stellar_client import stellar_build_xdr, decode_asset, float2str
 from other.web_tools import http_session_manager
 
-blueprint = Blueprint('lab', __name__)
+blueprint = Blueprint("lab", __name__)
 
 
-@blueprint.route('/laboratory')
-@blueprint.route('/lab')
-@blueprint.route('/lab/')
+@blueprint.route("/laboratory")
+@blueprint.route("/lab")
+@blueprint.route("/lab/")
 async def cmd_laboratory():
-    session['return_to'] = request.url
-    import_xdr = ''
-    tr_hash = request.args.get('import')
+    session["return_to"] = request.url
+    import_xdr = ""
+    tr_hash = request.args.get("import")
     if tr_hash:
         async with current_app.db_pool() as db_session:
             repo = TransactionRepository(db_session)
@@ -35,48 +37,50 @@ async def cmd_laboratory():
                 transaction = await repo.get_by_uuid(tr_hash)
 
         if transaction is None:
-            return 'Transaction not exist =('
+            return "Transaction not exist =("
         import_xdr = transaction.body
 
-    return await render_template('tabler_laboratory.html', import_xdr=import_xdr)
+    return await render_template("tabler_laboratory.html", import_xdr=import_xdr)
 
 
-@blueprint.route('/lab/mtl_accounts', methods=['GET', 'POST'])
+@blueprint.route("/lab/mtl_accounts", methods=["GET", "POST"])
 async def cmd_mtl_accounts():
-    if request.method == 'GET':
+    if request.method == "GET":
         result = {}
         accounts = await grist_manager.load_table_data(
-            MTLGrist.EURMTL_accounts,
-            filter_dict={"need_dropdown": [True]}
+            MTLGrist.EURMTL_accounts, filter_dict={"need_dropdown": [True]}
         )
         for account in accounts:
             account_id = account["account_id"]  ###
-            result[f"{account['description']} {account_id[:4]}..{account_id[-4:]}"] = account_id
+            result[f"{account['description']} {account_id[:4]}..{account_id[-4:]}"] = (
+                account_id
+            )
 
         return jsonify(result)
     return None
 
 
-@blueprint.route('/lab/sequence/<account_id>')
+@blueprint.route("/lab/sequence/<account_id>")
 async def cmd_sequence(account_id):
     try:
-        response = await http_session_manager.get_web_request('GET', f'https://horizon.stellar.org/accounts/{account_id}')
+        response = await http_session_manager.get_web_request(
+            "GET", f"https://horizon.stellar.org/accounts/{account_id}"
+        )
         if response.status == 200:
-            sequence = int(response.data['sequence']) + 1
+            sequence = int(response.data["sequence"]) + 1
         else:
             sequence = 0
-    except:
+    except Exception:
         sequence = 0
-    return jsonify({'sequence': str(sequence)})
+    return jsonify({"sequence": str(sequence)})
 
 
-@blueprint.route('/lab/mtl_assets', methods=['GET', 'POST'])
+@blueprint.route("/lab/mtl_assets", methods=["GET", "POST"])
 async def cmd_mtl_assets():
-    if request.method == 'GET':
+    if request.method == "GET":
         result = {}
         assets = await grist_manager.load_table_data(
-            MTLGrist.EURMTL_assets,
-            filter_dict={"need_dropdown": [True]}
+            MTLGrist.EURMTL_assets, filter_dict={"need_dropdown": [True]}
         )
 
         for asset in assets:
@@ -95,16 +99,17 @@ async def cmd_mtl_assets():
     return None
 
 
-@blueprint.route('/lab/mtl_pools', methods=['GET'])
+@blueprint.route("/lab/mtl_pools", methods=["GET"])
 async def cmd_mtl_pools():
-    if request.method == 'GET':
+    if request.method == "GET":
         result = {}
         # Используем кеш вместо прямого запроса к Grist
         from other.grist_cache import grist_cache
-        all_pools = grist_cache.get_table_data('EURMTL_pools')
-        
+
+        all_pools = grist_cache.get_table_data("EURMTL_pools")
+
         # Фильтруем в памяти
-        rows = [pool for pool in all_pools if pool.get('need_dropdown') is True]
+        rows = [pool for pool in all_pools if pool.get("need_dropdown") is True]
 
         for row in rows:
             print(row)
@@ -120,18 +125,18 @@ async def cmd_mtl_pools():
     return None
 
 
-@blueprint.route('/lab/build_xdr', methods=['POST'])
+@blueprint.route("/lab/build_xdr", methods=["POST"])
 async def cmd_build_xdr():
     data = await request.json
-    if data['memo_type'] == 'memo_hash':
-        if not is_valid_hash(data['memo']):
-            return jsonify({'error': 'Bad memo hash. Must be 64 bytes hex string'})
+    if data["memo_type"] == "memo_hash":
+        if not is_valid_hash(data["memo"]):
+            return jsonify({"error": "Bad memo hash. Must be 64 bytes hex string"})
 
     xdr = await stellar_build_xdr(data)
-    return jsonify({'xdr': xdr})
+    return jsonify({"xdr": xdr})
 
 
-@blueprint.route('/lab/xdr_to_json', methods=['POST'])
+@blueprint.route("/lab/xdr_to_json", methods=["POST"])
 async def cmd_xdr_to_json():
     data = await request.json
     xdr = data.get("xdr")
@@ -139,27 +144,41 @@ async def cmd_xdr_to_json():
     return jsonify(result)
 
 
-@blueprint.route('/lab/assets/<account_id>')
+@blueprint.route("/lab/assets/<account_id>")
 async def cmd_assets(account_id):
-    result = {'XLM': 'XLM'}
+    result = {"XLM": "XLM"}
     try:
-        account = Server(horizon_url="https://horizon.stellar.org").accounts().account_id(account_id).call()
-        for balance in account['balances']:
-            asset_code = balance.get('asset_code', 'XLM')
-            asset_issuer = balance.get('asset_issuer', 'XLM')
-            result[f"{asset_code}-{asset_issuer[:4]}..{asset_issuer[-4:]}"] = f"{asset_code}-{asset_issuer}"
-        assets = Server(horizon_url="https://horizon.stellar.org").assets().for_issuer(account_id).call()
-        for asset in assets['_embedded']['records']:
-            asset_code = asset.get('asset_code', 'XLM')
-            asset_issuer = asset.get('asset_issuer', 'XLM')
-            result[f"{asset_code}-{asset_issuer[:4]}..{asset_issuer[-4:]}"] = f"{asset_code}-{asset_issuer}"
-    except:
+        account = (
+            Server(horizon_url="https://horizon.stellar.org")
+            .accounts()
+            .account_id(account_id)
+            .call()
+        )
+        for balance in account["balances"]:
+            asset_code = balance.get("asset_code", "XLM")
+            asset_issuer = balance.get("asset_issuer", "XLM")
+            result[f"{asset_code}-{asset_issuer[:4]}..{asset_issuer[-4:]}"] = (
+                f"{asset_code}-{asset_issuer}"
+            )
+        assets = (
+            Server(horizon_url="https://horizon.stellar.org")
+            .assets()
+            .for_issuer(account_id)
+            .call()
+        )
+        for asset in assets["_embedded"]["records"]:
+            asset_code = asset.get("asset_code", "XLM")
+            asset_issuer = asset.get("asset_issuer", "XLM")
+            result[f"{asset_code}-{asset_issuer[:4]}..{asset_issuer[-4:]}"] = (
+                f"{asset_code}-{asset_issuer}"
+            )
+    except Exception:
         pass
 
     return jsonify(result)
 
 
-@blueprint.route('/lab/claimable_balances/<account_id>')
+@blueprint.route("/lab/claimable_balances/<account_id>")
 async def cmd_claimable_balances(account_id):
     result = {}
 
@@ -169,75 +188,87 @@ async def cmd_claimable_balances(account_id):
         if predicate is None:
             return False
 
-        if 'unconditional' in predicate:
-            return predicate['unconditional'] is True
+        if "unconditional" in predicate:
+            return predicate["unconditional"] is True
 
-        if 'abs_before' in predicate:
-            abs_before = predicate['abs_before']
+        if "abs_before" in predicate:
+            abs_before = predicate["abs_before"]
             if not abs_before:
                 return False
             try:
-                deadline = datetime.fromisoformat(abs_before.replace('Z', '+00:00'))
+                deadline = datetime.fromisoformat(abs_before.replace("Z", "+00:00"))
             except ValueError:
                 return False
             return now < deadline
 
-        if 'rel_before' in predicate:
-            rel_before_seconds = predicate['rel_before']
+        if "rel_before" in predicate:
+            rel_before_seconds = predicate["rel_before"]
             try:
                 seconds = int(rel_before_seconds)
             except (TypeError, ValueError):
                 return False
             return now < created_at_dt + timedelta(seconds=seconds)
 
-        if 'and' in predicate:
-            return all(predicate_allows_claim(item, created_at_dt) for item in predicate['and'])
+        if "and" in predicate:
+            return all(
+                predicate_allows_claim(item, created_at_dt) for item in predicate["and"]
+            )
 
-        if 'or' in predicate:
-            return any(predicate_allows_claim(item, created_at_dt) for item in predicate['or'])
+        if "or" in predicate:
+            return any(
+                predicate_allows_claim(item, created_at_dt) for item in predicate["or"]
+            )
 
-        if 'not' in predicate:
-            return not predicate_allows_claim(predicate['not'], created_at_dt)
+        if "not" in predicate:
+            return not predicate_allows_claim(predicate["not"], created_at_dt)
 
         return False
 
     try:
         response = await http_session_manager.get_web_request(
-            'GET',
-            f'https://horizon.stellar.org/claimable_balances?claimant={account_id}&limit=200',
-            return_type="json"
+            "GET",
+            f"https://horizon.stellar.org/claimable_balances?claimant={account_id}&limit=200",
+            return_type="json",
         )
 
         if response.status == 200:
-            records = response.data.get('_embedded', {}).get('records', [])
+            records = response.data.get("_embedded", {}).get("records", [])
             for record in records:
-                created_at = record.get('created_at')
+                created_at = record.get("created_at")
                 try:
-                    created_at_dt = datetime.fromisoformat(created_at.replace('Z', '+00:00')) if created_at else datetime.now(timezone.utc)
+                    created_at_dt = (
+                        datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                        if created_at
+                        else datetime.now(timezone.utc)
+                    )
                 except ValueError:
                     created_at_dt = datetime.now(timezone.utc)
 
-                for claimant in record.get('claimants', []):
-                    if claimant.get('destination') != account_id:
+                for claimant in record.get("claimants", []):
+                    if claimant.get("destination") != account_id:
                         continue
 
-                    predicate = claimant.get('predicate')
+                    predicate = claimant.get("predicate")
                     if not predicate_allows_claim(predicate, created_at_dt):
                         continue
 
-                    balance_id_full = record.get('id', '')
+                    balance_id_full = record.get("id", "")
                     if not balance_id_full:
                         continue
 
-                    balance_id_short = balance_id_full.lstrip('0') or balance_id_full
+                    balance_id_short = balance_id_full.lstrip("0") or balance_id_full
 
-                    asset_descriptor = record.get('asset', '')
-                    if asset_descriptor == 'native':
-                        asset_code = 'XLM'
+                    asset_descriptor = record.get("asset", "")
+                    if asset_descriptor == "native":
+                        asset_code = "XLM"
                     else:
-                        asset_code = asset_descriptor.split(':')[0] if ':' in asset_descriptor else asset_descriptor
+                        asset_code = (
+                            asset_descriptor.split(":")[0]
+                            if ":" in asset_descriptor
+                            else asset_descriptor
+                        )
 
-                    amount = record.get('amount', '0')
+                    amount = record.get("amount", "0")
                     label = f"{amount} {asset_code}"
                     result[label] = balance_id_short
     except Exception as ex:
@@ -246,105 +277,136 @@ async def cmd_claimable_balances(account_id):
     return jsonify(result)
 
 
-@blueprint.route('/lab/data/<account_id>')
+@blueprint.route("/lab/data/<account_id>")
 async def cmd_data(account_id):
     result = {}
     try:
-        account = Server(horizon_url="https://horizon.stellar.org").accounts().account_id(account_id).call()
-        for data_name in account.get('data'):
-            result[f"{data_name}={decode_data_value(account['data'][data_name])}"] = data_name
-    except:
+        account = (
+            Server(horizon_url="https://horizon.stellar.org")
+            .accounts()
+            .account_id(account_id)
+            .call()
+        )
+        for data_name in account.get("data"):
+            result[f"{data_name}={decode_data_value(account['data'][data_name])}"] = (
+                data_name
+            )
+    except Exception:
         pass
-    result['mtl_delegate if you want delegate your mtl votes'] = 'mtl_delegate'
-    result['mtl_donate if you want donate'] = 'mtl_donate'
+    result["mtl_delegate if you want delegate your mtl votes"] = "mtl_delegate"
+    result["mtl_donate if you want donate"] = "mtl_donate"
     return jsonify(result)
 
 
-@blueprint.route('/lab/offers/<account_id>')
+@blueprint.route("/lab/offers/<account_id>")
 async def cmd_offers(account_id):
     result = {}
     try:
-        account = Server(horizon_url="https://horizon.stellar.org").offers().for_account(account_id).call()
-        for record in account['_embedded']['records']:
+        account = (
+            Server(horizon_url="https://horizon.stellar.org")
+            .offers()
+            .for_account(account_id)
+            .call()
+        )
+        for record in account["_embedded"]["records"]:
             # Use 'native' for XLM asset code to match frontend logic if needed,
             # but Horizon returns asset_type='native' for XLM.
             # Let's ensure asset codes are present.
-            selling_code = record['selling'].get('asset_code', 'XLM')
-            buying_code = record['buying'].get('asset_code', 'XLM')
-            
+            selling_code = record["selling"].get("asset_code", "XLM")
+            buying_code = record["buying"].get("asset_code", "XLM")
+
             label = f"{record['id']} selling {record['amount']} {selling_code} for {buying_code} price {record['price']}"
             result[label] = json.dumps(record)
-    except:
+    except Exception:
         pass
     return jsonify(result)
 
 
-@blueprint.route('/lab/path/<asset_from>/<asset_for>/<asset_sum>')
+@blueprint.route("/lab/path/<asset_from>/<asset_for>/<asset_sum>")
 async def cmd_path(asset_from, asset_for, asset_sum):
     result = {}
     try:
-        account = Server(horizon_url="https://horizon.stellar.org").strict_send_paths(
-            source_asset=decode_asset(asset_from),
-            source_amount=float2str(asset_sum),
-            destination=[decode_asset(asset_for)]).call()
-        for record in account['_embedded']['records']:
-            destination_asset_code = record['destination_asset_code'] if record.get('destination_asset_code') else 'XLM'
-            result[f"{record['destination_amount']} {destination_asset_code}"] = json.dumps(record['path'])
+        account = (
+            Server(horizon_url="https://horizon.stellar.org")
+            .strict_send_paths(
+                source_asset=decode_asset(asset_from),
+                source_amount=float2str(asset_sum),
+                destination=[decode_asset(asset_for)],
+            )
+            .call()
+        )
+        for record in account["_embedded"]["records"]:
+            destination_asset_code = (
+                record["destination_asset_code"]
+                if record.get("destination_asset_code")
+                else "XLM"
+            )
+            result[f"{record['destination_amount']} {destination_asset_code}"] = (
+                json.dumps(record["path"])
+            )
     except Exception as e:
         logger.info(f"Error: {e}")
     return jsonify(result)
 
 
-@blueprint.route('/lab/check_balance', methods=['POST'])
+@blueprint.route("/lab/check_balance", methods=["POST"])
 async def cmd_check_balance():
     data = await request.json
-    account_id = data.get('account_id')
-    asset_str = data.get('asset')
+    account_id = data.get("account_id")
+    asset_str = data.get("asset")
 
     if not account_id or len(account_id) != 56:
-        return jsonify({'error': 'Invalid account ID'}), 400
+        return jsonify({"error": "Invalid account ID"}), 400
     if not asset_str:
-        return jsonify({'error': 'Invalid asset'}), 400
+        return jsonify({"error": "Invalid asset"}), 400
 
     # Check if issuer (Asset format: CODE-ISSUER)
-    if '-' in asset_str:
+    if "-" in asset_str:
         try:
-            code, issuer = asset_str.split('-')
+            code, issuer = asset_str.split("-")
             if issuer == account_id:
-                return jsonify({'balance': 'Unlimited', 'is_issuer': True})
-        except:
+                return jsonify({"balance": "Unlimited", "is_issuer": True})
+        except Exception:
             pass
 
     try:
-        account = Server(horizon_url="https://horizon.stellar.org").accounts().account_id(account_id).call()
-        
+        account = (
+            Server(horizon_url="https://horizon.stellar.org")
+            .accounts()
+            .account_id(account_id)
+            .call()
+        )
+
         balance_val = "0"
-        
-        if asset_str == 'XLM':
-            for bal in account['balances']:
-                if bal['asset_type'] == 'native':
-                    balance_val = bal['balance']
+
+        if asset_str == "XLM":
+            for bal in account["balances"]:
+                if bal["asset_type"] == "native":
+                    balance_val = bal["balance"]
                     break
-        elif '-' in asset_str:
-            code, issuer = asset_str.split('-')
-            for bal in account['balances']:
-                if bal.get('asset_code') == code and bal.get('asset_issuer') == issuer:
-                    balance_val = bal['balance']
+        elif "-" in asset_str:
+            code, issuer = asset_str.split("-")
+            for bal in account["balances"]:
+                if bal.get("asset_code") == code and bal.get("asset_issuer") == issuer:
+                    balance_val = bal["balance"]
                     break
-        elif len(asset_str) == 64: # Liquidity Pool ID
-            for bal in account['balances']:
-                if bal.get('asset_type') == 'liquidity_pool_shares' and bal.get('liquidity_pool_id') == asset_str:
-                    balance_val = bal['balance']
+        elif len(asset_str) == 64:  # Liquidity Pool ID
+            for bal in account["balances"]:
+                if (
+                    bal.get("asset_type") == "liquidity_pool_shares"
+                    and bal.get("liquidity_pool_id") == asset_str
+                ):
+                    balance_val = bal["balance"]
                     break
-        
-        return jsonify({'balance': balance_val})
+
+        return jsonify({"balance": balance_val})
 
     except Exception as e:
         logger.warning(f"Error fetching balance: {e}")
-        return jsonify({'error': 'Failed to fetch account'}), 400
+        return jsonify({"error": "Failed to fetch account"}), 400
 
 
-@blueprint.route('/lab/update_memo', methods=['POST'])
+@blueprint.route("/lab/update_memo", methods=["POST"])
 async def lab_update_memo():
     data = await request.json
     xdr = data.get("xdr")
@@ -354,22 +416,25 @@ async def lab_update_memo():
         return jsonify({"error": "Invalid or missing XDR"}), 400
 
     if not new_memo or len(new_memo) < 3 or len(new_memo) > 28:
-        return jsonify({"error": "Invalid memo length. Must be between 3 and 28 characters"}), 400
+        return jsonify(
+            {"error": "Invalid memo length. Must be between 3 and 28 characters"}
+        ), 400
 
     if not new_memo.isascii():
         return jsonify({"error": "Memo must contain only ASCII characters"}), 400
 
     try:
         new_xdr = update_memo_in_xdr(xdr, new_memo)
-        return jsonify({
-            "success": True,
-            "xdr": new_xdr
-        }), 200
+        return jsonify({"success": True, "xdr": new_xdr}), 200
     except Exception as e:
-        return jsonify({
-            "error": f"Failed to update memo: {str(e)}"
-        }), 400
+        return jsonify({"error": f"Failed to update memo: {str(e)}"}), 400
 
 
-if __name__ == '__main__':
-    asyncio.run(cmd_path('XLM', 'BTCMTL-GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V', '150'))
+if __name__ == "__main__":
+    asyncio.run(
+        cmd_path(
+            "XLM",
+            "BTCMTL-GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+            "150",
+        )
+    )

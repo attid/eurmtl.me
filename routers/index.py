@@ -56,6 +56,7 @@ async def cmd_index():
 
 
 @blueprint.route("/llm.txt")
+@blueprint.route("/llms.txt")
 async def llm_txt():
     return Response(await render_template("llm.txt"), mimetype="text/plain")
 
