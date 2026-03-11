@@ -9,6 +9,7 @@ from quart import jsonify as quart_jsonify
 
 DEFAULT_TIMEOUT = 10
 
+
 # Датакласс для ответа
 @dataclass
 class WebResponse:
@@ -29,9 +30,9 @@ class HTTPSessionManager:
         async with self._lock:  # Блокируем доступ к сессии
             current_time = time.monotonic()
             if (
-                    self.session is None
-                    or self.session.closed
-                    or current_time - self.session_start_time > self.max_session_duration
+                self.session is None
+                or self.session.closed
+                or current_time - self.session_start_time > self.max_session_duration
             ):
                 if self.session and not self.session.closed:
                     await self.session.close()
@@ -48,13 +49,13 @@ class HTTPSessionManager:
                 logger.info("Сессия закрыта.")
 
     async def get_web_request(
-            self,
-            method: str,
-            url: str,
-            json: Optional[Dict[str, Any]] = None,
-            headers: Optional[Dict[str, str]] = None,
-            data: Optional[Union[Dict[str, Any], str]] = None,
-            return_type: Optional[str] = None,  # 'json', 'text', or 'bytes'
+        self,
+        method: str,
+        url: str,
+        json: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        data: Optional[Union[Dict[str, Any], str]] = None,
+        return_type: Optional[str] = None,  # 'json', 'text', or 'bytes'
     ) -> WebResponse:
         """
         Выполняет HTTP-запрос с использованием текущей сессии.
@@ -74,12 +75,12 @@ class HTTPSessionManager:
 
         try:
             async with session.request(
-                    method.upper(),
-                    url,
-                    json=json,
-                    headers=headers,
-                    data=data,
-                    timeout=timeout,
+                method.upper(),
+                url,
+                json=json,
+                headers=headers,
+                data=data,
+                timeout=timeout,
             ) as response:
                 content_type = response.headers.get("Content-Type", "")
                 elapsed_time = time.monotonic() - start_time
@@ -100,7 +101,9 @@ class HTTPSessionManager:
                 )
         except asyncio.TimeoutError:
             elapsed_time = time.monotonic() - start_time
-            return WebResponse(status=408, data="Request timed out", elapsed_time=elapsed_time)
+            return WebResponse(
+                status=408, data="Request timed out", elapsed_time=elapsed_time
+            )
         except aiohttp.ClientError as e:
             raise Exception(f"Ошибка при выполнении запроса: {e}")
 
@@ -130,25 +133,26 @@ async def main():
 
 async def get_eurmtl_xdr(url):
     try:
-        url = 'https://eurmtl.me/remote/get_xdr/' + url.split('/')[-1]
-        response = await http_session_manager.get_web_request('GET', url=url)
+        url = "https://eurmtl.me/remote/get_xdr/" + url.split("/")[-1]
+        response = await http_session_manager.get_web_request("GET", url=url)
 
-        if 'xdr' in response.data:
-            return response.data['xdr']
+        if "xdr" in response.data:
+            return response.data["xdr"]
         else:
             return 'Invalid response format: missing "xdr" field.'
     except Exception as ex:
-        logger.info(['get_eurmtl_xdr', ex])
-        return 'An error occurred during the request.'
+        logger.info(["get_eurmtl_xdr", ex])
+        return "An error occurred during the request."
+
 
 def cors_jsonify(*args, **kwargs) -> Tuple:
     """
     Обертка для функции jsonify из Quart, которая автоматически добавляет CORS заголовки.
-    
+
     Использование:
     return cors_jsonify(data)  # Возвращает (response, 200)
     return cors_jsonify(data, 404)  # Возвращает (response, 404)
-    
+
     :param args: Аргументы для передачи в jsonify
     :param kwargs: Именованные аргументы для передачи в jsonify
     :return: Кортеж (response, status_code)
@@ -158,17 +162,17 @@ def cors_jsonify(*args, **kwargs) -> Tuple:
     if len(args) > 1 and isinstance(args[-1], int):
         status_code = args[-1]
         args = args[:-1]
-    elif 'status_code' in kwargs:
-        status_code = kwargs.pop('status_code')
-    
+    elif "status_code" in kwargs:
+        status_code = kwargs.pop("status_code")
+
     # Создаем ответ с помощью jsonify
     resp = quart_jsonify(*args, **kwargs)
-    
+
     # Добавляем CORS заголовки
-    resp.headers.add('Access-Control-Allow-Origin', '*')
-    resp.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-    resp.headers.add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-    
+    resp.headers.add("Access-Control-Allow-Origin", "*")
+    resp.headers.add("Access-Control-Allow-Headers", "Content-Type")
+    resp.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
     return resp, status_code
 
 

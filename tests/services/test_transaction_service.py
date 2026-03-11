@@ -3,11 +3,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from sqlalchemy import select
 from services.transaction_service import TransactionService
 from db.sql_models import Transactions, Signers, Signatures, Alerts
+from stellar_sdk.exceptions import BadSignatureError
 
 
 @pytest.fixture
 def mock_session():
-    return AsyncMock()
+    session = AsyncMock()
+    session.add = MagicMock()
+    return session
 
 
 @pytest.fixture
@@ -152,6 +155,321 @@ async def test_add_or_remove_alert_returns_error_on_session_failure(
 
     assert result["success"] is False
     assert "db failed" in result["message"]
+
+
+def _result_with(first=None, all_items=None):
+    result = MagicMock()
+    result.scalars().first.return_value = first
+    result.scalars().all.return_value = all_items or []
+    return result
+
+
+def _signature_mock(hint="hint1", xdr_value="sig-xdr", signature_bytes=b"sig"):
+    signature = MagicMock()
+    signature.signature_hint.hex.return_value = hint
+    signature.to_xdr_object.return_value.to_xdr.return_value = xdr_value
+    signature.signature = signature_bytes
+    return signature
+
+
+@pytest.mark.asyncio
+async def test_get_transaction_details_happy_path(transaction_service, mock_session):
+    transaction = Transactions(
+        hash="a" * 64,
+        body="AAAA",
+        json='{"GA1":{"threshold":2,"signers":[["GA1",2,"hint1"]]}}',
+        description="Decision text",
+        uuid="u" * 32,
+    )
+    db_signer = Signers(id=1, public_key="GA1", tg_id=100)
+    db_signature = Signatures(
+        id=1,
+        signer_id=1,
+        signature_xdr="sig-xdr",
+        transaction_hash=transaction.hash,
+    )
+    db_signature.add_dt = MagicMock()
+
+    transaction_service.get_transaction_by_hash = AsyncMock(return_value=transaction)
+    transaction_service.repo.get_signature_by_signer_public_key = AsyncMock(
+        return_value=None
+    )
+    transaction_service.repo.get_signer_by_public_key = AsyncMock(
+        return_value=db_signer
+    )
+    transaction_service.repo.get_latest_signature_by_signer = AsyncMock(
+        return_value=None
+    )
+    transaction_service.repo.get_latest_signature_for_source = AsyncMock(
+        return_value=None
+    )
+    transaction_service.repo.get_all_signatures_for_transaction = AsyncMock(
+        return_value=[db_signature]
+    )
+    mock_session.execute.side_effect = [
+        _result_with(first=Alerts(id=1, tg_id=100, transaction_hash=transaction.hash)),
+        _result_with(all_items=[db_signer]),
+    ]
+
+    with (
+        patch(
+            "services.transaction_service.check_user_in_sign",
+            AsyncMock(return_value=True),
+        ),
+        patch(
+            "services.transaction_service.check_publish_state",
+            AsyncMock(return_value=(1, "date")),
+        ),
+        patch(
+            "services.transaction_service.load_users_from_grist",
+            AsyncMock(
+                side_effect=[
+                    {"GA1": MagicMock(username="alice", telegram_id=100)},
+                    {"GA1": MagicMock(username="alice", telegram_id=100)},
+                ]
+            ),
+        ),
+        patch("services.transaction_service.TransactionEnvelope.from_xdr") as from_xdr,
+    ):
+        envelope = MagicMock()
+        envelope.signatures = []
+        envelope.to_xdr.return_value = "full-xdr"
+        from_xdr.return_value = envelope
+
+        result = await transaction_service.get_transaction_details(
+            transaction.hash, 100
+        )
+
+    assert result["admin_weight"] == 2
+    assert result["alert"].tg_id == 100
+    assert result["tx_full"] == "full-xdr"
+    assert result["publish_state"] == (1, "date")
+    assert result["signers_table"][0]["threshold"] == 2
+    assert result["signers_table"][0]["signers"][0][1] == "alice"
+    assert result["signatures"][0][2] == "alice"
+
+
+@pytest.mark.asyncio
+async def test_get_transaction_details_returns_bad_xdr_on_invalid_json(
+    transaction_service,
+):
+    transaction = Transactions(
+        hash="a" * 64, body="AAAA", json="{bad", description="Broken"
+    )
+    transaction_service.get_transaction_by_hash = AsyncMock(return_value=transaction)
+
+    with patch(
+        "services.transaction_service.check_user_in_sign", AsyncMock(return_value=False)
+    ):
+        result = await transaction_service.get_transaction_details(transaction.hash, 0)
+
+    assert result["error"] == "BAD xdr. Can`t load"
+
+
+@pytest.mark.asyncio
+async def test_sign_transaction_from_xdr_handles_existing_signature(
+    transaction_service, mock_session
+):
+    signature = _signature_mock()
+    envelope = MagicMock()
+    envelope.hash_hex.return_value = "a" * 64
+    envelope.signatures = [signature]
+    envelope.hash.return_value = b"hash"
+
+    transaction = Transactions(
+        hash="a" * 64,
+        body="AAAA",
+        json='{"GA1":{"signers":[["GA1",1,"hint1"]]}}',
+        description="Tx",
+    )
+    db_signer = Signers(id=1, public_key="GA1", signature_hint="hint1")
+    mock_session.execute.side_effect = [
+        _result_with(all_items=[db_signer]),
+        _result_with(first=object()),
+    ]
+    transaction_service.repo.get_by_hash = AsyncMock(return_value=transaction)
+
+    with (
+        patch(
+            "services.transaction_service.TransactionEnvelope.from_xdr",
+            return_value=envelope,
+        ),
+        patch(
+            "services.transaction_service.load_users_from_grist",
+            AsyncMock(return_value={"GA1": MagicMock(username="alice")}),
+        ),
+    ):
+        result = await transaction_service.sign_transaction_from_xdr("AAAA")
+
+    assert result["MESSAGES"] == ["Can`t add alice. Already was added."]
+
+
+@pytest.mark.asyncio
+async def test_sign_transaction_from_xdr_rejects_unknown_signature_hint(
+    transaction_service, mock_session
+):
+    signature = _signature_mock(hint="missing")
+    envelope = MagicMock()
+    envelope.hash_hex.return_value = "a" * 64
+    envelope.signatures = [signature]
+    envelope.hash.return_value = b"hash"
+
+    transaction = Transactions(
+        hash="a" * 64,
+        body="AAAA",
+        json='{"GA1":{"signers":[["GA1",1,"hint1"]]}}',
+        description="Tx",
+    )
+    db_signer = Signers(id=1, public_key="GA1", signature_hint="hint1")
+    mock_session.execute.side_effect = [
+        _result_with(all_items=[db_signer]),
+        _result_with(first=None),
+    ]
+    transaction_service.repo.get_by_hash = AsyncMock(return_value=transaction)
+
+    with (
+        patch(
+            "services.transaction_service.TransactionEnvelope.from_xdr",
+            return_value=envelope,
+        ),
+        patch(
+            "services.transaction_service.load_users_from_grist",
+            AsyncMock(return_value={"GA1": MagicMock(username="alice")}),
+        ),
+    ):
+        result = await transaction_service.sign_transaction_from_xdr("AAAA")
+
+    assert result["MESSAGES"] == ["Bad signature. missing not found"]
+
+
+@pytest.mark.asyncio
+async def test_sign_transaction_from_xdr_rejects_unverifiable_signature(
+    transaction_service, mock_session
+):
+    signature = _signature_mock()
+    envelope = MagicMock()
+    envelope.hash_hex.return_value = "a" * 64
+    envelope.signatures = [signature]
+    envelope.hash.return_value = b"hash"
+
+    transaction = Transactions(
+        hash="a" * 64,
+        body="AAAA",
+        json='{"GA1":{"signers":[["GA1",1,"hint1"]]}}',
+        description="Tx",
+    )
+    db_signer = Signers(id=1, public_key="GA1", signature_hint="hint1")
+    mock_session.execute.side_effect = [
+        _result_with(all_items=[db_signer]),
+        _result_with(first=None),
+    ]
+    transaction_service.repo.get_by_hash = AsyncMock(return_value=transaction)
+
+    with (
+        patch(
+            "services.transaction_service.TransactionEnvelope.from_xdr",
+            return_value=envelope,
+        ),
+        patch(
+            "services.transaction_service.load_users_from_grist",
+            AsyncMock(return_value={"GA1": MagicMock(username="alice")}),
+        ),
+        patch(
+            "services.transaction_service.Keypair.from_public_key"
+        ) as from_public_key,
+    ):
+        from_public_key.return_value.verify.side_effect = BadSignatureError("bad")
+        result = await transaction_service.sign_transaction_from_xdr("AAAA")
+
+    assert result["MESSAGES"] == ["Bad signature. hint1 not verify"]
+
+
+@pytest.mark.asyncio
+async def test_sign_transaction_from_xdr_adds_valid_signature_and_notifies(
+    transaction_service, mock_session
+):
+    signature = _signature_mock()
+    envelope = MagicMock()
+    envelope.hash_hex.return_value = "a" * 64
+    envelope.signatures = [signature]
+    envelope.hash.return_value = b"hash"
+
+    transaction = Transactions(
+        hash="a" * 64,
+        body="AAAA",
+        json='{"GA1":{"signers":[["GA1",1,"hint1"]]}}',
+        description="Tx",
+    )
+    db_signer = Signers(id=1, public_key="GA1", signature_hint="hint1")
+    mock_session.execute.side_effect = [
+        _result_with(all_items=[db_signer]),
+        _result_with(first=None),
+    ]
+    transaction_service.repo.get_by_hash = AsyncMock(return_value=transaction)
+    transaction_service.alert_signers_notify = AsyncMock()
+
+    with (
+        patch(
+            "services.transaction_service.TransactionEnvelope.from_xdr",
+            return_value=envelope,
+        ),
+        patch(
+            "services.transaction_service.load_users_from_grist",
+            AsyncMock(return_value={"GA1": MagicMock(username="alice")}),
+        ),
+        patch(
+            "services.transaction_service.Keypair.from_public_key"
+        ) as from_public_key,
+    ):
+        from_public_key.return_value.verify.return_value = None
+        result = await transaction_service.sign_transaction_from_xdr("AAAA")
+
+    assert result["SUCCESS"] is True
+    assert result["MESSAGES"] == ["Added signature from alice"]
+    mock_session.add.assert_called_once()
+    mock_session.commit.assert_awaited_once()
+    transaction_service.alert_signers_notify.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_refresh_transaction_authorizes_owner_and_reports_result(
+    transaction_service,
+):
+    transaction = Transactions(hash="a" * 64, owner_id=123)
+    transaction_service.get_transaction_by_hash = AsyncMock(return_value=transaction)
+
+    with (
+        patch(
+            "services.transaction_service.check_user_in_sign",
+            AsyncMock(return_value=False),
+        ),
+        patch(
+            "services.transaction_service.update_transaction_sources",
+            AsyncMock(return_value=True),
+        ),
+    ):
+        ok, message = await transaction_service.refresh_transaction(
+            transaction.hash, 123
+        )
+
+    assert ok is True
+    assert "успешно обновлена" in message
+
+
+@pytest.mark.asyncio
+async def test_refresh_transaction_rejects_without_permissions(transaction_service):
+    transaction = Transactions(hash="a" * 64, owner_id=999)
+    transaction_service.get_transaction_by_hash = AsyncMock(return_value=transaction)
+
+    with patch(
+        "services.transaction_service.check_user_in_sign", AsyncMock(return_value=False)
+    ):
+        ok, message = await transaction_service.refresh_transaction(
+            transaction.hash, 123
+        )
+
+    assert ok is False
+    assert "нет прав" in message
 
 
 # ===== New tests with real SQLite DB =====

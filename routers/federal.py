@@ -1,5 +1,12 @@
 from sqlalchemy import select
-from quart import Blueprint, request, jsonify, make_response, render_template, current_app
+from quart import (
+    Blueprint,
+    request,
+    jsonify,
+    make_response,
+    render_template,
+    current_app,
+)
 from stellar_sdk import Network
 from stellar_sdk.exceptions import BadRequestError
 from stellar_sdk.sep.stellar_web_authentication import build_challenge_transaction
@@ -8,53 +15,65 @@ from other.config_reader import config
 from db.sql_models import Addresses
 from quart_cors import cors
 
-blueprint = Blueprint('federal', __name__)
+blueprint = Blueprint("federal", __name__)
 cors_enabled_blueprint = cors(blueprint, allow_origin="*")
 
 
-@blueprint.route('/federation')
-@blueprint.route('/federation/')
+@blueprint.route("/federation")
+@blueprint.route("/federation/")
 async def federation():
     # https://eurmtl.me/federation/?q=english*eurmtl.me&type=name
     # https://eurmtl.me/federation/?q=GAPQ3YSV4IXUC2MWSVVUHGETWE6C2OYVFTHM3QFBC64MQWUUIM5PCLUB&type=id
-    if request.args.get('q') and request.args.get('type'):
-        if request.args.get('type') == 'name':
+    if request.args.get("q") and request.args.get("type"):
+        if request.args.get("type") == "name":
             async with current_app.db_pool() as db_session:
-                result = await db_session.execute(select(Addresses).filter(Addresses.stellar_address == request.args.get('q')))
+                result = await db_session.execute(
+                    select(Addresses).filter(
+                        Addresses.stellar_address == request.args.get("q")
+                    )
+                )
                 address = result.scalars().first()
                 if address:
-                    result = {"stellar_address": address.stellar_address,
-                              "account_id": address.account_id}
+                    result = {
+                        "stellar_address": address.stellar_address,
+                        "account_id": address.account_id,
+                    }
                     if address.memo:
-                        result['memo_type'] = "text"
-                        result['memo'] = address.memo
+                        result["memo_type"] = "text"
+                        result["memo"] = address.memo
                     resp = jsonify(result)
-                    resp.headers.add('Access-Control-Allow-Origin', '*')
+                    resp.headers.add("Access-Control-Allow-Origin", "*")
                     return resp
 
-        if request.args.get('type') == 'id':
+        if request.args.get("type") == "id":
             async with current_app.db_pool() as db_session:
-                result = await db_session.execute(select(Addresses).filter(Addresses.account_id == request.args.get('q')))
+                result = await db_session.execute(
+                    select(Addresses).filter(
+                        Addresses.account_id == request.args.get("q")
+                    )
+                )
                 address = result.scalars().first()
                 if address:
-                    result = {"stellar_address": address.stellar_address,
-                              "account_id": address.account_id}
+                    result = {
+                        "stellar_address": address.stellar_address,
+                        "account_id": address.account_id,
+                    }
                     resp = jsonify(result)
-                    resp.headers.add('Access-Control-Allow-Origin', '*')
+                    resp.headers.add("Access-Control-Allow-Origin", "*")
                     return resp
 
-    return jsonify({'error': "Not found."})
+    return jsonify({"error": "Not found."})
 
 
-@blueprint.route('/.well-known/stellar.toml')
+@blueprint.route("/.well-known/stellar.toml")
 async def stellar_toml():
-    resp = await make_response(await render_template('stellar.toml'))
-    resp.headers['Access-Control-Allow-Origin'] = '*'
-    resp.headers['Content-Type'] = 'text/plain'
+    resp = await make_response(await render_template("stellar.toml"))
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Content-Type"] = "text/plain"
     return resp
 
 
-@blueprint.route('/sep6/info')
+@blueprint.route("/sep6/info")
 async def sep6_info():
     result = {
         "deposit": {
@@ -70,15 +89,12 @@ async def sep6_info():
                         "fields": {
                             "network": {
                                 "description": "Choose your network",
-                                "choices": ["TRC-20", "BEP-20"]
+                                "choices": ["TRC-20", "BEP-20"],
                             }
                         }
                     },
-                    "BEP-20": {
-                        "fields": {
-                        }
-                    }
-                }
+                    "BEP-20": {"fields": {}},
+                },
             },
             "EURMTL": {
                 "enabled": True,
@@ -92,16 +108,16 @@ async def sep6_info():
                         "fields": {
                             "city": {
                                 "description": "Choose your city",
-                                "choices": ["Bar", "Budva", "Podgorica"]
+                                "choices": ["Bar", "Budva", "Podgorica"],
                             },
                             "telegram": {
                                 "description": "Your telegram username",
-                                "optional": True
-                            }
+                                "optional": True,
+                            },
                         }
                     }
-                }
-            }
+                },
+            },
         },
         "withdraw": {
             "USDM": {
@@ -116,7 +132,7 @@ async def sep6_info():
                         "fields": {
                             "dest": {
                                 "description": "The USDT address in TRC-20",
-                                "optional": False
+                                "optional": False,
                             }
                         }
                     },
@@ -124,7 +140,7 @@ async def sep6_info():
                         "fields": {
                             "dest": {
                                 "description": "The USDT address in BEP-20",
-                                "optional": False
+                                "optional": False,
                             }
                         }
                     },
@@ -132,12 +148,11 @@ async def sep6_info():
                         "fields": {
                             "dest": {
                                 "description": "The USDT address in Stellar network",
-                                "optional": False
+                                "optional": False,
                             }
                         }
-                    }
-
-                }
+                    },
+                },
             },
             "EURMTL": {
                 "enabled": True,
@@ -151,7 +166,7 @@ async def sep6_info():
                         "fields": {
                             "telegram": {
                                 "description": "Your telegram username",
-                                "optional": True
+                                "optional": True,
                             }
                         }
                     },
@@ -159,54 +174,37 @@ async def sep6_info():
                         "fields": {
                             "telegram": {
                                 "description": "Your telegram username",
-                                "optional": True
+                                "optional": True,
                             }
                         }
-                    }
-                }
-            }
+                    },
+                },
+            },
         },
-        "fee": {
-            "enabled": False
-        },
-        "deposit-exchange": {
-            "enabled": False
-        },
-        "withdraw-exchange": {
-            "enabled": False
-        },
-        "transactions": {
-            "enabled": False
-        },
-        "transaction": {
-            "enabled": False,
-            "authentication_required": False
-        },
-        "features": {
-            "account_creation": False,
-            "claimable_balances": False
-        }
+        "fee": {"enabled": False},
+        "deposit-exchange": {"enabled": False},
+        "withdraw-exchange": {"enabled": False},
+        "transactions": {"enabled": False},
+        "transaction": {"enabled": False, "authentication_required": False},
+        "features": {"account_creation": False, "claimable_balances": False},
     }
     resp = jsonify(result)
     # resp.headers.add('Access-Control-Allow-Origin', '*')
     return resp
 
 
-@blueprint.route('/sep6/deposit', methods=['GET', 'POST', 'OPTIONS'])
+@blueprint.route("/sep6/deposit", methods=["GET", "POST", "OPTIONS"])
 async def sep6_deposit():
     # /sep6/deposit?asset_code=USDM&account=GDXMB6I6RYYO7BIQNKNQ4XPY2RP5XJMBZEXVI5KFSG3PH3BRFAGQZXEP&claimable_balance_supported=false&type=undefined&amount=300
-    asset_code = request.args.get('asset_code')
-    account = request.args.get('account')
-    type_ = request.args.get('type')
-    amount = request.args.get('amount')
+    asset_code = request.args.get("asset_code")
     result = {}
-    if asset_code == 'USDM':
+    if asset_code == "USDM":
         result = {
             "how": "TJaGpx1zVVmKgYwSdeSr6YmsuDcHHhgZDS",
             "instructions": {
                 "organization.crypto_address": {
                     "value": "TJaGpx1zVVmKgYwSdeSr6YmsuDcHHhgZDS",
-                    "description": "TRC-20 address"
+                    "description": "TRC-20 address",
                 }
             },
             "id": "0a35a1092b6cc705b2fe8130a2ea",
@@ -215,15 +213,15 @@ async def sep6_deposit():
             "max_amount": 3000,
             "fee_fixed": 0,
             "fee_percent": 0,
-            "extra_info": {}
+            "extra_info": {},
         }
-    if asset_code == 'EURMTL':
+    if asset_code == "EURMTL":
         result = {
             "how": "Wait telegram message",
             "instructions": {
                 "organization.website": {
                     "value": "eurmtl.me",
-                    "description": "Wait telegram message"
+                    "description": "Wait telegram message",
                 }
             },
             "id": "0a35a1092b6cc705b2fe8130a2ea",
@@ -232,7 +230,7 @@ async def sep6_deposit():
             "max_amount": 3000,
             "fee_fixed": 0,
             "fee_percent": 0,
-            "extra_info": {}
+            "extra_info": {},
         }
 
     resp = jsonify(result)
@@ -240,15 +238,12 @@ async def sep6_deposit():
     return resp
 
 
-@blueprint.route('/sep6/withdraw', methods=['GET', 'POST', 'OPTIONS'])
+@blueprint.route("/sep6/withdraw", methods=["GET", "POST", "OPTIONS"])
 async def sep6_withdraw():
     # /sep6/withdraw?asset_code=EURMTL&account=GDXMB6I6RYYO7BIQNKNQ4XPY2RP5XJMBZEXVI5KFSG3PH3BRFAGQZXEP&claimable_balance_supported=false&type=cash&dest=attid&city=Kislar
-    asset_code = request.args.get('asset_code')
-    account = request.args.get('account')
-    type_ = request.args.get('type')
-    amount = request.args.get('amount')
+    asset_code = request.args.get("asset_code")
     result = {}
-    if asset_code == 'USDM':
+    if asset_code == "USDM":
         result = {
             "account_id": "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI",
             "memo_type": "text",
@@ -259,11 +254,9 @@ async def sep6_withdraw():
             "max_amount": "3000",
             "fee_fixed": 2,
             "fee_percent": 0,
-            "extra_info": {
-                "message": ""
-            }
+            "extra_info": {"message": ""},
         }
-    if asset_code == 'EURMTL':
+    if asset_code == "EURMTL":
         result = {
             "account_id": "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI",
             "memo_type": "text",
@@ -274,9 +267,7 @@ async def sep6_withdraw():
             "max_amount": "3000",
             "fee_fixed": 2,
             "fee_percent": 0,
-            "extra_info": {
-                "message": ""
-            }
+            "extra_info": {"message": ""},
         }
 
     resp = jsonify(result)
@@ -292,17 +283,17 @@ async def sep6_withdraw():
 # https://anchor.mtl.montelibero.org/sep6/transaction?id=0a35a1092b6cc705b2fe8130a2ea
 
 
-@blueprint.route('/auth', methods=['GET', 'POST', 'OPTIONS'])
+@blueprint.route("/auth", methods=["GET", "POST", "OPTIONS"])
 async def sep10_auth():
     # Обрабатываем только GET-запросы для аутентификации
-    if request.method == 'GET':
-        account = request.args.get('account')
-        home_domain = request.args.get('home_domain')
-        client_domain = request.args.get('client_domain')
+    if request.method == "GET":
+        account = request.args.get("account")
+        home_domain = request.args.get("home_domain")
+        client_domain = request.args.get("client_domain")
 
         # Проверяем валидность запроса
         if not account or not home_domain:
-            return jsonify({'error': 'Missing required parameters.'}), 400
+            return jsonify({"error": "Missing required parameters."}), 400
 
         # Создаём вызов транзакции для аутентификации
         try:
@@ -310,14 +301,14 @@ async def sep10_auth():
                 server_secret=config.domain_key.get_secret_value(),
                 client_account_id=account,
                 home_domain=home_domain,
-                web_auth_domain='anchor.mtl.montelibero.org',
+                web_auth_domain="anchor.mtl.montelibero.org",
                 client_domain=client_domain,
-                network_passphrase=Network.TESTNET_NETWORK_PASSPHRASE
+                network_passphrase=Network.TESTNET_NETWORK_PASSPHRASE,
             )
         except BadRequestError as e:
-            return jsonify({'error': str(e)}), 400
+            return jsonify({"error": str(e)}), 400
 
         # Возвращаем транзакцию клиенту
-        return jsonify({'transaction': transaction})
+        return jsonify({"transaction": transaction})
 
-    return jsonify({'error': 'Invalid request method.'}), 405
+    return jsonify({"error": "Invalid request method."}), 405
