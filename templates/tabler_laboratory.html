@@ -21,6 +21,9 @@
                 <li class="nav-item">
                     <a href="#batch-operations" class="nav-link" data-bs-toggle="tab">Пакетные операции</a>
                 </li>
+                <li class="nav-item">
+                    <a href="#all-operations" class="nav-link" data-bs-toggle="tab">All</a>
+                </li>
             </ul>
         </div>
         <div class="card-body tab-content">
@@ -77,6 +80,45 @@
                     <select id="operation-batch" name="operation-batch" class="form-select"
                             onchange="addOperation(this)">
                         <option value="" disabled selected>Choose operation type</option>
+                        <option value="clawback">Clawback</option>
+                        <option value="copy_multi_sign">Copy Multi Sign</option>
+                        <option value="payDivs">Pay Divs</option>
+                        <option value="begin_sponsoring_future_reserves">Begin Sponsoring Future Reserves</option>
+                        <option value="end_sponsoring_future_reserves">End Sponsoring Future Reserves</option>
+                        <option value="revoke_sponsorship">Revoke Sponsorship</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="all-operations">
+                <div class="mb-3">
+                    <label for="operation-all-filter" class="form-label">Поиск по названию</label>
+                    <input type="text" id="operation-all-filter" class="form-control" placeholder="Например: payment, sponsor, trust"
+                           oninput="filterAllOperations(this.value)">
+                </div>
+                <div class="mb-3">
+                    <label for="operation-all" class="form-label">Все операции</label>
+                    <select id="operation-all" name="operation-all" class="form-select"
+                            onchange="addOperation(this)">
+                        <option value="" data-role="operation-placeholder" disabled selected>Choose operation type</option>
+                        <option value="payment">Payment</option>
+                        <option value="trust_payment">Payment with Trust</option>
+                        <option value="buy">Buy</option>
+                        <option value="sell">Sell</option>
+                        <option value="sell_passive">Sell passive</option>
+                        <option value="swap">Swap</option>
+                        <option value="create_account">Create account</option>
+                        <option value="create_claimable_balance">Create Claimable Balance</option>
+                        <option value="claim_claimable_balance">Claim Claimable Balance</option>
+                        <option value="change_trust">Change Trust</option>
+                        <option value="manage_data">Manage Data</option>
+                        <option value="options">Set Option</option>
+                        <option value="options_signer">Set Option (Signer)</option>
+                        <option value="set_trust_line_flags">Set TrustLine Flags</option>
+                        <option value="bump_sequence">Bump Sequence</option>
+                        <option value="liquidity_pool_deposit">Liquidity Pool Deposit</option>
+                        <option value="liquidity_pool_withdraw">Liquidity Pool Withdraw</option>
+                        <option value="liquidity_pool_trustline">Liquidity Pool Trustline</option>
                         <option value="clawback">Clawback</option>
                         <option value="copy_multi_sign">Copy Multi Sign</option>
                         <option value="payDivs">Pay Divs</option>
@@ -175,6 +217,25 @@
     function safeToast(message, level) {
         if (typeof showToast === 'function') {
             showToast(message, level);
+        }
+    }
+
+    function filterAllOperations(query) {
+        const select = document.getElementById('operation-all');
+        if (!select) {
+            return;
+        }
+
+        const normalizedQuery = (query || '').trim().toLowerCase();
+        const options = select.querySelectorAll('option:not([data-role="operation-placeholder"])');
+
+        options.forEach((option) => {
+            const matches = !normalizedQuery || option.textContent.toLowerCase().includes(normalizedQuery);
+            option.hidden = !matches;
+        });
+
+        if (select.selectedOptions.length && select.selectedOptions[0].hidden) {
+            select.selectedIndex = 0;
         }
     }
 
