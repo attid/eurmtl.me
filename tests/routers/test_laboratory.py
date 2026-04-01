@@ -10,6 +10,19 @@ async def test_lab_root(client):
 
 
 @pytest.mark.asyncio
+async def test_lab_root_renders_all_operations_tab_with_filter(client):
+    response = await client.get("/lab")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert ">All<" in body
+    assert 'id="operation-all-filter"' in body
+    assert 'id="operation-all"' in body
+    assert 'value="payment"' in body
+    assert 'value="begin_sponsoring_future_reserves"' in body
+
+
+@pytest.mark.asyncio
 async def test_lab_mtl_accounts(client):
     """Test /lab/mtl_accounts"""
     mock_accounts = [
