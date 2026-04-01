@@ -368,6 +368,10 @@ class TestXDRConversion:
             == 1710000000
         )
 
+    def test_decode_xdr_to_base64_raises_clear_error_for_truncated_xdr(self):
+        with pytest.raises(ValueError, match="Invalid Stellar XDR"):
+            decode_xdr_to_base64("AAAA", return_json=True)
+
 
 class TestScValDecoding:
     def test_decode_scval_handles_account_address_symbol_vector_and_integers(self):
