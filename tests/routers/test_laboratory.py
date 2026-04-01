@@ -139,6 +139,18 @@ async def test_lab_xdr_to_json_returns_decoded_payload(client):
 
 
 @pytest.mark.asyncio
+async def test_lab_xdr_to_json_rejects_invalid_xdr(client):
+    with patch(
+        "routers.laboratory.decode_xdr_to_base64",
+        side_effect=ValueError("Invalid Stellar XDR"),
+    ):
+        response = await client.post("/lab/xdr_to_json", json={"xdr": "AAAA"})
+
+    assert response.status_code == 400
+    assert await response.get_json() == {"error": "Invalid Stellar XDR"}
+
+
+@pytest.mark.asyncio
 async def test_lab_update_memo_rejects_invalid_xdr(client):
     response = await client.post("/lab/update_memo", json={"xdr": "", "memo": "memo"})
 

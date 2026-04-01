@@ -140,8 +140,11 @@ async def cmd_build_xdr():
 async def cmd_xdr_to_json():
     data = await request.json
     xdr = data.get("xdr")
-    result = decode_xdr_to_base64(xdr, return_json=True)
-    return jsonify(result)
+    try:
+        result = decode_xdr_to_base64(xdr, return_json=True)
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
 
 @blueprint.route("/lab/assets/<account_id>")

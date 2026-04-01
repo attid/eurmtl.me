@@ -62,7 +62,7 @@ def _parse_transaction_envelope(xdr: str):
         return TransactionEnvelope.from_xdr(
             xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
         )
-    except (TypeError, ValueError) as exc:
+    except (EOFError, TypeError, ValueError) as exc:
         raise ValueError("Invalid Stellar XDR") from exc
 
 
@@ -76,9 +76,7 @@ def decode_xdr_from_base64(xdr):
 
 
 def decode_xdr_to_base64(xdr, return_json=False):
-    transaction_envelope = TransactionEnvelope.from_xdr(
-        xdr, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
-    )
+    transaction_envelope = _parse_transaction_envelope(xdr)
     transaction: Transaction = transaction_envelope.transaction
     new_json = {
         "attributes": {},
