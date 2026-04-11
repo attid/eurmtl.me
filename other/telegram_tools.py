@@ -1,139 +1,52 @@
 import hashlib
 import hmac
+import logging
 import urllib.parse
+
 from aiogram import Bot
+from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
 from sulguk import AiogramSulgukMiddleware
 
 from other.config_reader import config
-from other.web_tools import http_session_manager
 
-skynet_bot = Bot(token=config.skynet_token.get_secret_value())
-mmwb_bot = Bot(token=config.mmwb_token.get_secret_value())
+logger = logging.getLogger(__name__)
+
+_DEFAULT_TELEGRAM_API_URL = "https://api.telegram.org"
+_TELEGRAM_API_URL = config.telegram_api_url.rstrip("/")
+
+if _TELEGRAM_API_URL != _DEFAULT_TELEGRAM_API_URL:
+    logger.info("Using custom Telegram Bot API URL: %s", _TELEGRAM_API_URL)
+
+
+def _build_bot(token: str) -> Bot:
+    if _TELEGRAM_API_URL == _DEFAULT_TELEGRAM_API_URL:
+        return Bot(token=token)
+    session = AiohttpSession(api=TelegramAPIServer.from_base(_TELEGRAM_API_URL))
+    return Bot(token=token, session=session)
+
+
+skynet_bot = _build_bot(config.skynet_token.get_secret_value())
+mmwb_bot = _build_bot(config.mmwb_token.get_secret_value())
 skynet_bot.session.middleware(AiogramSulgukMiddleware())
 mmwb_bot.session.middleware(AiogramSulgukMiddleware())
 
 
-async def send_telegram_message_(chat_id, text, entities=None):
-    """
-    Sends a Telegram message to the specified chat.
-
-    Parameters:
-        chat_id (int): The ID of the chat to send the message to.
-        text (str): The text of the message.
-        entities (list, optional): A list of message entities to be applied to the text (default: None).
-
-    Returns:
-        int: The ID of the sent message.
-    """
-    token = config.skynet_token.get_secret_value()
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    data = {"chat_id": chat_id, "text": text}
-    if entities:
-        data["entities"] = entities
-    else:
-        data["parse_mode"] = "HTML"
-
-    try:
-        response = await http_session_manager.get_web_request("POST", url, json=data)
-        if response.status == 200:
-            # print(f'Sending message: {data}')
-            # print(f'Message sent successfully: {response.data}')
-            return response.data["result"]["message_id"]
-        else:
-            print(f"Failed to send message: {response.data}")
-    except Exception as e:
-        print(f"Error sending message: {e}")
-        return None
-
-
-async def edit_telegram_message_(
-    chat_id,
-    message_id,
-    text,
-    reply_markup=None,
-    entities=None,
-    config_token=config.skynet_token,
-):
-    """
-    Edit a message in the Telegram chat.
-
-    Parameters:
-        chat_id (int): The ID of the chat where the message is located.
-        message_id (int): The ID of the message to be edited.
-        text (str): The new text of the message.
-        reply_markup (Optional[Any]): Optional parameter. The reply markup of the message.
-        entities (Optional[Any]): Optional parameter. The entities of the message.
-        config_token (Optional[Any]): Optional parameter. The config token of the bot.
-
-    Returns:
-        bool: True if the message was edited successfully, False otherwise.
-
-    """
-    token = config_token.get_secret_value()
-    url = f"https://api.telegram.org/bot{token}/editMessageText"
-    data = {"chat_id": chat_id, "message_id": message_id, "text": text}
-
-    if reply_markup:
-        data["reply_markup"] = reply_markup
-
-    if entities:
-        data["entities"] = entities
-    else:
-        data["parse_mode"] = "HTML"
-
-    try:
-        response = await http_session_manager.get_web_request("POST", url, json=data)
-        if response.status == 200:
-            # print(f'Sending message: {data}')
-            # print(f'Message sent successfully: {response.data}')
-            return True
-        else:
-            print(f"Failed to edit message: {response.data}")
-            return False
-    except Exception as e:
-        print(f"Error editing message: {e}")
-        return False
-
-
 async def is_bot_admin(chat_id):
-    """
-    Проверяет, является ли бот администратором в чате.
-    :param chat_id: ID чата.
-    :return: True, если бот является администратором, иначе False.
-    """
-    # token = config.skynet_token.get_secret_value()
-    return await is_user_admin(
-        chat_id, skynet_bot.id
-    )  # user_id бота можно получить из его токена
+    """Проверяет, является ли бот администратором в чате."""
+    return await is_user_admin(chat_id, skynet_bot.id)
 
 
 async def is_user_admin(chat_id, user_id):
-    """
-    Проверяет, является ли пользователь администратором в чате.
-    :param chat_id: ID чата.
-    :param user_id: ID пользователя.
-    :return: True, если пользователь является администратором, иначе False.
-    """
-    if str(chat_id).startswith("-100"):
-        pass
-    else:
-        chat_id = f"-100{chat_id}"
-    token = config.skynet_token.get_secret_value()
-    url = f"https://api.telegram.org/bot{token}/getChatMember"
-    params = {"chat_id": chat_id, "user_id": user_id}
-
+    """Проверяет, является ли пользователь администратором в чате."""
+    normalized_chat_id = (
+        chat_id if str(chat_id).startswith("-100") else f"-100{chat_id}"
+    )
     try:
-        # Формируем URL с параметрами для GET-запроса
-        query_string = "&".join([f"{k}={v}" for k, v in params.items()])
-        full_url = f"{url}?{query_string}"
-
-        response = await http_session_manager.get_web_request("GET", full_url)
-        if response.status == 200:
-            chat_member = response.data["result"]
-            return chat_member["status"] in ["administrator", "creator"]
-        else:
-            print(f"Ошибка при проверке статуса пользователя: {response.data}")
-            return False
+        chat_member = await skynet_bot.get_chat_member(
+            chat_id=normalized_chat_id, user_id=user_id
+        )
+        return chat_member.status in ("administrator", "creator")
     except Exception as e:
         print(f"Error checking user admin status: {e}")
         return False
