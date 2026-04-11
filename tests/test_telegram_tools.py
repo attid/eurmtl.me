@@ -9,48 +9,29 @@ from pydantic import SecretStr
 from other.telegram_tools import (
     check_response,
     check_response_webapp,
-    edit_telegram_message_,
     is_hash_valid,
     is_user_admin,
     prepare_data_check_string,
     prepare_html_text,
-    send_telegram_message_,
 )
 
 
 @pytest.mark.asyncio
-async def test_send_and_edit_telegram_message_helpers():
-    with patch(
-        "other.telegram_tools.http_session_manager.get_web_request",
-        AsyncMock(
-            side_effect=[
-                SimpleNamespace(status=200, data={"result": {"message_id": 77}}),
-                SimpleNamespace(status=500, data="error"),
-                SimpleNamespace(status=200, data={"ok": True}),
-                Exception("boom"),
-            ]
-        ),
-    ):
-        assert await send_telegram_message_(1, "hello") == 77
-        assert await send_telegram_message_(1, "hello") is None
-        assert await edit_telegram_message_(1, 2, "text") is True
-        assert await edit_telegram_message_(1, 2, "text") is False
-
-
-@pytest.mark.asyncio
 async def test_is_user_admin_formats_chat_id_and_handles_failure():
-    ok = SimpleNamespace(status=200, data={"result": {"status": "administrator"}})
-    fail = SimpleNamespace(status=500, data={"error": "bad"})
-
-    with patch(
-        "other.telegram_tools.http_session_manager.get_web_request",
-        AsyncMock(side_effect=[ok, fail]),
-    ) as get_request:
+    get_member = AsyncMock(
+        side_effect=[
+            SimpleNamespace(status="administrator"),
+            RuntimeError("boom"),
+        ]
+    )
+    with patch("other.telegram_tools.skynet_bot.get_chat_member", get_member):
         assert await is_user_admin(12345, 7) is True
         assert await is_user_admin("-10012345", 7) is False
 
-    first_url = get_request.await_args_list[0].args[1]
-    assert "chat_id=-10012345" in first_url
+    first_kwargs = get_member.await_args_list[0].kwargs
+    assert first_kwargs["chat_id"] == "-10012345"
+    second_kwargs = get_member.await_args_list[1].kwargs
+    assert second_kwargs["chat_id"] == "-10012345"
 
 
 def test_check_response_and_webapp_helpers():

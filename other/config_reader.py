@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     test_mode: bool = False
     grist_token: str
     grist_income: str
+    telegram_api_url: str = "https://api.telegram.org"
+    telegram_api_url: str = "https://api.telegram.org"
 
 
 config = Settings()
