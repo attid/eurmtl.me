@@ -1,26 +1,25 @@
 import hashlib
 import hmac
-import logging
 import urllib.parse
 
 from aiogram import Bot
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
+from loguru import logger
 from sulguk import AiogramSulgukMiddleware
 
 from other.config_reader import config
 
-logger = logging.getLogger(__name__)
+_TELEGRAM_API_URL = (
+    config.telegram_api_url.rstrip("/") if config.telegram_api_url else None
+)
 
-_DEFAULT_TELEGRAM_API_URL = "https://api.telegram.org"
-_TELEGRAM_API_URL = config.telegram_api_url.rstrip("/")
-
-if _TELEGRAM_API_URL != _DEFAULT_TELEGRAM_API_URL:
-    logger.info("Using custom Telegram Bot API URL: %s", _TELEGRAM_API_URL)
+if _TELEGRAM_API_URL:
+    logger.info(f"Using custom Telegram Bot API URL: {_TELEGRAM_API_URL}")
 
 
 def _build_bot(token: str) -> Bot:
-    if _TELEGRAM_API_URL == _DEFAULT_TELEGRAM_API_URL:
+    if _TELEGRAM_API_URL is None:
         return Bot(token=token)
     session = AiohttpSession(api=TelegramAPIServer.from_base(_TELEGRAM_API_URL))
     return Bot(token=token, session=session)
