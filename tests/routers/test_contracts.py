@@ -1,0 +1,562 @@
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from stellar_sdk import Keypair
+
+FIRST_CONTRACT_ID = "CAFXUALXFPTBTLSRCDSMJXNPSN3AVL2ZPXJUDDHVTUTLRX5SCNP2SISM"
+SWAP_CONTRACT_ID = "CCEBV2EC6Z6TE2632XXTEBD6KA2U57LRIEDGV2SU77BOF2HKKB4HDIM2"
+HIDDEN_CONTRACT_ID = "CBHIDDENCONTRACTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+VALID_USER = Keypair.random().public_key
+
+
+@pytest.mark.asyncio
+async def test_contracts_index_lists_public_contracts(client):
+    response = await client.get("/contracts")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "Contracts" in body
+    assert "King of the Mountain" in body
+    assert "USDM / EURMTL Swap" in body
+    assert FIRST_CONTRACT_ID in body
+    assert SWAP_CONTRACT_ID in body
+
+
+@pytest.mark.asyncio
+async def test_swap_contract_detail_renders_overview_and_swap_blocks(client):
+    with patch(
+        "routers.contracts.load_swap_pool_overview",
+        new=AsyncMock(
+            return_value={
+                "contract_name": "StandardLiquidityPool",
+                "pool_type": "constant_product",
+                "tokens": ["USDM", "EURMTL"],
+                "reserves": ["1721.4781021", "1441.5383509"],
+                "fee_fraction": 10,
+            }
+        ),
+    ):
+        response = await client.get(f"/contracts/{SWAP_CONTRACT_ID}")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "Pool overview" in body
+    assert "Exact in" in body
+    assert "Exact out" in body
+    assert "USDM" in body
+    assert "EURMTL" in body
+    assert "EURMTL → USDM" in body
+    assert "USDM → EURMTL" in body
+    assert 'name="from_token"' not in body
+    assert 'name="to_token"' not in body
+    assert 'name="direction"' in body
+    assert 'name="user"' in body
+    assert 'name="slippage"' in body
+    assert 'id="exact-in-form"' in body
+    assert 'id="exact-out-form"' in body
+    assert 'id="exact-in-sep7-button"' in body
+    assert 'id="exact-out-sep7-button"' in body
+    assert "valid for 5 minutes" in body
+
+
+@pytest.mark.asyncio
+async def test_contracts_index_hides_internal_contracts(client):
+    response = await client.get("/contracts")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert HIDDEN_CONTRACT_ID not in body
+    assert "Hidden test contract" not in body
+
+
+@pytest.mark.asyncio
+async def test_hidden_contract_detail_is_reachable_by_direct_url(client):
+    response = await client.get(f"/contracts/{HIDDEN_CONTRACT_ID}")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "Hidden test contract" in body
+
+
+@pytest.mark.asyncio
+async def test_unknown_contract_returns_404(client):
+    response = await client.get("/contracts/UNKNOWN")
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_capture_prepare_returns_request_id_uri_and_stores_last_used_address(
+    client,
+):
+    with patch(
+        "routers.contracts.prepare_capture_flow",
+        new=AsyncMock(
+            return_value={
+                "request_id": "req-1",
+                "uri": "web+stellar:tx?xdr=AAAA",
+                "qr_url": "/static/qr/req-1.png",
+            }
+        ),
+    ):
+        response = await client.post(
+            f"/contracts/{FIRST_CONTRACT_ID}/actions/capture/prepare",
+            form={"user": VALID_USER, "amount": "10", "msg": "For glory"},
+        )
+
+    assert response.status_code == 200
+    data = await response.get_json()
+    assert data == {
+        "ok": True,
+        "request_id": "req-1",
+        "uri": "web+stellar:tx?xdr=AAAA",
+        "qr_url": "/static/qr/req-1.png",
+        "qr_error": "",
+    }
+
+    async with client.session_transaction() as session:
+        assert session["contracts_last_used_address"] == VALID_USER
+
+
+@pytest.mark.asyncio
+async def test_capture_prepare_rejects_invalid_payload(client):
+    response = await client.post(
+        f"/contracts/{FIRST_CONTRACT_ID}/actions/capture/prepare",
+        form={"user": "", "amount": "0", "msg": ""},
+    )
+
+    assert response.status_code == 400
+    assert await response.get_json() == {
+        "ok": False,
+        "error": "user, amount and msg are required",
+    }
+
+
+@pytest.mark.asyncio
+async def test_flow_status_returns_current_state_for_same_session(client):
+    async with client.session_transaction() as session:
+        session["contracts_session_marker"] = "session-1"
+
+    with patch(
+        "routers.contracts.ContractsFlowService.get_flow",
+        return_value={
+            "request_id": "req-1",
+            "status": "submitted",
+            "tx_hash": "abc123",
+            "error_message": "",
+            "signed_xdr": "AAAA",
+        },
+    ):
+        response = await client.get("/contracts/flow/req-1/status")
+
+    assert response.status_code == 200
+    assert await response.get_json() == {
+        "ok": True,
+        "flow": {
+            "request_id": "req-1",
+            "status": "submitted",
+            "tx_hash": "abc123",
+            "error_message": "",
+            "signed_xdr": "AAAA",
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_flow_status_rejects_request_from_another_session(client):
+    async with client.session_transaction() as session:
+        session["contracts_session_marker"] = "session-2"
+
+    with patch("routers.contracts.ContractsFlowService.get_flow", return_value=None):
+        response = await client.get("/contracts/flow/req-1/status")
+
+    assert response.status_code == 404
+    assert await response.get_json() == {"ok": False, "error": "Flow not found"}
+
+
+@pytest.mark.asyncio
+async def test_message_action_returns_latest_message_json(client):
+    with patch(
+        "routers.contracts.load_message",
+        new=AsyncMock(
+            return_value={"ok": True, "message": "Long live the king", "error": ""}
+        ),
+    ):
+        response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}/actions/message")
+
+    assert response.status_code == 200
+    assert await response.get_json() == {
+        "ok": True,
+        "message": "Long live the king",
+        "error": "",
+    }
+
+
+@pytest.mark.asyncio
+async def test_swap_estimate_action_returns_human_readable_quote(client):
+    with patch(
+        "routers.contracts.estimate_swap_exact_in",
+        new=AsyncMock(
+            return_value={
+                "ok": True,
+                "amount_in": "1",
+                "estimated_out": "0.8364215",
+                "from_token": "USDM",
+                "to_token": "EURMTL",
+            }
+        ),
+    ):
+        response = await client.post(
+            f"/contracts/{SWAP_CONTRACT_ID}/actions/estimate-swap",
+            form={"direction": "USDM_TO_EURMTL", "amount_in": "1"},
+        )
+
+    assert response.status_code == 200
+    assert await response.get_json() == {
+        "ok": True,
+        "amount_in": "1",
+        "estimated_out": "0.8364215",
+        "from_token": "USDM",
+        "to_token": "EURMTL",
+    }
+
+
+@pytest.mark.asyncio
+async def test_swap_prepare_action_returns_request_id_uri_and_stores_last_used_address(
+    client,
+):
+    with patch(
+        "routers.contracts.prepare_swap_flow",
+        new=AsyncMock(
+            return_value={
+                "request_id": "swap-req-1",
+                "uri": "web+stellar:tx?xdr=AAAA",
+                "qr_url": "/static/qr/swap-req-1.png",
+            }
+        ),
+    ):
+        response = await client.post(
+            f"/contracts/{SWAP_CONTRACT_ID}/actions/swap/prepare",
+            form={
+                "user": VALID_USER,
+                "direction": "USDM_TO_EURMTL",
+                "amount_in": "1",
+                "slippage": "1",
+            },
+        )
+
+    assert response.status_code == 200
+    assert await response.get_json() == {
+        "ok": True,
+        "request_id": "swap-req-1",
+        "uri": "web+stellar:tx?xdr=AAAA",
+        "qr_url": "/static/qr/swap-req-1.png",
+        "qr_error": "",
+    }
+    async with client.session_transaction() as session:
+        assert session["contracts_last_used_address"] == VALID_USER
+
+
+@pytest.mark.asyncio
+async def test_swap_strict_receive_prepare_action_returns_request_id_uri(client):
+    with patch(
+        "routers.contracts.prepare_swap_flow",
+        new=AsyncMock(
+            return_value={
+                "request_id": "swap-req-2",
+                "uri": "web+stellar:tx?xdr=BBBB",
+                "qr_url": "/static/qr/swap-req-2.png",
+            }
+        ),
+    ):
+        response = await client.post(
+            f"/contracts/{SWAP_CONTRACT_ID}/actions/swap-strict-receive/prepare",
+            form={
+                "user": VALID_USER,
+                "direction": "USDM_TO_EURMTL",
+                "amount_out": "1",
+                "slippage": "3",
+            },
+        )
+
+    assert response.status_code == 200
+    assert await response.get_json() == {
+        "ok": True,
+        "request_id": "swap-req-2",
+        "uri": "web+stellar:tx?xdr=BBBB",
+        "qr_url": "/static/qr/swap-req-2.png",
+        "qr_error": "",
+    }
+
+
+@pytest.mark.asyncio
+async def test_swap_prepare_action_returns_uri_even_when_qr_generation_fails(client):
+    with (
+        patch(
+            "routers.contracts.prepare_swap_exact_in_flow",
+            new=AsyncMock(
+                return_value={"uri": "web+stellar:tx?xdr=LONG", "xdr": "AAAA"}
+            ),
+        ),
+        patch(
+            "routers.contracts.ContractsFlowService.create_flow",
+            return_value={
+                "request_id": "swap-req-long",
+                "session_marker": "session-1",
+                "contract_id": SWAP_CONTRACT_ID,
+                "action_name": "swap",
+                "form_data": {},
+                "status": "created",
+                "tx_hash": "",
+                "error_message": "",
+                "signed_xdr": "",
+                "unsigned_xdr": "",
+                "uri": "",
+                "qr_url": "",
+            },
+        ),
+        patch(
+            "routers.contracts.create_beautiful_code",
+            side_effect=ValueError("Invalid version (was 41, expected 1 to 40)"),
+        ),
+    ):
+        response = await client.post(
+            f"/contracts/{SWAP_CONTRACT_ID}/actions/swap/prepare",
+            form={
+                "user": VALID_USER,
+                "direction": "USDM_TO_EURMTL",
+                "amount_in": "1",
+                "slippage": "5",
+            },
+        )
+
+    assert response.status_code == 200
+    assert await response.get_json() == {
+        "ok": True,
+        "request_id": "swap-req-long",
+        "uri": "web+stellar:tx?xdr=LONG",
+        "qr_url": "",
+        "qr_error": "URI too long for QR generation",
+    }
+
+
+@pytest.mark.asyncio
+async def test_swap_prepare_action_rejects_invalid_payload(client):
+    response = await client.post(
+        f"/contracts/{SWAP_CONTRACT_ID}/actions/swap/prepare",
+        form={
+            "user": "",
+            "direction": "USDM_TO_EURMTL",
+            "amount_in": "0",
+            "slippage": "1",
+        },
+    )
+
+    assert response.status_code == 400
+    assert await response.get_json() == {
+        "ok": False,
+        "error": "user and amount are required",
+    }
+
+
+@pytest.mark.asyncio
+async def test_swap_strict_receive_estimate_action_returns_human_readable_quote(client):
+    with patch(
+        "routers.contracts.estimate_swap_exact_out",
+        new=AsyncMock(
+            return_value={
+                "ok": True,
+                "amount_out": "1",
+                "estimated_in": "1.1948132",
+                "from_token": "USDM",
+                "to_token": "EURMTL",
+            }
+        ),
+    ):
+        response = await client.post(
+            f"/contracts/{SWAP_CONTRACT_ID}/actions/estimate-swap-strict-receive",
+            form={"direction": "USDM_TO_EURMTL", "amount_out": "1"},
+        )
+
+    assert response.status_code == 200
+    assert await response.get_json() == {
+        "ok": True,
+        "amount_out": "1",
+        "estimated_in": "1.1948132",
+        "from_token": "USDM",
+        "to_token": "EURMTL",
+    }
+
+
+@pytest.mark.asyncio
+async def test_contract_detail_renders_interactive_contract_ui(client):
+    with patch(
+        "routers.contracts.load_message",
+        new=AsyncMock(
+            return_value={"ok": True, "message": "Live message", "error": ""}
+        ),
+    ):
+        response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}")
+
+    body = await response.get_data(as_text=True)
+    assert 'id="message-refresh-button"' in body
+    assert 'id="capture-form"' in body
+    assert 'id="contractsSep7QrImg"' in body
+    assert 'id="contractsFlowStatus"' in body
+    assert 'id="contractsResult"' in body
+    assert "Use my address" in body
+
+
+@pytest.mark.asyncio
+async def test_contracts_send_page_renders_hidden_submit_form(client):
+    response = await client.get("/contracts/send")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "Contracts Send" in body
+    assert 'name="signed_xdr"' in body
+    assert "Hidden helper page" in body
+
+
+@pytest.mark.asyncio
+async def test_contracts_send_page_submits_signed_xdr_and_renders_result(client):
+    with patch(
+        "routers.contracts.submit_signed_transaction",
+        new=AsyncMock(return_value={"ok": True, "tx_hash": "abc123", "error": ""}),
+    ):
+        response = await client.post(
+            "/contracts/send",
+            form={"signed_xdr": "AAAAAA=="},
+        )
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "abc123" in body
+    assert "submitted" in body
+    assert "Open in Stellar Expert" in body
+
+
+@pytest.mark.asyncio
+async def test_contracts_send_page_renders_validation_error(client):
+    response = await client.post(
+        "/contracts/send",
+        form={"signed_xdr": "bad!!!"},
+    )
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "Invalid or missing base64 data" in body
+
+
+@pytest.mark.asyncio
+async def test_contracts_callback_marks_flow_submitted_when_submit_succeeds(client):
+    flow = {
+        "request_id": "req-1",
+        "status": "created",
+        "tx_hash": "",
+        "error_message": "",
+        "signed_xdr": "",
+    }
+
+    with patch("routers.contracts.is_valid_base64", return_value=True):
+        with patch(
+            "routers.contracts.ContractsFlowService.get_flow_for_callback",
+            return_value=flow,
+        ):
+            with patch(
+                "routers.contracts.submit_signed_transaction",
+                new=AsyncMock(
+                    return_value={"ok": True, "tx_hash": "abc123", "error": ""}
+                ),
+            ):
+                with patch(
+                    "routers.contracts.ContractsFlowService.update_flow_result",
+                    return_value={
+                        **flow,
+                        "status": "submitted",
+                        "tx_hash": "abc123",
+                        "error_message": "",
+                        "signed_xdr": "AAAAAA==",
+                    },
+                ):
+                    response = await client.post(
+                        "/contracts/callback/req-1",
+                        form={"xdr": "AAAAAA=="},
+                    )
+
+    assert response.status_code == 200
+    assert await response.get_json() == {
+        "ok": True,
+        "status": "submitted",
+        "tx_hash": "abc123",
+    }
+
+
+@pytest.mark.asyncio
+async def test_contracts_callback_stores_failure_payload_when_submit_fails(client):
+    flow = {
+        "request_id": "req-1",
+        "status": "created",
+        "tx_hash": "",
+        "error_message": "",
+        "signed_xdr": "",
+    }
+
+    with patch("routers.contracts.is_valid_base64", return_value=True):
+        with patch(
+            "routers.contracts.ContractsFlowService.get_flow_for_callback",
+            return_value=flow,
+        ):
+            with patch(
+                "routers.contracts.submit_signed_transaction",
+                new=AsyncMock(
+                    return_value={"ok": False, "tx_hash": "", "error": "submit failed"}
+                ),
+            ):
+                with patch(
+                    "routers.contracts.ContractsFlowService.update_flow_result",
+                    return_value={
+                        **flow,
+                        "status": "failed",
+                        "tx_hash": "",
+                        "error_message": "submit failed",
+                        "signed_xdr": "AAAAAA==",
+                    },
+                ):
+                    response = await client.post(
+                        "/contracts/callback/req-1",
+                        form={"xdr": "AAAAAA=="},
+                    )
+
+    assert response.status_code == 400
+    assert await response.get_json() == {
+        "ok": False,
+        "status": "failed",
+        "error": "submit failed",
+    }
+
+
+@pytest.mark.asyncio
+async def test_contracts_callback_rejects_malformed_base64(client):
+    response = await client.post("/contracts/callback/req-1", form={"xdr": "bad!!!"})
+
+    assert response.status_code == 400
+    assert await response.get_json() == {
+        "ok": False,
+        "error": "Invalid or missing base64 data",
+    }
+
+
+@pytest.mark.asyncio
+async def test_contracts_callback_rejects_unknown_or_foreign_flow(client):
+    with patch("routers.contracts.is_valid_base64", return_value=True):
+        with patch(
+            "routers.contracts.ContractsFlowService.get_flow_for_callback",
+            return_value=None,
+        ):
+            response = await client.post(
+                "/contracts/callback/req-1", form={"xdr": "AAAAAA=="}
+            )
+
+    assert response.status_code == 404
+    assert await response.get_json() == {"ok": False, "error": "Flow not found"}

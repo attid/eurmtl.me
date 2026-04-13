@@ -1,0 +1,40 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}Contracts Send{% endblock %}
+
+{% block content %}
+<h3 class="card-title">Contracts Send</h3>
+<p class="text-secondary">Hidden helper page for sending an already signed Soroban transaction.</p>
+
+<div class="card mt-3">
+    <div class="card-body">
+        <form method="post" action="/contracts/send">
+            <div class="mb-3">
+                <label class="form-label" for="signed-xdr">Signed XDR</label>
+                <textarea class="form-control" id="signed-xdr" name="signed_xdr" rows="12">{{ signed_xdr or '' }}</textarea>
+            </div>
+            <button class="btn btn-primary" type="submit">Send</button>
+        </form>
+    </div>
+</div>
+
+{% if submit_result is not none %}
+<div class="card mt-3">
+    <div class="card-body">
+        <h4 class="card-title">Result</h4>
+        <div class="alert {{ 'alert-success' if submit_result.ok else 'alert-danger' }}">
+            {% if submit_result.ok %}
+            <div><strong>Status:</strong> submitted</div>
+            <div><strong>Tx hash:</strong> <code>{{ submit_result.tx_hash }}</code></div>
+            <div><a href="https://stellar.expert/explorer/public/tx/{{ submit_result.tx_hash }}" target="_blank">Open in Stellar Expert</a></div>
+            {% else %}
+            <div><strong>Error:</strong> {{ submit_result.error }}</div>
+            {% if submit_result.tx_hash %}
+            <div><strong>Tx hash:</strong> <code>{{ submit_result.tx_hash }}</code></div>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

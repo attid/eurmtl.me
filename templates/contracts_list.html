@@ -1,0 +1,16 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}Contracts{% endblock %}
+
+{% block content %}
+<h3 class="card-title">Contracts</h3>
+<div class="list-group">
+    {% for contract in contracts %}
+    <a class="list-group-item list-group-item-action" href="/contracts/{{ contract.contract_id if contract.contract_id is defined else contract['contract_id'] }}">
+        <div class="fw-bold">{{ contract.title if contract.title is defined else contract['title'] }}</div>
+        <div class="text-secondary">{{ contract.description if contract.description is defined else contract['description'] }}</div>
+        <code>{{ contract.contract_id if contract.contract_id is defined else contract['contract_id'] }}</code>
+    </a>
+    {% endfor %}
+</div>
+{% endblock %}

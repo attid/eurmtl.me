@@ -6,6 +6,7 @@ from cachetools import TTLCache
 from loguru import logger
 from quart import Quart, session
 
+import routers.contracts
 import routers.cup
 import routers.decision
 import routers.federal
@@ -47,6 +48,7 @@ app.register_blueprint(routers.laboratory.blueprint)
 # app.register_blueprint(routers.federal.blueprint)
 app.register_blueprint(routers.federal.cors_enabled_blueprint)
 app.register_blueprint(routers.sign_tools.blueprint)
+app.register_blueprint(routers.contracts.blueprint)
 app.register_blueprint(routers.helpers.blueprint)
 app.register_blueprint(routers.decision.blueprint)
 app.register_blueprint(routers.cup.blueprint)

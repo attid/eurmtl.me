@@ -131,6 +131,7 @@ For detailed documentation, architecture overview, and advanced usage:
 - **[docs/golden-principles.md](docs/golden-principles.md)** - Immutable project principles
 - **[docs/quality-grades.md](docs/quality-grades.md)** - Quality level by area
 - **[docs/glossary.md](docs/glossary.md)** - Ubiquitous language
+- **[docs/contracts.md](docs/contracts.md)** - Contracts section and how to add new contracts/fields
 - **[CLAUDE.md](CLAUDE.md)** - Global local-agent constraints
 
 ## Available Commands
