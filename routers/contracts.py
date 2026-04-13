@@ -10,6 +10,7 @@ from other.config_reader import config, start_path
 from other.grist_tools import load_user_from_grist
 from other.qr_tools import create_beautiful_code
 from other.stellar_soroban import submit_signed_transaction
+from other.web_tools import http_session_manager
 from services.contracts.flow_service import ContractsFlowService
 from services.contracts.handlers.mountain_contract import (
     choose_candidate_address,
@@ -403,6 +404,37 @@ async def contracts_send_page():
         signed_xdr=form_xdr,
         submit_result=submit_result,
     )
+
+
+@blueprint.route("/contracts/flow/<request_id>/mmwb", methods=["POST"])
+async def contracts_flow_mmwb(request_id: str):
+    marker = _get_contracts_session_marker()
+    flow = ContractsFlowService().get_flow(request_id, session_marker=marker)
+    if flow is None:
+        return jsonify({"ok": False, "error": "Flow not found"}), 404
+    if not flow.get("uri"):
+        return jsonify({"ok": False, "error": "Flow has no prepared URI"}), 400
+
+    response = await http_session_manager.get_web_request(
+        "POST",
+        f"https://{config.domain}/remote/sep07/add",
+        json={"uri": flow["uri"]},
+        return_type="json",
+    )
+    if response.status != 200 or not response.data.get("SUCCESS"):
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": response.data.get(
+                        "message", "Failed to generate MMWB link"
+                    ),
+                }
+            ),
+            400,
+        )
+
+    return jsonify({"ok": True, "url": response.data["url"]})
 
 
 @blueprint.route("/contracts/callback/<request_id>", methods=["POST"])
