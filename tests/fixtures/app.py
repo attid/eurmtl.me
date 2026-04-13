@@ -5,7 +5,6 @@ Fixtures for Quart application and test client.
 import os
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock
 from quart import Quart
 from .constants import TEST_SECRET_KEY
 
@@ -23,7 +22,6 @@ async def app(db_pool):
     Args:
         db_pool: SQLite in-memory database pool from database fixtures
     """
-    from routers.remote_sep07 import blueprint as remote_sep07_bp
     from routers.index import blueprint as index_bp
     from routers.sign_tools import blueprint as sign_tools_bp
     from routers.cup import blueprint as cup_bp
@@ -36,6 +34,7 @@ async def app(db_pool):
     from routers.web_editor import blueprint as web_editor_bp
     from routers.helpers import blueprint as helpers_bp
     from routers.remote import blueprint as remote_bp
+    from routers.contracts import blueprint as contracts_bp
 
     # Calculate root path
     root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -59,6 +58,7 @@ async def app(db_pool):
     app.register_blueprint(web_editor_bp)
     app.register_blueprint(helpers_bp)
     app.register_blueprint(remote_bp)
+    app.register_blueprint(contracts_bp)
 
     # Use REAL db_pool (SQLite in-memory) instead of mock
     app.db_pool = db_pool

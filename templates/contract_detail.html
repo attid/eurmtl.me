@@ -1,0 +1,395 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}{{ contract.title if contract.title is defined else contract['title'] }}{% endblock %}
+
+{% block content %}
+{% set contract_id = contract.contract_id if contract.contract_id is defined else contract['contract_id'] %}
+{% set blocks = contract.blocks if contract.blocks is defined else contract['blocks'] %}
+<h3 class="card-title">{{ contract.title if contract.title is defined else contract['title'] }}</h3>
+<p class="text-secondary">{{ contract.description if contract.description is defined else contract['description'] }}</p>
+<p><code>{{ contract_id }}</code></p>
+{% if contract_id == 'CCEBV2EC6Z6TE2632XXTEBD6KA2U57LRIEDGV2SU77BOF2HKKB4HDIM2' %}
+<div class="alert alert-warning">Prepared SEP-7 transactions are valid for 5 minutes after generation.</div>
+{% endif %}
+
+{% for block in blocks %}
+<div class="card mt-3">
+    <div class="card-body">
+        <h4 class="card-title">{{ block.title if block.title is defined else block['title'] }}</h4>
+        <p class="text-secondary">{{ block.description if block.description is defined else block['description'] }}</p>
+        {% set block_name = block.name if block.name is defined else block['name'] %}
+        {% if block_name == 'pool_overview' and pool_overview %}
+        <div class="alert alert-info">
+            <div><strong>Name:</strong> {{ pool_overview.contract_name }}</div>
+            <div><strong>Type:</strong> {{ pool_overview.pool_type }}</div>
+            <div><strong>Fee:</strong> {{ pool_overview.fee_fraction }}</div>
+            <div><strong>Tokens:</strong> {{ pool_overview.tokens|join(' / ') }}</div>
+            <div><strong>Reserves:</strong> {{ pool_overview.reserves|join(' / ') }}</div>
+        </div>
+        {% endif %}
+        {% if block_name == 'message' %}
+        <div id="message-result" class="alert {{ 'alert-success' if message_result and message_result.ok else 'alert-warning' }}">
+            {% if message_result and message_result.ok %}
+            {{ message_result.message }}
+            {% else %}
+            {{ message_result.error if message_result else 'Message not loaded yet' }}
+            {% endif %}
+        </div>
+        <button class="btn btn-secondary" id="message-refresh-button" type="button">Refresh</button>
+        {% endif %}
+        {% if block_name == 'exact_in' %}
+        <form method="post" action="/contracts/{{ contract_id }}/actions/estimate-swap" id="exact-in-form">
+            <div class="row g-3">
+                <div class="col-md-12">
+                    <label class="form-label" for="exact-in-user">Your address</label>
+                    <input class="form-control" id="exact-in-user" name="user" value="{{ prefill_user }}">
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label" for="exact-in-direction">Direction</label>
+                    <select class="form-select" id="exact-in-direction" name="direction">
+                        <option value="EURMTL_TO_USDM">EURMTL → USDM</option>
+                        <option value="USDM_TO_EURMTL">USDM → EURMTL</option>
+                    </select>
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label" for="exact-in-amount">Amount in</label>
+                    <input class="form-control" id="exact-in-amount" name="amount_in">
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label" for="exact-in-slippage">Slippage</label>
+                    <select class="form-select" id="exact-in-slippage" name="slippage">
+                        <option value="1" selected>1%</option>
+                        <option value="3">3%</option>
+                        <option value="5">5%</option>
+                    </select>
+                </div>
+            </div>
+            <div id="exact-in-error" class="alert alert-danger mt-3" style="display:none;"></div>
+            <div id="exact-in-result" class="alert alert-secondary mt-3">Estimate not loaded</div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-secondary" type="submit">Estimate</button>
+                <button class="btn btn-primary" type="button" id="exact-in-sep7-button">Sign via SEP-7</button>
+            </div>
+        </form>
+        {% endif %}
+        {% if block_name == 'exact_out' %}
+        <form method="post" action="/contracts/{{ contract_id }}/actions/estimate-swap-strict-receive" id="exact-out-form">
+            <div class="row g-3">
+                <div class="col-md-12">
+                    <label class="form-label" for="exact-out-user">Your address</label>
+                    <input class="form-control" id="exact-out-user" name="user" value="{{ prefill_user }}">
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label" for="exact-out-direction">Direction</label>
+                    <select class="form-select" id="exact-out-direction" name="direction">
+                        <option value="EURMTL_TO_USDM">EURMTL → USDM</option>
+                        <option value="USDM_TO_EURMTL">USDM → EURMTL</option>
+                    </select>
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label" for="exact-out-amount">Amount out</label>
+                    <input class="form-control" id="exact-out-amount" name="amount_out">
+                </div>
+                <div class="col-md-12">
+                    <label class="form-label" for="exact-out-slippage">Slippage</label>
+                    <select class="form-select" id="exact-out-slippage" name="slippage">
+                        <option value="1" selected>1%</option>
+                        <option value="3">3%</option>
+                        <option value="5">5%</option>
+                    </select>
+                </div>
+            </div>
+            <div id="exact-out-error" class="alert alert-danger mt-3" style="display:none;"></div>
+            <div id="exact-out-result" class="alert alert-secondary mt-3">Estimate not loaded</div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-secondary" type="submit">Estimate</button>
+                <button class="btn btn-primary" type="button" id="exact-out-sep7-button">Sign via SEP-7</button>
+            </div>
+        </form>
+        {% endif %}
+        {% if block_name == 'capture' %}
+        <form method="post" action="/contracts/{{ contract_id }}/actions/capture/prepare" id="capture-form">
+            <div class="d-flex justify-content-end mb-2">
+                <button class="btn btn-outline-secondary btn-sm" type="button" id="use-my-address-button">Use my address</button>
+            </div>
+            {% for field in (block.fields if block.fields is defined else block['fields']) %}
+            <div class="mb-3">
+                <label class="form-label" for="field-{{ field.name if field.name is defined else field['name'] }}">{{ field.label if field.label is defined else field['label'] }}</label>
+                {% set field_name = field.name if field.name is defined else field['name'] %}
+                {% if field_name == 'msg' %}
+                <textarea class="form-control" id="field-{{ field_name }}" name="{{ field_name }}"></textarea>
+                {% else %}
+                <input class="form-control" id="field-{{ field_name }}" name="{{ field_name }}" value="{{ prefill_user if field_name == 'user' else '' }}">
+                {% endif %}
+            </div>
+            {% endfor %}
+            <div id="capture-error" class="alert alert-danger" style="display:none;"></div>
+            <button class="btn btn-primary" type="submit">Sign via SEP-7</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+<div class="modal" id="contractsSep7Modal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">SEP-7 Signing</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div id="contractsSep7Spinner" class="spinner-border text-primary" role="status" style="display:none;"></div>
+                <div id="contractsSep7Error" class="alert alert-warning" style="display:none;"></div>
+                <div id="contractsSep7Content" style="display:none;">
+                    <img src="" alt="SEP-7 QR" class="img-fluid mb-3" id="contractsSep7QrImg">
+                    <div id="contractsFlowStatus" class="alert alert-info"></div>
+                    <div id="contractsResult" class="alert alert-secondary text-start"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a href="#" class="btn btn-primary" id="contractsSep7OpenUri" target="_blank">Open URI</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block bottom_scripts %}
+{% set contract_id = contract.contract_id if contract.contract_id is defined else contract['contract_id'] %}
+<script>
+const contractId = {{ contract_id|tojson }};
+const detectedAddress = {{ detected_user_address|default('', true)|tojson }};
+let contractsFlowPoller = null;
+
+function setMessageState(ok, text) {
+    const box = document.getElementById('message-result');
+    if (!box) return;
+    box.className = `alert ${ok ? 'alert-success' : 'alert-warning'}`;
+    box.textContent = text || (ok ? 'OK' : 'No message');
+}
+
+async function refreshMessage() {
+    try {
+        const response = await fetch(`/contracts/${contractId}/actions/message`);
+        const data = await response.json();
+        setMessageState(Boolean(data.ok), data.ok ? data.message : data.error);
+    } catch (error) {
+        setMessageState(false, `Failed to refresh message: ${error.message}`);
+    }
+}
+
+function clearCaptureError() {
+    const box = document.getElementById('capture-error');
+    box.style.display = 'none';
+    box.textContent = '';
+}
+
+function showCaptureError(text) {
+    const box = document.getElementById('capture-error');
+    box.style.display = 'block';
+    box.textContent = text;
+}
+
+function renderFlowStatus(flow) {
+    const flowStatus = document.getElementById('contractsFlowStatus');
+    const result = document.getElementById('contractsResult');
+    if (!flowStatus || !result) return;
+
+    flowStatus.textContent = `Status: ${flow.status}`;
+
+    if (flow.status === 'submitted' && flow.tx_hash) {
+        result.innerHTML = `Your transaction:<br><code>${flow.signed_xdr || ''}</code><br><a href="https://stellar.expert/explorer/public/tx/${flow.tx_hash}" target="_blank">Open in Stellar Expert</a>`;
+    } else if (flow.status === 'failed') {
+        result.textContent = flow.error_message || 'Transaction failed';
+    } else {
+        result.textContent = 'Waiting for wallet callback...';
+    }
+}
+
+async function pollFlowStatus(requestId) {
+    try {
+        const response = await fetch(`/contracts/flow/${requestId}/status`);
+        const data = await response.json();
+        if (!data.ok) {
+            renderFlowStatus({status: 'failed', error_message: data.error, tx_hash: '', signed_xdr: ''});
+            return;
+        }
+        renderFlowStatus(data.flow);
+        if (data.flow.status === 'submitted' || data.flow.status === 'failed') {
+            clearInterval(contractsFlowPoller);
+            contractsFlowPoller = null;
+        }
+    } catch (error) {
+        renderFlowStatus({status: 'failed', error_message: error.message, tx_hash: '', signed_xdr: ''});
+        clearInterval(contractsFlowPoller);
+        contractsFlowPoller = null;
+    }
+}
+
+async function submitCaptureForm(event) {
+    event.preventDefault();
+    clearCaptureError();
+
+    const modalEl = document.getElementById('contractsSep7Modal');
+    const modal = new bootstrap.Modal(modalEl);
+    const spinner = document.getElementById('contractsSep7Spinner');
+    const errorBox = document.getElementById('contractsSep7Error');
+    const content = document.getElementById('contractsSep7Content');
+    const qrImg = document.getElementById('contractsSep7QrImg');
+    const openUri = document.getElementById('contractsSep7OpenUri');
+    const form = document.getElementById('capture-form');
+
+    spinner.style.display = 'inline-block';
+    errorBox.style.display = 'none';
+    content.style.display = 'none';
+    modal.show();
+
+    try {
+        const response = await fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            throw new Error(data.error || 'Failed to prepare transaction');
+        }
+
+        spinner.style.display = 'none';
+        content.style.display = 'block';
+        if (data.qr_url) {
+            qrImg.src = data.qr_url;
+            qrImg.style.display = 'block';
+        } else {
+            qrImg.removeAttribute('src');
+            qrImg.style.display = 'none';
+        }
+        openUri.href = data.uri;
+        if (data.qr_error) {
+            errorBox.style.display = 'block';
+            errorBox.textContent = data.qr_error;
+        }
+        renderFlowStatus({status: 'prepared', error_message: '', tx_hash: '', signed_xdr: ''});
+
+        if (contractsFlowPoller) {
+            clearInterval(contractsFlowPoller);
+        }
+        await pollFlowStatus(data.request_id);
+        contractsFlowPoller = setInterval(() => pollFlowStatus(data.request_id), 2000);
+    } catch (error) {
+        spinner.style.display = 'none';
+        errorBox.style.display = 'block';
+        errorBox.textContent = error.message;
+        showCaptureError(error.message);
+    }
+}
+
+function clearInlineError(errorElementId) {
+    const box = document.getElementById(errorElementId);
+    if (!box) return;
+    box.style.display = 'none';
+    box.textContent = '';
+}
+
+function showInlineError(errorElementId, text) {
+    const box = document.getElementById(errorElementId);
+    if (!box) return;
+    box.style.display = 'block';
+    box.textContent = text;
+}
+
+async function openSep7ModalForPrepare(form, prepareUrl, errorElementId) {
+    clearInlineError(errorElementId);
+
+    const modalEl = document.getElementById('contractsSep7Modal');
+    const modal = new bootstrap.Modal(modalEl);
+    const spinner = document.getElementById('contractsSep7Spinner');
+    const errorBox = document.getElementById('contractsSep7Error');
+    const content = document.getElementById('contractsSep7Content');
+    const qrImg = document.getElementById('contractsSep7QrImg');
+    const openUri = document.getElementById('contractsSep7OpenUri');
+
+    spinner.style.display = 'inline-block';
+    errorBox.style.display = 'none';
+    content.style.display = 'none';
+    modal.show();
+
+    try {
+        const response = await fetch(prepareUrl, {
+            method: 'POST',
+            body: new FormData(form),
+        });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            throw new Error(data.error || 'Failed to prepare transaction');
+        }
+
+        spinner.style.display = 'none';
+        content.style.display = 'block';
+        if (data.qr_url) {
+            qrImg.src = data.qr_url;
+            qrImg.style.display = 'block';
+        } else {
+            qrImg.removeAttribute('src');
+            qrImg.style.display = 'none';
+        }
+        openUri.href = data.uri;
+        if (data.qr_error) {
+            errorBox.style.display = 'block';
+            errorBox.textContent = data.qr_error;
+        }
+        renderFlowStatus({status: 'prepared', error_message: '', tx_hash: '', signed_xdr: ''});
+
+        if (contractsFlowPoller) {
+            clearInterval(contractsFlowPoller);
+        }
+        await pollFlowStatus(data.request_id);
+        contractsFlowPoller = setInterval(() => pollFlowStatus(data.request_id), 2000);
+    } catch (error) {
+        spinner.style.display = 'none';
+        errorBox.style.display = 'block';
+        errorBox.textContent = error.message;
+        showInlineError(errorElementId, error.message);
+    }
+}
+
+async function submitEstimateForm(event, resultElementId, mode, errorElementId) {
+    event.preventDefault();
+    clearInlineError(errorElementId);
+    const form = event.currentTarget;
+    const resultEl = document.getElementById(resultElementId);
+    try {
+        const response = await fetch(form.action, { method: 'POST', body: new FormData(form) });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            throw new Error(data.error || 'Estimate failed');
+        }
+        if (mode === 'exact_in') {
+            resultEl.textContent = `${data.amount_in} ${data.from_token} ≈ ${data.estimated_out} ${data.to_token}`;
+        } else {
+            resultEl.textContent = `${data.amount_out} ${data.to_token} requires about ${data.estimated_in} ${data.from_token}`;
+        }
+    } catch (error) {
+        resultEl.textContent = error.message;
+        showInlineError(errorElementId, error.message);
+    }
+}
+
+document.getElementById('message-refresh-button')?.addEventListener('click', refreshMessage);
+document.getElementById('capture-form')?.addEventListener('submit', submitCaptureForm);
+document.getElementById('use-my-address-button')?.addEventListener('click', () => {
+    document.getElementById('field-user').value = detectedAddress || '';
+});
+document.getElementById('exact-in-form')?.addEventListener('submit', (event) => submitEstimateForm(event, 'exact-in-result', 'exact_in', 'exact-in-error'));
+document.getElementById('exact-out-form')?.addEventListener('submit', (event) => submitEstimateForm(event, 'exact-out-result', 'exact_out', 'exact-out-error'));
+document.getElementById('exact-in-sep7-button')?.addEventListener('click', () => openSep7ModalForPrepare(document.getElementById('exact-in-form'), `/contracts/${contractId}/actions/swap/prepare`, 'exact-in-error'));
+document.getElementById('exact-out-sep7-button')?.addEventListener('click', () => openSep7ModalForPrepare(document.getElementById('exact-out-form'), `/contracts/${contractId}/actions/swap-strict-receive/prepare`, 'exact-out-error'));
+document.getElementById('exact-in-user')?.addEventListener('focus', () => {
+    if (!document.getElementById('exact-in-user').value) document.getElementById('exact-in-user').value = detectedAddress || '';
+});
+document.getElementById('exact-out-user')?.addEventListener('focus', () => {
+    if (!document.getElementById('exact-out-user').value) document.getElementById('exact-out-user').value = detectedAddress || '';
+});
+</script>
+{% endblock %}
