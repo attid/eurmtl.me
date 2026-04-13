@@ -149,6 +149,8 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-outline-primary" id="contractsMmwbGenerateButton" style="display:none;">Generate MMWB button</button>
+                <a href="#" class="btn btn-success" id="contractsMmwbOpenLink" target="_blank" style="display:none;">Open in MMWB</a>
                 <a href="#" class="btn btn-primary" id="contractsSep7OpenUri" target="_blank">Open URI</a>
             </div>
         </div>
@@ -162,6 +164,7 @@
 const contractId = {{ contract_id|tojson }};
 const detectedAddress = {{ detected_user_address|default('', true)|tojson }};
 let contractsFlowPoller = null;
+let currentContractsRequestId = '';
 
 function setMessageState(ok, text) {
     const box = document.getElementById('message-result');
@@ -271,6 +274,9 @@ async function submitCaptureForm(event) {
             errorBox.textContent = data.qr_error;
         }
         renderFlowStatus({status: 'prepared', error_message: '', tx_hash: '', signed_xdr: ''});
+        currentContractsRequestId = data.request_id;
+        document.getElementById('contractsMmwbGenerateButton').style.display = 'inline-block';
+        document.getElementById('contractsMmwbOpenLink').style.display = 'none';
 
         if (contractsFlowPoller) {
             clearInterval(contractsFlowPoller);
@@ -340,6 +346,9 @@ async function openSep7ModalForPrepare(form, prepareUrl, errorElementId) {
             errorBox.textContent = data.qr_error;
         }
         renderFlowStatus({status: 'prepared', error_message: '', tx_hash: '', signed_xdr: ''});
+        currentContractsRequestId = data.request_id;
+        document.getElementById('contractsMmwbGenerateButton').style.display = 'inline-block';
+        document.getElementById('contractsMmwbOpenLink').style.display = 'none';
 
         if (contractsFlowPoller) {
             clearInterval(contractsFlowPoller);
@@ -385,11 +394,39 @@ document.getElementById('exact-in-form')?.addEventListener('submit', (event) => 
 document.getElementById('exact-out-form')?.addEventListener('submit', (event) => submitEstimateForm(event, 'exact-out-result', 'exact_out', 'exact-out-error'));
 document.getElementById('exact-in-sep7-button')?.addEventListener('click', () => openSep7ModalForPrepare(document.getElementById('exact-in-form'), `/contracts/${contractId}/actions/swap/prepare`, 'exact-in-error'));
 document.getElementById('exact-out-sep7-button')?.addEventListener('click', () => openSep7ModalForPrepare(document.getElementById('exact-out-form'), `/contracts/${contractId}/actions/swap-strict-receive/prepare`, 'exact-out-error'));
+async function generateMmwbLink() {
+    const generateButton = document.getElementById('contractsMmwbGenerateButton');
+    const openLink = document.getElementById('contractsMmwbOpenLink');
+    const errorBox = document.getElementById('contractsSep7Error');
+    if (!currentContractsRequestId) {
+        errorBox.style.display = 'block';
+        errorBox.textContent = 'Prepare a transaction first';
+        return;
+    }
+    generateButton.disabled = true;
+    try {
+        const response = await fetch(`/contracts/flow/${currentContractsRequestId}/mmwb`, { method: 'POST' });
+        const data = await response.json();
+        if (!response.ok || !data.ok) {
+            throw new Error(data.error || 'Failed to generate MMWB button');
+        }
+        openLink.href = data.url;
+        generateButton.style.display = 'none';
+        openLink.style.display = 'inline-block';
+    } catch (error) {
+        errorBox.style.display = 'block';
+        errorBox.textContent = error.message;
+    } finally {
+        generateButton.disabled = false;
+    }
+}
+
 document.getElementById('exact-in-user')?.addEventListener('focus', () => {
     if (!document.getElementById('exact-in-user').value) document.getElementById('exact-in-user').value = detectedAddress || '';
 });
 document.getElementById('exact-out-user')?.addEventListener('focus', () => {
     if (!document.getElementById('exact-out-user').value) document.getElementById('exact-out-user').value = detectedAddress || '';
 });
+document.getElementById('contractsMmwbGenerateButton')?.addEventListener('click', generateMmwbLink);
 </script>
 {% endblock %}

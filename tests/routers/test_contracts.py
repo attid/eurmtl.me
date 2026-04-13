@@ -56,6 +56,8 @@ async def test_swap_contract_detail_renders_overview_and_swap_blocks(client):
     assert 'id="exact-out-form"' in body
     assert 'id="exact-in-sep7-button"' in body
     assert 'id="exact-out-sep7-button"' in body
+    assert 'id="contractsMmwbGenerateButton"' in body
+    assert 'id="contractsMmwbOpenLink"' in body
     assert "valid for 5 minutes" in body
 
 
@@ -446,6 +448,54 @@ async def test_contracts_send_page_renders_validation_error(client):
     assert response.status_code == 200
     body = await response.get_data(as_text=True)
     assert "Invalid or missing base64 data" in body
+
+
+@pytest.mark.asyncio
+async def test_contracts_flow_mmwb_returns_generated_bot_link(client):
+    async with client.session_transaction() as session:
+        session["contracts_session_marker"] = "session-1"
+
+    with (
+        patch(
+            "routers.contracts.ContractsFlowService.get_flow",
+            return_value={"request_id": "req-1", "uri": "web+stellar:tx?xdr=AAAA"},
+        ),
+        patch(
+            "routers.contracts.http_session_manager.get_web_request",
+            new=AsyncMock(
+                return_value=type(
+                    "Resp",
+                    (),
+                    {
+                        "status": 200,
+                        "data": {
+                            "SUCCESS": True,
+                            "url": "https://t.me/MyMTLWalletBot?start=uri_abc",
+                        },
+                    },
+                )()
+            ),
+        ),
+    ):
+        response = await client.post("/contracts/flow/req-1/mmwb")
+
+    assert response.status_code == 200
+    assert await response.get_json() == {
+        "ok": True,
+        "url": "https://t.me/MyMTLWalletBot?start=uri_abc",
+    }
+
+
+@pytest.mark.asyncio
+async def test_contracts_flow_mmwb_rejects_unknown_flow(client):
+    async with client.session_transaction() as session:
+        session["contracts_session_marker"] = "session-1"
+
+    with patch("routers.contracts.ContractsFlowService.get_flow", return_value=None):
+        response = await client.post("/contracts/flow/missing/mmwb")
+
+    assert response.status_code == 404
+    assert await response.get_json() == {"ok": False, "error": "Flow not found"}
 
 
 @pytest.mark.asyncio

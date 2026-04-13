@@ -407,7 +407,27 @@ Current presets:
 
 Run targeted tests and repository checks.
 
-### Task 15: Run relevant verification gates
+### Task 15: Add lazy MMWB generation to prepared contract flows
+
+**Files:**
+- Modify: `routers/contracts.py`
+- Modify: `templates/contract_detail.html`
+- Modify: `tests/routers/test_contracts.py`
+
+**Step 1: Add a flow-bound MMWB route**
+
+Add a route that takes `request_id`, validates the current session marker, reads the stored SEP-7 URI from the prepared flow, and forwards it to `/remote/sep07/add`.
+
+**Step 2: Add lazy frontend action**
+
+Expose a `Generate MMWB button` control in the contracts modal only after prepare succeeds.
+Clicking it should fetch the bot link and then reveal an `Open in MMWB` link.
+
+**Step 3: Verify**
+
+Run targeted router tests and repository checks.
+
+### Task 16: Run relevant verification gates
 
 **Files:**
 - No code changes required

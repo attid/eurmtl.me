@@ -94,6 +94,16 @@ For the current swap contract:
 - Protection values (`min_amount_out` / `max_amount_in`) are derived from a fresh server-side quote at prepare time.
 - The UI currently exposes slippage presets: `1%`, `3%`, `5%`.
 - Prepared SEP-7 transactions currently use a 5-minute validity window.
+- MMWB links are generated lazily only after explicit user action from the prepared flow modal.
+
+## Lazy MMWB link generation
+
+Prepared contract flows can request an MMWB link lazily via `/contracts/flow/<request_id>/mmwb`.
+The route:
+- resolves the prepared flow by session marker
+- reuses the prepared SEP-7 URI already stored in the flow
+- calls `/remote/sep07/add` only on explicit user action
+- returns the resulting Telegram bot link
 
 ## Direct signed-XDR submit helper
 
