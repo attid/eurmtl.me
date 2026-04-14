@@ -36,14 +36,14 @@
             {{ message_result.error if message_result else 'Message not loaded yet' }}
             {% endif %}
         </div>
-        <button class="btn btn-secondary" id="message-refresh-button" type="button">Refresh</button>
+        <button class="btn btn-secondary" id="message-refresh-button" type="button" onclick="refreshMountainState()">Refresh</button>
         {% endif %}
         {% if block_name == 'exact_in' %}
-        <form method="post" action="/contracts/{{ contract_id }}/actions/estimate-swap" id="exact-in-form">
+        <form method="post" action="/contracts/{{ contract_id }}/actions/estimate-swap" id="exact-in-form" onsubmit="submitEstimateForm(event, 'exact-in-result', 'exact_in', 'exact-in-error')">
             <div class="row g-3">
                 <div class="col-md-12">
                     <label class="form-label" for="exact-in-user">Your address</label>
-                    <input class="form-control" id="exact-in-user" name="user" value="{{ prefill_user }}">
+                    <input class="form-control" id="exact-in-user" name="user" value="{{ prefill_user }}" onfocus="fillExactInUser()">
                 </div>
                 <div class="col-md-12">
                     <label class="form-label" for="exact-in-direction">Direction</label>
@@ -69,16 +69,16 @@
             <div id="exact-in-result" class="alert alert-secondary mt-3">Estimate not loaded</div>
             <div class="d-flex gap-2">
                 <button class="btn btn-secondary" type="submit">Estimate</button>
-                <button class="btn btn-primary" type="button" id="exact-in-sep7-button">Sign via SEP-7</button>
+                <button class="btn btn-primary" type="button" id="exact-in-sep7-button" onclick="openExactInSep7()">Sign via SEP-7</button>
             </div>
         </form>
         {% endif %}
         {% if block_name == 'exact_out' %}
-        <form method="post" action="/contracts/{{ contract_id }}/actions/estimate-swap-strict-receive" id="exact-out-form">
+        <form method="post" action="/contracts/{{ contract_id }}/actions/estimate-swap-strict-receive" id="exact-out-form" onsubmit="submitEstimateForm(event, 'exact-out-result', 'exact_out', 'exact-out-error')">
             <div class="row g-3">
                 <div class="col-md-12">
                     <label class="form-label" for="exact-out-user">Your address</label>
-                    <input class="form-control" id="exact-out-user" name="user" value="{{ prefill_user }}">
+                    <input class="form-control" id="exact-out-user" name="user" value="{{ prefill_user }}" onfocus="fillExactOutUser()">
                 </div>
                 <div class="col-md-12">
                     <label class="form-label" for="exact-out-direction">Direction</label>
@@ -104,44 +104,54 @@
             <div id="exact-out-result" class="alert alert-secondary mt-3">Estimate not loaded</div>
             <div class="d-flex gap-2">
                 <button class="btn btn-secondary" type="submit">Estimate</button>
-                <button class="btn btn-primary" type="button" id="exact-out-sep7-button">Sign via SEP-7</button>
+                <button class="btn btn-primary" type="button" id="exact-out-sep7-button" onclick="openExactOutSep7()">Sign via SEP-7</button>
             </div>
         </form>
         {% endif %}
         {% if block_name == 'capture' %}
-        <form method="post" action="/contracts/{{ contract_id }}/actions/capture/prepare" id="capture-form">
-            <div class="d-flex justify-content-end mb-2">
-                <button class="btn btn-outline-secondary btn-sm" type="button" id="use-my-address-button">Use my address</button>
-            </div>
-            {% if range_result and range_result.ok %}
-            <div id="range-result" class="alert alert-info">
-                <strong>Allowed capture range</strong><br>
-                Min: <code>{{ range_result.min_amount_raw }}</code> raw ({{ range_result.min_amount_eurmtl }} EURMTL)<br>
-                Max: <code>{{ range_result.max_amount_raw }}</code> raw ({{ range_result.max_amount_eurmtl }} EURMTL)
-            </div>
-            {% else %}
-            <div id="range-result" class="alert alert-warning">
-                Could not load capture range{% if range_result and range_result.error %}: {{ range_result.error }}{% endif %}.
-            </div>
-            {% endif %}
-            {% for field in (block.fields if block.fields is defined else block['fields']) %}
-            <div class="mb-3">
-                <label class="form-label" for="field-{{ field.name if field.name is defined else field['name'] }}">{{ field.label if field.label is defined else field['label'] }}</label>
-                {% set field_name = field.name if field.name is defined else field['name'] %}
-                {% if field_name == 'msg' %}
-                <textarea class="form-control" id="field-{{ field_name }}" name="{{ field_name }}"></textarea>
-                {% else %}
-                <input class="form-control" id="field-{{ field_name }}" name="{{ field_name }}" value="{{ prefill_user if field_name == 'user' else '' }}">
-                {% endif %}
-            </div>
-            {% endfor %}
-            <div class="alert alert-info">
-                Amount uses raw token units for EURMTL.<br>
-                1 EURMTL = 10,000,000 raw units.<br>
-                1 raw unit = 0.0000001 EURMTL.
+        <form method="post" action="/contracts/{{ contract_id }}/actions/capture/prepare" id="capture-form" onsubmit="submitCaptureForm(event)">
+            <div class="row g-3">
+                <div class="col-12">
+                    <label class="form-label" for="field-user">User address</label>
+                    <div class="input-group">
+                        <input class="form-control" id="field-user" name="user" value="{{ prefill_user }}">
+                        <button class="btn btn-outline-secondary" type="button" id="use-my-address-button" onclick="fillCurrentUserAddress()">Use my address</button>
+                    </div>
+                    <div class="form-hint">
+                        Paste the Stellar address that should capture the mountain.
+                    </div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="field-amount">Amount</label>
+                    <input class="form-control" id="field-amount" name="amount" inputmode="numeric">
+                    {% if range_result and range_result.ok %}
+                    <div id="range-result" class="alert alert-info mt-2 mb-0">
+                        <strong>Allowed capture range</strong><br>
+                        Min: <code>{{ range_result.min_amount_raw }}</code> raw ({{ range_result.min_amount_eurmtl }} EURMTL)<br>
+                        Max: <code>{{ range_result.max_amount_raw }}</code> raw ({{ range_result.max_amount_eurmtl }} EURMTL)
+                    </div>
+                    {% else %}
+                    <div id="range-result" class="alert alert-warning mt-2 mb-0">
+                        Could not load capture range{% if range_result and range_result.error %}: {{ range_result.error }}{% endif %}.
+                    </div>
+                    {% endif %}
+                    <div class="form-hint mt-2">
+                        Amount uses raw token units for EURMTL. 1 EURMTL = 10,000,000 raw units. 1 raw unit = 0.0000001 EURMTL.
+                    </div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label" for="field-msg">Message</label>
+                    <textarea class="form-control" id="field-msg" name="msg" rows="3"></textarea>
+                    <div class="form-hint">
+                        This text will become the new mountain message.
+                    </div>
+                </div>
             </div>
             <div id="capture-error" class="alert alert-danger" style="display:none;"></div>
-            <button class="btn btn-primary" id="capture-submit-button" type="submit" {% if range_result and not range_result.ok %}disabled{% endif %}>Sign via SEP-7</button>
+            <div id="capture-info" class="alert alert-info" style="display:none;"></div>
+            <div class="d-flex justify-content-end mt-3">
+                <button class="btn btn-primary btn-lg" id="capture-submit-button" type="submit" {% if range_result and not range_result.ok %}disabled{% endif %}>Sign via SEP-7</button>
+            </div>
         </form>
         {% endif %}
     </div>
@@ -166,7 +176,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-outline-primary" id="contractsMmwbGenerateButton" style="display:none;">Generate MMWB button</button>
+                <button type="button" class="btn btn-outline-primary" id="contractsMmwbGenerateButton" style="display:none;" onclick="generateMmwbLink()">Generate MMWB button</button>
                 <a href="#" class="btn btn-success" id="contractsMmwbOpenLink" target="_blank" style="display:none;">Open in MMWB</a>
                 <a href="#" class="btn btn-primary" id="contractsSep7OpenUri" target="_blank">Open URI</a>
             </div>
@@ -180,6 +190,7 @@
 <script>
 const contractId = {{ contract_id|tojson }};
 const detectedAddress = {{ detected_user_address|default('', true)|tojson }};
+const prefillUser = {{ prefill_user|default('', true)|tojson }};
 let contractsFlowPoller = null;
 let currentContractsRequestId = '';
 
@@ -188,6 +199,13 @@ function setMessageState(ok, text) {
     if (!box) return;
     box.className = `alert ${ok ? 'alert-success' : 'alert-warning'}`;
     box.textContent = text || (ok ? 'OK' : 'No message');
+}
+
+function showMessageLoadingState() {
+    const box = document.getElementById('message-result');
+    if (!box) return;
+    box.className = 'alert alert-info';
+    box.textContent = 'Loading latest contract state...';
 }
 
 function setRangeState(data) {
@@ -207,7 +225,39 @@ function setRangeState(data) {
     if (submit) submit.disabled = true;
 }
 
+function fillCurrentUserAddress() {
+    clearCaptureError();
+    clearCaptureInfo();
+
+    const userField = document.getElementById('field-user');
+    const nextValue = prefillUser || detectedAddress || '';
+
+    if (!nextValue) {
+        showCaptureError('Could not fill your address automatically.');
+        return;
+    }
+
+    userField.value = '';
+    setTimeout(() => {
+        userField.value = nextValue;
+        showCaptureInfo('Your address was filled automatically.');
+    }, 0);
+}
+
+function fillExactInUser() {
+    if (!document.getElementById('exact-in-user').value) {
+        document.getElementById('exact-in-user').value = prefillUser || detectedAddress || '';
+    }
+}
+
+function fillExactOutUser() {
+    if (!document.getElementById('exact-out-user').value) {
+        document.getElementById('exact-out-user').value = prefillUser || detectedAddress || '';
+    }
+}
+
 async function refreshMessage() {
+    showMessageLoadingState();
     try {
         const response = await fetch(`/contracts/${contractId}/actions/message`);
         const data = await response.json();
@@ -237,8 +287,22 @@ function clearCaptureError() {
     box.textContent = '';
 }
 
+function clearCaptureInfo() {
+    const box = document.getElementById('capture-info');
+    if (!box) return;
+    box.style.display = 'none';
+    box.textContent = '';
+}
+
 function showCaptureError(text) {
     const box = document.getElementById('capture-error');
+    box.style.display = 'block';
+    box.textContent = text;
+}
+
+function showCaptureInfo(text) {
+    const box = document.getElementById('capture-info');
+    if (!box) return;
     box.style.display = 'block';
     box.textContent = text;
 }
@@ -411,6 +475,22 @@ async function openSep7ModalForPrepare(form, prepareUrl, errorElementId) {
     }
 }
 
+function openExactInSep7() {
+    openSep7ModalForPrepare(
+        document.getElementById('exact-in-form'),
+        `/contracts/${contractId}/actions/swap/prepare`,
+        'exact-in-error'
+    );
+}
+
+function openExactOutSep7() {
+    openSep7ModalForPrepare(
+        document.getElementById('exact-out-form'),
+        `/contracts/${contractId}/actions/swap-strict-receive/prepare`,
+        'exact-out-error'
+    );
+}
+
 async function submitEstimateForm(event, resultElementId, mode, errorElementId) {
     event.preventDefault();
     clearInlineError(errorElementId);
@@ -433,15 +513,6 @@ async function submitEstimateForm(event, resultElementId, mode, errorElementId) 
     }
 }
 
-document.getElementById('message-refresh-button')?.addEventListener('click', refreshMountainState);
-document.getElementById('capture-form')?.addEventListener('submit', submitCaptureForm);
-document.getElementById('use-my-address-button')?.addEventListener('click', () => {
-    document.getElementById('field-user').value = detectedAddress || '';
-});
-document.getElementById('exact-in-form')?.addEventListener('submit', (event) => submitEstimateForm(event, 'exact-in-result', 'exact_in', 'exact-in-error'));
-document.getElementById('exact-out-form')?.addEventListener('submit', (event) => submitEstimateForm(event, 'exact-out-result', 'exact_out', 'exact-out-error'));
-document.getElementById('exact-in-sep7-button')?.addEventListener('click', () => openSep7ModalForPrepare(document.getElementById('exact-in-form'), `/contracts/${contractId}/actions/swap/prepare`, 'exact-in-error'));
-document.getElementById('exact-out-sep7-button')?.addEventListener('click', () => openSep7ModalForPrepare(document.getElementById('exact-out-form'), `/contracts/${contractId}/actions/swap-strict-receive/prepare`, 'exact-out-error'));
 async function generateMmwbLink() {
     const generateButton = document.getElementById('contractsMmwbGenerateButton');
     const openLink = document.getElementById('contractsMmwbOpenLink');
@@ -468,13 +539,5 @@ async function generateMmwbLink() {
         generateButton.disabled = false;
     }
 }
-
-document.getElementById('exact-in-user')?.addEventListener('focus', () => {
-    if (!document.getElementById('exact-in-user').value) document.getElementById('exact-in-user').value = detectedAddress || '';
-});
-document.getElementById('exact-out-user')?.addEventListener('focus', () => {
-    if (!document.getElementById('exact-out-user').value) document.getElementById('exact-out-user').value = detectedAddress || '';
-});
-document.getElementById('contractsMmwbGenerateButton')?.addEventListener('click', generateMmwbLink);
 </script>
 {% endblock %}

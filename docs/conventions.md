@@ -44,8 +44,12 @@ For docs/process changes:
 ## Web/UI Conventions
 
 - Preserve current template patterns and structure unless migration is explicitly requested.
-- In templates, keep existing inline handler style (`on*` attributes) unless there is a clear reason to move.
+- In templates, prefer explicit inline handler style (`onclick`, `onsubmit`, `oninput`, etc.) so behavior is visible in HTML.
+- Do not introduce `addEventListener` in templates when the same behavior can be expressed with inline handlers.
+- `addEventListener` is allowed only when inline handlers are genuinely insufficient, and only after multiple failed attempts to express the behavior with explicit HTML handlers.
 - Keep JS behavior deterministic and avoid hidden global mutations.
+- Any user-triggered action must provide visible feedback in the UI.
+- If the end result may look unchanged, show a distinct transient state first so the user can see that the action really ran.
 
 ## Anti-Patterns
 

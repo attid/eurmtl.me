@@ -144,8 +144,26 @@ def _get_contracts_session_marker() -> str:
     return marker
 
 
-async def _get_detected_user_address() -> str:
+def _get_logged_in_telegram_id() -> int:
+    user_id = session.get("user_id")
+    if user_id:
+        try:
+            return int(user_id)
+        except (TypeError, ValueError):
+            pass
+
     telegram_id = session.get("userdata", {}).get("id")
+    if telegram_id:
+        try:
+            return int(telegram_id)
+        except (TypeError, ValueError):
+            pass
+
+    return 0
+
+
+async def _get_detected_user_address() -> str:
+    telegram_id = _get_logged_in_telegram_id()
     if not telegram_id:
         return ""
 
