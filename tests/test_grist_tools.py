@@ -68,7 +68,7 @@ async def test_grist_cache_based_helpers():
             {"code": "EURMTL", "need_QR": True}
             if table == "EURMTL_assets"
             else user_record
-            if key in {"GA1", "10"}
+            if key in {"GA1", 10}
             else second_user
             if key == "GA2"
             else None
@@ -99,3 +99,25 @@ async def test_grist_cache_based_helpers():
     assert isinstance(user, User)
     assert by_tg.account_id == "GA1"
     assert sorted(users.keys()) == ["GA1", "GA2"]
+
+
+@pytest.mark.asyncio
+async def test_load_user_from_grist_uses_integer_telegram_id_index_key():
+    user_record = {"telegram_id": 84131737, "account_id": "GA1", "username": "alice"}
+
+    def find_by_index(table, key, index_name="account_id"):
+        if table == "EURMTL_users" and index_name == "telegram_id" and key == 84131737:
+            return user_record
+        return None
+
+    fake_cache = SimpleNamespace(find_by_index=find_by_index)
+
+    with (
+        patch("other.grist_tools.grist_cash.get", AsyncMock(return_value=None)),
+        patch("other.grist_tools.grist_cash.set", AsyncMock()),
+        patch("other.grist_cache.grist_cache", fake_cache),
+    ):
+        user = await load_user_from_grist(telegram_id=84131737)
+
+    assert isinstance(user, User)
+    assert user.account_id == "GA1"

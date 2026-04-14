@@ -367,9 +367,7 @@ async def load_user_from_grist(
         user_record = grist_cache.find_by_index("EURMTL_users", account_id)
     elif telegram_id:
         # Ищем по дополнительному индексу telegram_id
-        user_record = grist_cache.find_by_index(
-            "EURMTL_users", str(telegram_id), "telegram_id"
-        )
+        user_record = grist_cache.find_by_index("EURMTL_users", telegram_id, "telegram_id")
     else:
         return None
 
