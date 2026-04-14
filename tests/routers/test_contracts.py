@@ -92,6 +92,42 @@ async def test_mountain_contract_detail_explains_raw_amount_units(client):
 
 
 @pytest.mark.asyncio
+async def test_mountain_contract_detail_prefills_address_from_session_user_id(client):
+    async with client.session_transaction() as session:
+        session["user_id"] = "42"
+        session["userdata"] = {"id": "42", "photo_url": "", "username": "tester"}
+
+    with (
+        patch(
+            "routers.contracts.load_user_from_grist",
+            new=AsyncMock(
+                return_value=type(
+                    "User",
+                    (),
+                    {"account_id": VALID_USER},
+                )()
+            ),
+        ),
+        patch(
+            "routers.contracts.load_range",
+            new=AsyncMock(
+                return_value={
+                    "ok": True,
+                    "min_amount_raw": "10",
+                    "max_amount_raw": "20",
+                    "min_amount_eurmtl": "0.000001",
+                    "max_amount_eurmtl": "0.000002",
+                    "error": "",
+                }
+            ),
+        ),
+    ):
+        response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}")
+
+    body = await response.get_data(as_text=True)
+    assert f'value="{VALID_USER}"' in body
+
+@pytest.mark.asyncio
 async def test_contracts_index_hides_internal_contracts(client):
     response = await client.get("/contracts")
 
@@ -497,6 +533,37 @@ async def test_contract_detail_renders_interactive_contract_ui(client):
     assert "Use my address" in body
     assert 'id="range-result"' in body
     assert "refreshRange" in body
+    assert "addEventListener" not in body
+    assert 'onclick="refreshMountainState()"' in body
+    assert 'onclick="fillCurrentUserAddress()"' in body
+    assert 'onsubmit="submitCaptureForm(event)"' in body
+    assert "Loading latest contract state..." in body
+    assert "Could not fill your address automatically." in body
+
+
+@pytest.mark.asyncio
+async def test_contract_detail_use_my_address_button_uses_prefill_user(client):
+    async with client.session_transaction() as session:
+        session["contracts_last_used_address"] = VALID_USER
+
+    with patch(
+        "routers.contracts.load_range",
+        new=AsyncMock(
+            return_value={
+                "ok": True,
+                "min_amount_raw": "10000000",
+                "max_amount_raw": "25000000",
+                "min_amount_eurmtl": "1",
+                "max_amount_eurmtl": "2.5",
+                "error": "",
+            }
+        ),
+    ):
+        response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}")
+
+    body = await response.get_data(as_text=True)
+    assert f"const prefillUser = {VALID_USER!r};".replace("'", '"') in body
+    assert "prefillUser || detectedAddress || ''" in body
 
 
 @pytest.mark.asyncio
