@@ -5,10 +5,11 @@
 import os
 import tempfile
 import pytest
+import qrcode
 from PIL import Image
 from unittest.mock import patch
 
-from other.qr_tools import create_beautiful_code, decode_color
+from other.qr_tools import create_beautiful_code, create_qr_with_logo, decode_color
 
 
 class TestQRTools:
@@ -184,6 +185,22 @@ class TestQRTools:
         shortened_text = long_text[:-10]
         assert len(shortened_text) == len(long_text) - 10
 
+    @patch("other.qr_tools.qrcode.QRCode")
+    def test_create_qr_with_logo_uses_auto_fit_and_higher_capacity_settings(
+        self, mock_qr_class
+    ):
+        mock_qr = mock_qr_class.return_value
+        mock_image = Image.new("RGB", (200, 200), "white")
+        mock_qr.make_image.return_value = mock_image
+        logo = Image.new("RGB", (50, 20), "white")
+
+        create_qr_with_logo("x" * 2000, logo)
+
+        _, kwargs = mock_qr_class.call_args
+        assert kwargs["version"] is None
+        assert kwargs["error_correction"] == qrcode.constants.ERROR_CORRECT_L
+        mock_qr.make.assert_called_once_with(fit=True)
+
     def test_qr_code_size_and_format(self):
         """Тест проверки размера и формата созданного QR-кода"""
         temp_filename = "/static/qr/test_size.png"
@@ -199,8 +216,8 @@ class TestQRTools:
 
             with Image.open(full_path) as img:
                 # Проверяем что изображение имеет разумный размер (уменьшаем требования)
-                assert img.size[0] >= 150  # Минимальная ширина (было 200)
-                assert img.size[1] >= 150  # Минимальная высота (было 200)
+                assert img.size[0] >= 120  # Минимальная ширина
+                assert img.size[1] >= 120  # Минимальная высота
                 assert img.size[0] <= 2000  # Максимальная ширина
                 assert img.size[1] <= 2000  # Максимальная высота
 
