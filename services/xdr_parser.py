@@ -554,7 +554,6 @@ class SimulatedLedger:
 
 async def decode_invoke_host_function(operation):
     result = []
-    print(jsonpickle.dumps(operation, indent=2))
     try:
         hf = operation.host_function
         result.append(f"      Function Type: {hf.type}")
