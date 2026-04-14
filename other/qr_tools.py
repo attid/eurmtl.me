@@ -12,8 +12,8 @@ def create_beautiful_code(file_name, logo_text, qr_text):
 def create_qr_with_logo(qr_code_text, logo_img):
     # Создание QR-кода
     qr = qrcode.QRCode(
-        version=5,
-        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
         box_size=5,
         border=1,
     )
