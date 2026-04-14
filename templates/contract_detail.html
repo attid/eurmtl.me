@@ -113,6 +113,17 @@
             <div class="d-flex justify-content-end mb-2">
                 <button class="btn btn-outline-secondary btn-sm" type="button" id="use-my-address-button">Use my address</button>
             </div>
+            {% if range_result and range_result.ok %}
+            <div id="range-result" class="alert alert-info">
+                <strong>Allowed capture range</strong><br>
+                Min: <code>{{ range_result.min_amount_raw }}</code> raw ({{ range_result.min_amount_eurmtl }} EURMTL)<br>
+                Max: <code>{{ range_result.max_amount_raw }}</code> raw ({{ range_result.max_amount_eurmtl }} EURMTL)
+            </div>
+            {% else %}
+            <div id="range-result" class="alert alert-warning">
+                Could not load capture range{% if range_result and range_result.error %}: {{ range_result.error }}{% endif %}.
+            </div>
+            {% endif %}
             {% for field in (block.fields if block.fields is defined else block['fields']) %}
             <div class="mb-3">
                 <label class="form-label" for="field-{{ field.name if field.name is defined else field['name'] }}">{{ field.label if field.label is defined else field['label'] }}</label>
@@ -130,7 +141,7 @@
                 1 raw unit = 0.0000001 EURMTL.
             </div>
             <div id="capture-error" class="alert alert-danger" style="display:none;"></div>
-            <button class="btn btn-primary" type="submit">Sign via SEP-7</button>
+            <button class="btn btn-primary" id="capture-submit-button" type="submit" {% if range_result and not range_result.ok %}disabled{% endif %}>Sign via SEP-7</button>
         </form>
         {% endif %}
     </div>
@@ -179,6 +190,23 @@ function setMessageState(ok, text) {
     box.textContent = text || (ok ? 'OK' : 'No message');
 }
 
+function setRangeState(data) {
+    const box = document.getElementById('range-result');
+    const submit = document.getElementById('capture-submit-button');
+    if (!box) return;
+
+    if (data.ok) {
+        box.className = 'alert alert-info';
+        box.innerHTML = `<strong>Allowed capture range</strong><br>Min: <code>${data.min_amount_raw}</code> raw (${data.min_amount_eurmtl} EURMTL)<br>Max: <code>${data.max_amount_raw}</code> raw (${data.max_amount_eurmtl} EURMTL)`;
+        if (submit) submit.disabled = false;
+        return;
+    }
+
+    box.className = 'alert alert-warning';
+    box.textContent = `Could not load capture range: ${data.error || 'unknown error'}.`;
+    if (submit) submit.disabled = true;
+}
+
 async function refreshMessage() {
     try {
         const response = await fetch(`/contracts/${contractId}/actions/message`);
@@ -187,6 +215,20 @@ async function refreshMessage() {
     } catch (error) {
         setMessageState(false, `Failed to refresh message: ${error.message}`);
     }
+}
+
+async function refreshRange() {
+    try {
+        const response = await fetch(`/contracts/${contractId}/actions/range`);
+        const data = await response.json();
+        setRangeState(data);
+    } catch (error) {
+        setRangeState({ok: false, error: error.message});
+    }
+}
+
+async function refreshMountainState() {
+    await Promise.all([refreshMessage(), refreshRange()]);
 }
 
 function clearCaptureError() {
@@ -391,7 +433,7 @@ async function submitEstimateForm(event, resultElementId, mode, errorElementId) 
     }
 }
 
-document.getElementById('message-refresh-button')?.addEventListener('click', refreshMessage);
+document.getElementById('message-refresh-button')?.addEventListener('click', refreshMountainState);
 document.getElementById('capture-form')?.addEventListener('submit', submitCaptureForm);
 document.getElementById('use-my-address-button')?.addEventListener('click', () => {
     document.getElementById('field-user').value = detectedAddress || '';

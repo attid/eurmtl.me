@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from stellar_sdk import StrKey, scval
 
 from other.config_reader import config
-from other.stellar_soroban import prepare_contract_transaction_uri, read_contract_string
+from other.stellar_soroban import (
+    prepare_contract_transaction_uri,
+    read_contract_string,
+    read_contract_value,
+)
 
 MOUNTAIN_CONTRACT_ID = "CAFXUALXFPTBTLSRCDSMJXNPSN3AVL2ZPXJUDDHVTUTLRX5SCNP2SISM"
 MOUNTAIN_TOKEN_CONTRACT_ID = "CDUYP3U6HGTOBUNQD2WTLWNMNADWMENROKZZIHGEVGKIU3ZUDF42CDOK"
 HIDDEN_CONTRACT_ID = "CBHIDDENCONTRACTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+EURMTL_RAW_SCALE = Decimal("10000000")
 
 
 def choose_candidate_address(
@@ -21,7 +28,46 @@ def choose_candidate_address(
     return ""
 
 
-def validate_capture_form(user: str, amount: str, msg: str) -> str:
+def _normalize_i128_like(value) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, dict):
+        for key in ("i128", "u128", "i64", "u64", "i32", "u32"):
+            inner = value.get(key)
+            if inner is not None:
+                return _normalize_i128_like(inner)
+    raise ValueError("simulateTransaction returned unsupported range format")
+
+
+def _extract_range_pair(payload: dict) -> tuple[str, str]:
+    if "vec" in payload and isinstance(payload["vec"], list) and len(payload["vec"]) == 2:
+        return (
+            _normalize_i128_like(payload["vec"][0]),
+            _normalize_i128_like(payload["vec"][1]),
+        )
+    if "tuple" in payload and isinstance(payload["tuple"], list) and len(payload["tuple"]) == 2:
+        return (
+            _normalize_i128_like(payload["tuple"][0]),
+            _normalize_i128_like(payload["tuple"][1]),
+        )
+    raise ValueError("simulateTransaction returned unsupported range format")
+
+
+def format_raw_amount_to_eurmtl(raw_amount: str) -> str:
+    amount = Decimal(raw_amount) / EURMTL_RAW_SCALE
+    normalized = format(amount.normalize(), "f")
+    return normalized.rstrip("0").rstrip(".") if "." in normalized else normalized
+
+
+def validate_capture_form(
+    user: str,
+    amount: str,
+    msg: str,
+    min_amount_raw: str = "",
+    max_amount_raw: str = "",
+) -> str:
     if not user or not amount or not msg:
         return "user, amount and msg are required"
     if amount == "0":
@@ -29,9 +75,14 @@ def validate_capture_form(user: str, amount: str, msg: str) -> str:
     if not StrKey.is_valid_ed25519_public_key(user):
         return "user must be a valid Stellar address"
     try:
-        int(amount)
+        parsed_amount = int(amount)
     except ValueError:
         return "amount must be an integer"
+    if min_amount_raw and max_amount_raw:
+        min_amount = int(min_amount_raw)
+        max_amount = int(max_amount_raw)
+        if parsed_amount < min_amount or parsed_amount > max_amount:
+            return f"amount must be between {min_amount_raw} and {max_amount_raw} raw units"
     return ""
 
 
@@ -72,6 +123,33 @@ async def load_message(contract_id: str) -> dict:
         return {"ok": True, "message": message, "error": ""}
     except ValueError as exc:
         return {"ok": False, "message": "", "error": str(exc)}
+
+
+async def load_range(contract_id: str) -> dict:
+    try:
+        range_value = await read_contract_value(
+            contract_id=contract_id,
+            function_name="get_range",
+            rpc_url="https://soroban-rpc.mainnet.stellar.gateway.fm",
+        )
+        min_amount_raw, max_amount_raw = _extract_range_pair(range_value)
+        return {
+            "ok": True,
+            "min_amount_raw": min_amount_raw,
+            "max_amount_raw": max_amount_raw,
+            "min_amount_eurmtl": format_raw_amount_to_eurmtl(min_amount_raw),
+            "max_amount_eurmtl": format_raw_amount_to_eurmtl(max_amount_raw),
+            "error": "",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "min_amount_raw": "",
+            "max_amount_raw": "",
+            "min_amount_eurmtl": "",
+            "max_amount_eurmtl": "",
+            "error": str(exc),
+        }
 
 
 def build_mountain_contract_definition() -> dict:
