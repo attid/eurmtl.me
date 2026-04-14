@@ -96,6 +96,12 @@ For the current swap contract:
 - Prepared SEP-7 transactions currently use a 5-minute validity window.
 - MMWB links are generated lazily only after explicit user action from the prepared flow modal.
 
+For the current mountain contract:
+- `capture` is prepared as a single contract call.
+- External `approve` is not added anymore.
+- `amount` is currently a raw EURMTL token unit value.
+- UI text explicitly explains that `1 EURMTL = 10,000,000 raw units`.
+
 ## Lazy MMWB link generation
 
 Prepared contract flows can request an MMWB link lazily via `/contracts/flow/<request_id>/mmwb`.
