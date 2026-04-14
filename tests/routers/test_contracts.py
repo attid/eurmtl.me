@@ -92,7 +92,9 @@ async def test_mountain_contract_detail_explains_raw_amount_units(client):
 
 
 @pytest.mark.asyncio
-async def test_mountain_contract_detail_prefills_address_from_session_user_id(client):
+async def test_mountain_contract_detail_exposes_current_user_address_without_prefill(
+    client,
+):
     async with client.session_transaction() as session:
         session["user_id"] = "42"
         session["userdata"] = {"id": "42", "photo_url": "", "username": "tester"}
@@ -125,7 +127,9 @@ async def test_mountain_contract_detail_prefills_address_from_session_user_id(cl
         response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}")
 
     body = await response.get_data(as_text=True)
-    assert f'value="{VALID_USER}"' in body
+    assert 'id="field-user" name="user"' in body
+    assert f'const prefillUser = "{VALID_USER}"' in body
+    assert f'value="{VALID_USER}"' not in body
 
 @pytest.mark.asyncio
 async def test_contracts_index_hides_internal_contracts(client):
