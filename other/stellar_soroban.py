@@ -21,6 +21,17 @@ SUBMIT_TRANSACTION_POLL_ATTEMPTS = 10
 SUBMIT_TRANSACTION_POLL_INTERVAL_SECONDS = 1
 
 
+def _normalize_status_name(status) -> str:
+    if status is None:
+        return ""
+    if hasattr(status, "name"):
+        return str(status.name)
+    status_str = str(status)
+    if "." in status_str:
+        return status_str.rsplit(".", 1)[-1]
+    return status_str
+
+
 def _decode_send_transaction_error(send_response) -> str:
     error_result_xdr = getattr(send_response, "error_result_xdr", None)
     if not error_result_xdr:
@@ -250,7 +261,7 @@ async def submit_signed_transaction(rpc_url: str, signed_xdr: str) -> dict:
         )
         send_response = server.send_transaction(transaction)
         tx_hash = getattr(send_response, "hash", "") or ""
-        send_status = getattr(send_response, "status", None)
+        send_status = _normalize_status_name(getattr(send_response, "status", None))
         send_error = _decode_send_transaction_error(send_response)
         logger.info(
             "submit_signed_transaction send_response: status={} tx_hash={} error={} error_result_xdr={}",
@@ -277,7 +288,7 @@ async def submit_signed_transaction(rpc_url: str, signed_xdr: str) -> dict:
 
         for attempt in range(SUBMIT_TRANSACTION_POLL_ATTEMPTS):
             get_response = server.get_transaction(tx_hash)
-            status = getattr(get_response, "status", None)
+            status = _normalize_status_name(getattr(get_response, "status", None))
             logger.info(
                 "submit_signed_transaction poll_response: attempt={} tx_hash={} status={}",
                 attempt + 1,
