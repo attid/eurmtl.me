@@ -5,7 +5,6 @@ from stellar_sdk import Keypair
 
 from services.contracts.handlers.mountain_contract import (
     MOUNTAIN_CONTRACT_ID,
-    MOUNTAIN_TOKEN_CONTRACT_ID,
     choose_candidate_address,
     load_message,
     prepare_capture_flow,
@@ -91,7 +90,7 @@ async def test_load_message_returns_controlled_error_payload():
 
 
 @pytest.mark.asyncio
-async def test_prepare_capture_flow_builds_approve_then_capture_sequence():
+async def test_prepare_capture_flow_builds_single_capture_transaction():
     user = Keypair.random().public_key
 
     with patch(
@@ -111,5 +110,5 @@ async def test_prepare_capture_flow_builds_approve_then_capture_sequence():
     assert kwargs["contract_id"] == MOUNTAIN_CONTRACT_ID
     assert kwargs["source_account_id"] == user
     assert kwargs["function_name"] == "capture"
-    assert kwargs["token_contract_id"] == MOUNTAIN_TOKEN_CONTRACT_ID
-    assert kwargs["approve_expiration_ledger_offset"] == 1000
+    assert kwargs["token_contract_id"] is None
+    assert kwargs["approve_expiration_ledger_offset"] is None

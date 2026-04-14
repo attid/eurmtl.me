@@ -427,7 +427,27 @@ Clicking it should fetch the bot link and then reveal an `Open in MMWB` link.
 
 Run targeted router tests and repository checks.
 
-### Task 16: Run relevant verification gates
+### Task 16: Align mountain contract flow with current on-chain capture behavior
+
+**Files:**
+- Modify: `services/contracts/handlers/mountain_contract.py`
+- Modify: `templates/contract_detail.html`
+- Modify: `tests/services/test_mountain_contract.py`
+- Modify: `tests/routers/test_contracts.py`
+
+**Step 1: Remove obsolete approve-based preparation**
+
+Prepare the mountain `capture` action as a single contract call without adding external token `approve` wrapping.
+
+**Step 2: Keep amount raw but explain units**
+
+Keep the existing integer/raw input model and add explicit UI help text that raw units are used for EURMTL and that `1 EURMTL = 10,000,000 raw units`.
+
+**Step 3: Verify**
+
+Run targeted router/service tests and changed-file checks.
+
+### Task 17: Run relevant verification gates
 
 **Files:**
 - No code changes required

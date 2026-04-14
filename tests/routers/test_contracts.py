@@ -62,6 +62,18 @@ async def test_swap_contract_detail_renders_overview_and_swap_blocks(client):
 
 
 @pytest.mark.asyncio
+async def test_mountain_contract_detail_explains_raw_amount_units(client):
+    response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "Amount uses raw token units" in body
+    assert "1 EURMTL = 10,000,000 raw units" in body
+    assert "1 raw unit = 0.0000001 EURMTL" in body
+    assert f'href="https://viewer.eurmtl.me/contract/{FIRST_CONTRACT_ID}"' in body
+
+
+@pytest.mark.asyncio
 async def test_contracts_index_hides_internal_contracts(client):
     response = await client.get("/contracts")
 

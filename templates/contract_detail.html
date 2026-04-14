@@ -8,6 +8,7 @@
 <h3 class="card-title">{{ contract.title if contract.title is defined else contract['title'] }}</h3>
 <p class="text-secondary">{{ contract.description if contract.description is defined else contract['description'] }}</p>
 <p><code>{{ contract_id }}</code></p>
+<p><a href="https://viewer.eurmtl.me/contract/{{ contract_id }}" target="_blank" rel="noopener">Open in EURMTL Contract Viewer</a></p>
 {% if contract_id == 'CCEBV2EC6Z6TE2632XXTEBD6KA2U57LRIEDGV2SU77BOF2HKKB4HDIM2' %}
 <div class="alert alert-warning">Prepared SEP-7 transactions are valid for 5 minutes after generation.</div>
 {% endif %}
@@ -123,6 +124,11 @@
                 {% endif %}
             </div>
             {% endfor %}
+            <div class="alert alert-info">
+                Amount uses raw token units for EURMTL.<br>
+                1 EURMTL = 10,000,000 raw units.<br>
+                1 raw unit = 0.0000001 EURMTL.
+            </div>
             <div id="capture-error" class="alert alert-danger" style="display:none;"></div>
             <button class="btn btn-primary" type="submit">Sign via SEP-7</button>
         </form>

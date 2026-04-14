@@ -41,6 +41,36 @@ async def test_read_contract_string_uses_json_rpc_simulation_payload():
 
 
 @pytest.mark.asyncio
+async def test_read_contract_string_decodes_escaped_utf8_string_payload():
+    with patch(
+        "other.stellar_soroban._post_json_rpc",
+        new=AsyncMock(
+            return_value={
+                "status": 200,
+                "data": {
+                    "result": {
+                        "results": [
+                            {
+                                "returnValueJson": {
+                                    "string": "\\xd0\\x99\\xd1\\x83\\xd0\\xa5",
+                                }
+                            }
+                        ]
+                    }
+                },
+            }
+        ),
+    ):
+        result = await read_contract_string(
+            rpc_url="https://soroban-rpc.mainnet.stellar.gateway.fm",
+            contract_id="CAFXUALXFPTBTLSRCDSMJXNPSN3AVL2ZPXJUDDHVTUTLRX5SCNP2SISM",
+            function_name="message",
+        )
+
+    assert result == "ЙуХ"
+
+
+@pytest.mark.asyncio
 async def test_read_contract_string_supports_base64_result_fallback():
     with patch(
         "other.stellar_soroban._post_json_rpc",
@@ -144,6 +174,27 @@ async def test_submit_signed_transaction_returns_decoded_error_when_send_fails()
         "tx_hash": "abc123",
         "error": "Sending transaction failed: txTOO_LATE",
     }
+
+
+@pytest.mark.asyncio
+async def test_submit_signed_transaction_returns_hash_when_non_pending_send_already_has_hash_and_later_succeeds():
+    with patch("other.stellar_soroban.TransactionEnvelope.from_xdr", return_value="TX"):
+        with patch("other.stellar_soroban.SorobanServer") as server_cls:
+            server = server_cls.return_value
+            server.send_transaction.return_value = MagicMock(
+                status="ERROR", hash="abc123", error_result_xdr=None
+            )
+            server.get_transaction.side_effect = [
+                MagicMock(status="NOT_FOUND"),
+                MagicMock(status="SUCCESS"),
+            ]
+
+            result = await submit_signed_transaction(
+                rpc_url="https://soroban-rpc.mainnet.stellar.gateway.fm",
+                signed_xdr="AAAAAA==",
+            )
+
+    assert result == {"ok": True, "tx_hash": "abc123", "error": ""}
 
 
 @pytest.mark.asyncio

@@ -57,8 +57,8 @@ async def prepare_capture_flow(
         message="Capture the mountain",
         origin_domain=config.domain,
         signer_secret=config.domain_key.get_secret_value(),
-        token_contract_id=MOUNTAIN_TOKEN_CONTRACT_ID,
-        approve_expiration_ledger_offset=1000,
+        token_contract_id=None,
+        approve_expiration_ledger_offset=None,
     )
 
 

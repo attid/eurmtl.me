@@ -94,6 +94,20 @@ async def read_contract_value(
     raise ValueError("simulateTransaction returned unsupported result format")
 
 
+def _normalize_contract_string(value: str) -> str:
+    if "\\x" not in value:
+        return value
+    try:
+        return (
+            value.encode("latin-1")
+            .decode("unicode_escape")
+            .encode("latin-1")
+            .decode("utf-8")
+        )
+    except Exception:
+        return value
+
+
 async def read_contract_string(
     rpc_url: str, contract_id: str, function_name: str
 ) -> str:
@@ -104,7 +118,7 @@ async def read_contract_string(
             rpc_url=rpc_url,
         )
         if "string" in return_value:
-            return return_value["string"]
+            return _normalize_contract_string(return_value["string"])
 
         xdr_value = return_value.get("xdr")
         if xdr_value:
@@ -236,27 +250,72 @@ async def submit_signed_transaction(rpc_url: str, signed_xdr: str) -> dict:
         )
         send_response = server.send_transaction(transaction)
         tx_hash = getattr(send_response, "hash", "") or ""
-        if getattr(send_response, "status", None) != "PENDING":
+        send_status = getattr(send_response, "status", None)
+        send_error = _decode_send_transaction_error(send_response)
+        logger.info(
+            "submit_signed_transaction send_response: status={} tx_hash={} error={} error_result_xdr={}",
+            send_status,
+            tx_hash,
+            send_error,
+            getattr(send_response, "error_result_xdr", None),
+        )
+        should_poll = send_status == "PENDING" or (
+            bool(tx_hash) and send_error == "Sending transaction failed"
+        )
+        if not should_poll:
+            logger.info(
+                "submit_signed_transaction final: ok={} tx_hash={} reason=no_poll error={}",
+                False,
+                tx_hash,
+                send_error,
+            )
             return {
                 "ok": False,
                 "tx_hash": tx_hash,
-                "error": _decode_send_transaction_error(send_response),
+                "error": send_error,
             }
 
         for attempt in range(SUBMIT_TRANSACTION_POLL_ATTEMPTS):
             get_response = server.get_transaction(tx_hash)
             status = getattr(get_response, "status", None)
+            logger.info(
+                "submit_signed_transaction poll_response: attempt={} tx_hash={} status={}",
+                attempt + 1,
+                tx_hash,
+                status,
+            )
             if status == "SUCCESS":
+                logger.info(
+                    "submit_signed_transaction final: ok={} tx_hash={} reason=polled_success error=",
+                    True,
+                    tx_hash,
+                )
                 return {"ok": True, "tx_hash": tx_hash, "error": ""}
             if status in {"FAILED", "ERROR"}:
+                logger.info(
+                    "submit_signed_transaction final: ok={} tx_hash={} reason=polled_failure error={}",
+                    False,
+                    tx_hash,
+                    "Transaction failed",
+                )
                 return {"ok": False, "tx_hash": tx_hash, "error": "Transaction failed"}
             if attempt < SUBMIT_TRANSACTION_POLL_ATTEMPTS - 1:
                 await asyncio.sleep(SUBMIT_TRANSACTION_POLL_INTERVAL_SECONDS)
 
+        logger.info(
+            "submit_signed_transaction final: ok={} tx_hash={} reason=poll_timeout_assume_sent error=",
+            True,
+            tx_hash,
+        )
         return {
             "ok": True,
             "tx_hash": tx_hash,
             "error": "",
         }
     except Exception as exc:
+        logger.exception(
+            "submit_signed_transaction exception: tx_hash={} error={}",
+            locals().get("tx_hash", ""),
+            str(exc),
+        )
         return {"ok": False, "tx_hash": "", "error": str(exc)}
