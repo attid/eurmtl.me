@@ -63,13 +63,31 @@ async def test_swap_contract_detail_renders_overview_and_swap_blocks(client):
 
 @pytest.mark.asyncio
 async def test_mountain_contract_detail_explains_raw_amount_units(client):
-    response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}")
+    with patch(
+        "routers.contracts.load_range",
+        new=AsyncMock(
+            return_value={
+                "ok": True,
+                "min_amount_raw": "10000000",
+                "max_amount_raw": "25000000",
+                "min_amount_eurmtl": "1",
+                "max_amount_eurmtl": "2.5",
+                "error": "",
+            }
+        ),
+    ):
+        response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}")
 
     assert response.status_code == 200
     body = await response.get_data(as_text=True)
     assert "Amount uses raw token units" in body
     assert "1 EURMTL = 10,000,000 raw units" in body
     assert "1 raw unit = 0.0000001 EURMTL" in body
+    assert "Allowed capture range" in body
+    assert "10000000" in body
+    assert "25000000" in body
+    assert "1 EURMTL" in body
+    assert "2.5 EURMTL" in body
     assert f'href="https://viewer.eurmtl.me/contract/{FIRST_CONTRACT_ID}"' in body
 
 
@@ -103,14 +121,29 @@ async def test_unknown_contract_returns_404(client):
 async def test_capture_prepare_returns_request_id_uri_and_stores_last_used_address(
     client,
 ):
-    with patch(
-        "routers.contracts.prepare_capture_flow",
-        new=AsyncMock(
-            return_value={
-                "request_id": "req-1",
-                "uri": "web+stellar:tx?xdr=AAAA",
-                "qr_url": "/static/qr/req-1.png",
-            }
+    with (
+        patch(
+            "routers.contracts.load_range",
+            new=AsyncMock(
+                return_value={
+                    "ok": True,
+                    "min_amount_raw": "10",
+                    "max_amount_raw": "20",
+                    "min_amount_eurmtl": "0.000001",
+                    "max_amount_eurmtl": "0.000002",
+                    "error": "",
+                }
+            ),
+        ),
+        patch(
+            "routers.contracts.prepare_capture_flow",
+            new=AsyncMock(
+                return_value={
+                    "request_id": "req-1",
+                    "uri": "web+stellar:tx?xdr=AAAA",
+                    "qr_url": "/static/qr/req-1.png",
+                }
+            ),
         ),
     ):
         response = await client.post(
@@ -202,6 +235,34 @@ async def test_message_action_returns_latest_message_json(client):
     assert await response.get_json() == {
         "ok": True,
         "message": "Long live the king",
+        "error": "",
+    }
+
+
+@pytest.mark.asyncio
+async def test_range_action_returns_latest_range_json(client):
+    with patch(
+        "routers.contracts.load_range",
+        new=AsyncMock(
+            return_value={
+                "ok": True,
+                "min_amount_raw": "10000000",
+                "max_amount_raw": "25000000",
+                "min_amount_eurmtl": "1",
+                "max_amount_eurmtl": "2.5",
+                "error": "",
+            }
+        ),
+    ):
+        response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}/actions/range")
+
+    assert response.status_code == 200
+    assert await response.get_json() == {
+        "ok": True,
+        "min_amount_raw": "10000000",
+        "max_amount_raw": "25000000",
+        "min_amount_eurmtl": "1",
+        "max_amount_eurmtl": "2.5",
         "error": "",
     }
 
@@ -404,10 +465,25 @@ async def test_swap_strict_receive_estimate_action_returns_human_readable_quote(
 
 @pytest.mark.asyncio
 async def test_contract_detail_renders_interactive_contract_ui(client):
-    with patch(
-        "routers.contracts.load_message",
-        new=AsyncMock(
-            return_value={"ok": True, "message": "Live message", "error": ""}
+    with (
+        patch(
+            "routers.contracts.load_message",
+            new=AsyncMock(
+                return_value={"ok": True, "message": "Live message", "error": ""}
+            ),
+        ),
+        patch(
+            "routers.contracts.load_range",
+            new=AsyncMock(
+                return_value={
+                    "ok": True,
+                    "min_amount_raw": "10000000",
+                    "max_amount_raw": "25000000",
+                    "min_amount_eurmtl": "1",
+                    "max_amount_eurmtl": "2.5",
+                    "error": "",
+                }
+            ),
         ),
     ):
         response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}")
@@ -419,6 +495,86 @@ async def test_contract_detail_renders_interactive_contract_ui(client):
     assert 'id="contractsFlowStatus"' in body
     assert 'id="contractsResult"' in body
     assert "Use my address" in body
+    assert 'id="range-result"' in body
+    assert "refreshRange" in body
+
+
+@pytest.mark.asyncio
+async def test_mountain_contract_detail_disables_capture_when_range_loading_fails(client):
+    with patch(
+        "routers.contracts.load_range",
+        new=AsyncMock(
+            return_value={
+                "ok": False,
+                "min_amount_raw": "",
+                "max_amount_raw": "",
+                "min_amount_eurmtl": "",
+                "max_amount_eurmtl": "",
+                "error": "range unavailable",
+            }
+        ),
+    ):
+        response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "range unavailable" in body
+    assert 'id="capture-submit-button"' in body
+    assert "disabled" in body
+
+
+@pytest.mark.asyncio
+async def test_capture_prepare_rejects_out_of_range_amount(client):
+    with patch(
+        "routers.contracts.load_range",
+        new=AsyncMock(
+            return_value={
+                "ok": True,
+                "min_amount_raw": "10",
+                "max_amount_raw": "20",
+                "min_amount_eurmtl": "0.000001",
+                "max_amount_eurmtl": "0.000002",
+                "error": "",
+            }
+        ),
+    ):
+        response = await client.post(
+            f"/contracts/{FIRST_CONTRACT_ID}/actions/capture/prepare",
+            form={"user": VALID_USER, "amount": "9", "msg": "For glory"},
+        )
+
+    assert response.status_code == 400
+    assert await response.get_json() == {
+        "ok": False,
+        "error": "amount must be between 10 and 20 raw units",
+    }
+
+
+@pytest.mark.asyncio
+async def test_capture_prepare_rejects_when_range_lookup_fails(client):
+    with patch(
+        "routers.contracts.load_range",
+        new=AsyncMock(
+            return_value={
+                "ok": False,
+                "min_amount_raw": "",
+                "max_amount_raw": "",
+                "min_amount_eurmtl": "",
+                "max_amount_eurmtl": "",
+                "error": "range unavailable",
+            }
+        ),
+    ):
+        response = await client.post(
+            f"/contracts/{FIRST_CONTRACT_ID}/actions/capture/prepare",
+            form={"user": VALID_USER, "amount": "10", "msg": "For glory"},
+        )
+
+    assert response.status_code == 400
+    assert await response.get_json() == {
+        "ok": False,
+        "error": "range unavailable",
+    }
 
 
 @pytest.mark.asyncio

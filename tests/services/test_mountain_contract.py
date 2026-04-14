@@ -6,8 +6,11 @@ from stellar_sdk import Keypair
 from services.contracts.handlers.mountain_contract import (
     MOUNTAIN_CONTRACT_ID,
     choose_candidate_address,
+    format_raw_amount_to_eurmtl,
+    load_range,
     load_message,
     prepare_capture_flow,
+    validate_capture_form,
 )
 from services.contracts.registry import get_contract
 
@@ -87,6 +90,83 @@ async def test_load_message_returns_controlled_error_payload():
         result = await load_message(MOUNTAIN_CONTRACT_ID)
 
     assert result == {"ok": False, "message": "", "error": "boom"}
+
+
+@pytest.mark.asyncio
+async def test_load_range_returns_normalized_raw_and_eurmtl_values():
+    with patch(
+        "services.contracts.handlers.mountain_contract.read_contract_value",
+        new=AsyncMock(return_value={"vec": [{"i128": "10000000"}, {"i128": "25000000"}]}),
+    ) as read_mock:
+        result = await load_range(MOUNTAIN_CONTRACT_ID)
+
+    assert result == {
+        "ok": True,
+        "min_amount_raw": "10000000",
+        "max_amount_raw": "25000000",
+        "min_amount_eurmtl": "1",
+        "max_amount_eurmtl": "2.5",
+        "error": "",
+    }
+    read_mock.assert_awaited_once_with(
+        contract_id=MOUNTAIN_CONTRACT_ID,
+        function_name="get_range",
+        rpc_url="https://soroban-rpc.mainnet.stellar.gateway.fm",
+    )
+
+
+@pytest.mark.asyncio
+async def test_load_range_returns_controlled_error_payload():
+    with patch(
+        "services.contracts.handlers.mountain_contract.read_contract_value",
+        new=AsyncMock(side_effect=ValueError("boom")),
+    ):
+        result = await load_range(MOUNTAIN_CONTRACT_ID)
+
+    assert result == {
+        "ok": False,
+        "min_amount_raw": "",
+        "max_amount_raw": "",
+        "min_amount_eurmtl": "",
+        "max_amount_eurmtl": "",
+        "error": "boom",
+    }
+
+
+def test_format_raw_amount_to_eurmtl_converts_7_decimals():
+    assert format_raw_amount_to_eurmtl("10000000") == "1"
+    assert format_raw_amount_to_eurmtl("25000000") == "2.5"
+    assert format_raw_amount_to_eurmtl("1") == "0.0000001"
+
+
+def test_validate_capture_form_rejects_amount_below_range():
+    user = Keypair.random().public_key
+
+    assert (
+        validate_capture_form(
+            user=user,
+            amount="9",
+            msg="For glory",
+            min_amount_raw="10",
+            max_amount_raw="20",
+        )
+        == "amount must be between 10 and 20 raw units"
+    )
+
+
+def test_validate_capture_form_rejects_amount_above_range():
+    user = Keypair.random().public_key
+
+    assert (
+        validate_capture_form(
+            user=user,
+            amount="21",
+            msg="For glory",
+            min_amount_raw="10",
+            max_amount_raw="20",
+        )
+        == "amount must be between 10 and 20 raw units"
+    )
 
 
 @pytest.mark.asyncio

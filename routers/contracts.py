@@ -14,6 +14,7 @@ from other.web_tools import http_session_manager
 from services.contracts.flow_service import ContractsFlowService
 from services.contracts.handlers.mountain_contract import (
     choose_candidate_address,
+    load_range,
     load_message,
     prepare_capture_flow as prepare_mountain_capture_flow,
     validate_capture_form,
@@ -172,9 +173,18 @@ async def contract_detail(contract_id: str):
         abort(404)
 
     message_result = {"ok": False, "message": "", "error": ""}
+    range_result = {
+        "ok": False,
+        "min_amount_raw": "",
+        "max_amount_raw": "",
+        "min_amount_eurmtl": "",
+        "max_amount_eurmtl": "",
+        "error": "",
+    }
     pool_overview = None
     if contract_id == "CAFXUALXFPTBTLSRCDSMJXNPSN3AVL2ZPXJUDDHVTUTLRX5SCNP2SISM":
         message_result = await load_message(contract_id)
+        range_result = await load_range(contract_id)
     if contract_id == SWAP_POOL_CONTRACT_ID:
         pool_overview = await load_swap_pool_overview()
 
@@ -188,6 +198,7 @@ async def contract_detail(contract_id: str):
         "contract_detail.html",
         contract=contract,
         message_result=message_result,
+        range_result=range_result,
         pool_overview=pool_overview,
         prefill_user=prefill_user,
         detected_user_address=detected_user_address,
@@ -201,6 +212,15 @@ async def contract_message_action(contract_id: str):
         abort(404)
 
     return jsonify(await load_message(contract_id))
+
+
+@blueprint.route("/contracts/<contract_id>/actions/range")
+async def contract_range_action(contract_id: str):
+    contract = get_contract(contract_id)
+    if contract is None:
+        abort(404)
+
+    return jsonify(await load_range(contract_id))
 
 
 @blueprint.route("/contracts/<contract_id>/actions/estimate-swap", methods=["POST"])
@@ -334,7 +354,17 @@ async def contract_capture_prepare(contract_id: str):
     amount = (form.get("amount") or "").strip()
     msg = (form.get("msg") or "").strip()
 
-    error = validate_capture_form(user, amount, msg)
+    range_result = await load_range(contract_id)
+    if not range_result["ok"]:
+        return jsonify({"ok": False, "error": range_result["error"]}), 400
+
+    error = validate_capture_form(
+        user,
+        amount,
+        msg,
+        min_amount_raw=range_result["min_amount_raw"],
+        max_amount_raw=range_result["max_amount_raw"],
+    )
     if error:
         return jsonify({"ok": False, "error": error}), 400
 
