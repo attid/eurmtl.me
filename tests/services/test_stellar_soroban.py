@@ -197,6 +197,35 @@ async def test_submit_signed_transaction_returns_hash_when_non_pending_send_alre
     assert result == {"ok": True, "tx_hash": "abc123", "error": ""}
 
 
+class _EnumLikeStatus:
+    def __init__(self, name: str):
+        self.name = name
+
+    def __str__(self) -> str:
+        return f"Status.{self.name}"
+
+
+@pytest.mark.asyncio
+async def test_submit_signed_transaction_handles_enum_like_status_values():
+    with patch("other.stellar_soroban.TransactionEnvelope.from_xdr", return_value="TX"):
+        with patch("other.stellar_soroban.SorobanServer") as server_cls:
+            server = server_cls.return_value
+            server.send_transaction.return_value = MagicMock(
+                status=_EnumLikeStatus("PENDING"), hash="abc123"
+            )
+            server.get_transaction.side_effect = [
+                MagicMock(status=_EnumLikeStatus("NOT_FOUND")),
+                MagicMock(status=_EnumLikeStatus("SUCCESS")),
+            ]
+
+            result = await submit_signed_transaction(
+                rpc_url="https://soroban-rpc.mainnet.stellar.gateway.fm",
+                signed_xdr="AAAAAA==",
+            )
+
+    assert result == {"ok": True, "tx_hash": "abc123", "error": ""}
+
+
 @pytest.mark.asyncio
 async def test_submit_signed_transaction_returns_hash_on_success():
     with patch("other.stellar_soroban.TransactionEnvelope.from_xdr", return_value="TX"):
