@@ -77,7 +77,7 @@ def test_render_mountain_notification_html_escapes_html_and_preserves_newlines()
     rendered = render_mountain_notification_html("Line 1\n<b>Line 2</b> & more")
 
     assert "<b>У горы сменился message</b>" in rendered
-    assert "Line 1<br>&lt;b&gt;Line 2&lt;/b&gt; &amp; more" in rendered
+    assert "Line 1\n&lt;b&gt;Line 2&lt;/b&gt; &amp; more" in rendered
     assert f'href="https://eurmtl.me/contracts/{MOUNTAIN_CONTRACT_ID}"' in rendered
 
 
@@ -127,7 +127,7 @@ async def test_load_last_mountain_notification_comment_uses_latest_matching_reco
                     "chat_id": MOUNTAIN_NOTIFY_CHAT_ID,
                     "reply_to": MOUNTAIN_NOTIFY_REPLY_TO,
                     "topik_id": MOUNTAIN_NOTIFY_TOPIC_ID,
-                    "messsage": "<b>У горы сменился message</b><br>Old",
+                    "messsage": "<b>У горы сменился message</b>\nOld",
                     "comment": "old value",
                 },
                 {
@@ -135,7 +135,7 @@ async def test_load_last_mountain_notification_comment_uses_latest_matching_reco
                     "chat_id": MOUNTAIN_NOTIFY_CHAT_ID,
                     "reply_to": MOUNTAIN_NOTIFY_REPLY_TO,
                     "topik_id": MOUNTAIN_NOTIFY_TOPIC_ID,
-                    "messsage": "<b>У горы сменился message</b><br>New",
+                    "messsage": "<b>У горы сменился message</b>\nNew",
                     "comment": "new value",
                 },
             ]
@@ -211,7 +211,7 @@ async def test_notify_mountain_message_change_posts_new_grist_record_when_messag
     assert fields["reply_to"] == MOUNTAIN_NOTIFY_REPLY_TO
     assert fields["topik_id"] == MOUNTAIN_NOTIFY_TOPIC_ID
     assert fields["comment"] == "Line 1\nLine 2"
-    assert "Line 1<br>Line 2" in fields["messsage"]
+    assert "Line 1\nLine 2" in fields["messsage"]
 
 
 @pytest.mark.asyncio
