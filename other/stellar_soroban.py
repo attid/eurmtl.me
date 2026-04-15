@@ -16,6 +16,8 @@ from stellar_sdk import (
 )
 from stellar_sdk.sep import stellar_uri
 
+from other.cache_tools import async_cache_with_ttl
+
 PREPARED_TRANSACTION_TIMEOUT_SECONDS = 300
 SUBMIT_TRANSACTION_POLL_ATTEMPTS = 10
 SUBMIT_TRANSACTION_POLL_INTERVAL_SECONDS = 1
@@ -142,6 +144,18 @@ async def read_contract_string(
         raise ValueError("simulateTransaction returned unsupported result format")
     except Exception as exc:
         raise ValueError(str(exc)) from exc
+
+
+@async_cache_with_ttl(ttl_seconds=30 * 24 * 60 * 60, maxsize=256)
+async def read_token_contract_display_name(rpc_url: str, contract_id: str) -> str:
+    contract_name = await read_contract_string(
+        rpc_url=rpc_url,
+        contract_id=contract_id,
+        function_name="name",
+    )
+    if ":" in contract_name:
+        return contract_name.split(":", 1)[0]
+    return contract_name
 
 
 async def prepare_contract_transaction_uri(

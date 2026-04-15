@@ -3,6 +3,7 @@
 """
 
 import base64
+import pathlib
 import pytest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -36,10 +37,16 @@ from services.xdr_parser import (
     decode_invoke_host_function,
     decode_xdr_to_text,
     SimulatedLedger,
+    _render_sub_invocation_summary,
     update_memo_in_xdr,
 )
 
 INVALID_STELLAR_XDR = "AAAAAgAAAAA+gj+9R9RakwtxBG6Up8jAewUfdurumKJARnpcMG9VBgAAAZADqmC9AAAACQAAAAEAAAAAAAAAAAAAAABprWevAAAAAQAAAARleGNoAAAAAgAAAAAAAAABAAAAAOULguv++61OnAUgnSV24FKlgUt80KvaUijNM9Fdx2wmAAAAAkVVUk1UTAAAAAAAAAAAAAAEqbejBk1rxsHVls854RnAyfpJaZacvgwmQ0jxNDBvqgAAAAFloLwAAAAAAAAAAAMAAAACRVVSTVRMAAAAAAAAAAAAAASpt6MGTWvGwdWWzznhGcDJ+klplpy+DCZDSPE0MG+qAAAAAVVTRE0AAAAAzjFwwWvYRuQOCHjRQ12ZsvHFXsmtQ0ka1OpQTcuL5UoAAAAAAAAAAAAAAAEAAAABAAAAAGzhWBAAAAAAAAAAAjBvVQYAAABA8ngRn6FosWJoKr+CiNwUecKAkHp4oOTfCc3hSeFBWUNfbddyxouSs9LrkX6Yym7KUpqlbr35eypU0gUOs9bEBVpCAfwAAABAKQso0UED2q9QpUa1jIHCGtWkFCgHu7OAzYodR4L3K+HOY0OGtqIRomGNwJ2/hSP6CUc7uAJryU33J1osSvUwDQ=="
+MOUNTAIN_CAPTURE_WITH_TRANSFER_XDR = (
+    pathlib.Path("tests/fixtures/xdr/mountain_capture_with_transfer.xdr")
+    .read_text()
+    .strip()
+)
 
 
 class TestUtilityFunctions:
@@ -435,12 +442,60 @@ class TestScValDecoding:
                 lo=SimpleNamespace(uint64=7), hi=SimpleNamespace(int64=1)
             ),
         )
+        bool_scval = SimpleNamespace(
+            type=SimpleNamespace(value=3),
+            address=None,
+            sym=None,
+            str=None,
+            vec=None,
+            u128=None,
+            i128=None,
+            b=True,
+        )
+        non_bool_i128_scval = SimpleNamespace(
+            type=SimpleNamespace(value=10),
+            address=None,
+            sym=None,
+            str=None,
+            vec=None,
+            u128=None,
+            i128=SimpleNamespace(
+                lo=SimpleNamespace(uint64=12), hi=SimpleNamespace(int64=0)
+            ),
+            b=None,
+        )
+        u32_scval = SimpleNamespace(
+            type=SimpleNamespace(value=3),
+            address=None,
+            sym=None,
+            str=None,
+            vec=None,
+            u128=None,
+            i128=None,
+            b=None,
+            u32=SimpleNamespace(uint32=500),
+        )
+        bytes_scval = SimpleNamespace(
+            type=SimpleNamespace(value=13),
+            address=None,
+            sym=None,
+            str=None,
+            vec=None,
+            u128=None,
+            i128=None,
+            b=None,
+            bytes=SimpleNamespace(sc_bytes=b"abc"),
+        )
 
         assert decode_scval(account_scval) == account_id
         assert decode_scval(symbol_scval) == "swap"
         assert decode_scval(vector_scval) == "[swap]"
         assert decode_scval(u128_scval) == str(5 + (1 << 64))
         assert decode_scval(i128_scval) == str((1 << 64) + 7)
+        assert decode_scval(bool_scval) == "true"
+        assert decode_scval(non_bool_i128_scval) == "12"
+        assert decode_scval(u32_scval) == "500"
+        assert decode_scval(bytes_scval) == "616263"
 
     def test_decode_scval_handles_unknown_and_error_cases(self):
         unknown_scval = SimpleNamespace(
@@ -579,8 +634,8 @@ async def test_decode_invoke_host_function_supports_multiple_host_function_shape
     create_lines = await decode_invoke_host_function(create_operation)
     install_lines = await decode_invoke_host_function(install_operation)
 
-    assert any("Function Type: invoke" in line for line in invoke_lines)
-    assert any("Function: swap" in line for line in invoke_lines)
+    assert any("Contract call:" in line for line in invoke_lines)
+    assert any(".swap(" in line for line in invoke_lines)
     assert any("Create Contract" in line for line in create_lines)
     assert any("Install Contract Code" in line for line in install_lines)
 
@@ -809,3 +864,105 @@ async def test_decode_xdr_to_text_describes_pool_and_special_operations():
     assert "Возврат 7" in text
     assert "LiquidityPoolDeposit" in text
     assert "LiquidityPoolWithdraw" in text
+
+
+@pytest.mark.asyncio
+async def test_decode_xdr_to_text_from_fixture_renders_capture_and_transfer_summary():
+    source_account_id = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+    source_account = {
+        "id": source_account_id,
+        "sequence": "151245301938660174",
+        "balances": [{"asset_type": "native", "balance": "705.4533308"}],
+    }
+    repo = SimpleNamespace(get_by_sequence=AsyncMock(return_value=[]))
+
+    with (
+        patch("services.xdr_parser.current_app", _mock_current_app()),
+        patch("services.xdr_parser.TransactionRepository", return_value=repo),
+        patch(
+            "services.xdr_parser.get_available_balance_str",
+            AsyncMock(return_value="705.4533308 XLM"),
+        ),
+        patch(
+            "services.xdr_parser.get_account_fresh",
+            AsyncMock(return_value=source_account),
+        ),
+        patch(
+            "services.xdr_parser.get_account",
+            AsyncMock(
+                side_effect=lambda account_id: source_account
+                if account_id == source_account_id
+                else {"id": account_id, "balances": []}
+            ),
+        ),
+        patch(
+            "services.xdr_parser.read_token_contract_display_name",
+            new=AsyncMock(return_value="EURMTL"),
+            create=True,
+        ),
+    ):
+        result = await decode_xdr_to_text(MOUNTAIN_CAPTURE_WITH_TRANSFER_XDR)
+
+    text = "\n".join(result)
+    assert "Contract call:" in text
+    assert ".capture(" in text
+    assert '"А Соз llms.txt не сделал 👀"' in text
+    assert "Transfer 0.0000012 EURMTL (12 raw)" in text
+
+
+@pytest.mark.asyncio
+async def test_render_sub_invocation_summary_formats_native_as_xlm_and_scales_raw():
+    source_kp = Keypair.random()
+    source_bytes = StrKey.decode_ed25519_public_key(source_kp.public_key)
+    destination_contract = bytes.fromhex("ab" * 32)
+    native_contract = bytes.fromhex("cd" * 32)
+
+    invocation = SimpleNamespace(
+        function=SimpleNamespace(
+            contract_fn=SimpleNamespace(
+                contract_address=SimpleNamespace(
+                    contract_id=SimpleNamespace(hash=native_contract)
+                ),
+                function_name=SimpleNamespace(sc_symbol=b"transfer"),
+                args=[
+                    SimpleNamespace(
+                        type=SimpleNamespace(value=18),
+                        address=SimpleNamespace(
+                            type=SimpleNamespace(value=0),
+                            account_id=SimpleNamespace(
+                                account_id=SimpleNamespace(
+                                    ed25519=SimpleNamespace(uint256=source_bytes)
+                                )
+                            ),
+                            contract_id=None,
+                        ),
+                    ),
+                    SimpleNamespace(
+                        type=SimpleNamespace(value=18),
+                        address=SimpleNamespace(
+                            type=SimpleNamespace(value=1),
+                            account_id=None,
+                            contract_id=SimpleNamespace(hash=destination_contract),
+                        ),
+                    ),
+                    SimpleNamespace(
+                        type=SimpleNamespace(value=10),
+                        i128=SimpleNamespace(
+                            lo=SimpleNamespace(uint64=10_000_000),
+                            hi=SimpleNamespace(int64=0),
+                        ),
+                        b=None,
+                    ),
+                ],
+            )
+        )
+    )
+
+    with patch(
+        "services.xdr_parser.read_token_contract_display_name",
+        new=AsyncMock(return_value="native"),
+        create=True,
+    ):
+        line = await _render_sub_invocation_summary(invocation)
+
+    assert "Transfer 1 XLM (10000000 raw)" in line
