@@ -5,11 +5,19 @@ from stellar_sdk import Keypair
 
 from services.contracts.handlers.mountain_contract import (
     MOUNTAIN_CONTRACT_ID,
+    MOUNTAIN_NOTIFY_CACHE_KEY,
+    MOUNTAIN_NOTIFY_CHAT_ID,
+    MOUNTAIN_NOTIFY_REPLY_TO,
+    MOUNTAIN_NOTIFY_TOPIC_ID,
     choose_candidate_address,
     format_raw_amount_to_eurmtl,
     load_range,
     load_message,
+    load_last_mountain_notification_comment,
+    mountain_notify_cache,
+    notify_mountain_message_change,
     prepare_capture_flow,
+    render_mountain_notification_html,
     validate_capture_form,
 )
 from services.contracts.registry import get_contract
@@ -65,6 +73,14 @@ def test_choose_candidate_address_returns_empty_string_when_no_address_available
     assert choose_candidate_address(detected_address=None, session_address=None) == ""
 
 
+def test_render_mountain_notification_html_escapes_html_and_preserves_newlines():
+    rendered = render_mountain_notification_html("Line 1\n<b>Line 2</b> & more")
+
+    assert "<b>У горы сменился message</b>" in rendered
+    assert "Line 1<br>&lt;b&gt;Line 2&lt;/b&gt; &amp; more" in rendered
+    assert f'href="https://eurmtl.me/contracts/{MOUNTAIN_CONTRACT_ID}"' in rendered
+
+
 @pytest.mark.asyncio
 async def test_load_message_uses_soroban_reader_with_contract_and_message_function():
     with patch(
@@ -90,6 +106,44 @@ async def test_load_message_returns_controlled_error_payload():
         result = await load_message(MOUNTAIN_CONTRACT_ID)
 
     assert result == {"ok": False, "message": "", "error": "boom"}
+
+
+@pytest.mark.asyncio
+async def test_load_last_mountain_notification_comment_uses_latest_matching_record():
+    with patch(
+        "services.contracts.handlers.mountain_contract.grist_manager.load_table_data",
+        new=AsyncMock(
+            return_value=[
+                {
+                    "id": 3,
+                    "chat_id": MOUNTAIN_NOTIFY_CHAT_ID,
+                    "reply_to": MOUNTAIN_NOTIFY_REPLY_TO,
+                    "topik_id": MOUNTAIN_NOTIFY_TOPIC_ID,
+                    "messsage": "<b>Другой поток</b>",
+                    "comment": "ignore me",
+                },
+                {
+                    "id": 5,
+                    "chat_id": MOUNTAIN_NOTIFY_CHAT_ID,
+                    "reply_to": MOUNTAIN_NOTIFY_REPLY_TO,
+                    "topik_id": MOUNTAIN_NOTIFY_TOPIC_ID,
+                    "messsage": "<b>У горы сменился message</b><br>Old",
+                    "comment": "old value",
+                },
+                {
+                    "id": 7,
+                    "chat_id": MOUNTAIN_NOTIFY_CHAT_ID,
+                    "reply_to": MOUNTAIN_NOTIFY_REPLY_TO,
+                    "topik_id": MOUNTAIN_NOTIFY_TOPIC_ID,
+                    "messsage": "<b>У горы сменился message</b><br>New",
+                    "comment": "new value",
+                },
+            ]
+        ),
+    ):
+        result = await load_last_mountain_notification_comment()
+
+    assert result == "new value"
 
 
 @pytest.mark.asyncio
@@ -131,6 +185,86 @@ async def test_load_range_returns_controlled_error_payload():
         "max_amount_eurmtl": "",
         "error": "boom",
     }
+
+
+@pytest.mark.asyncio
+async def test_notify_mountain_message_change_posts_new_grist_record_when_message_changed():
+    await mountain_notify_cache.invalidate(MOUNTAIN_NOTIFY_CACHE_KEY)
+
+    with (
+        patch(
+            "services.contracts.handlers.mountain_contract.grist_manager.load_table_data",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch(
+            "services.contracts.handlers.mountain_contract.grist_manager.post_data",
+            new=AsyncMock(return_value=True),
+        ) as post_mock,
+    ):
+        result = await notify_mountain_message_change("Line 1\nLine 2")
+
+    assert result == {"created": True, "reason": "posted", "error": ""}
+    post_mock.assert_awaited_once()
+    payload = post_mock.await_args.args[1]
+    fields = payload["records"][0]["fields"]
+    assert fields["chat_id"] == MOUNTAIN_NOTIFY_CHAT_ID
+    assert fields["reply_to"] == MOUNTAIN_NOTIFY_REPLY_TO
+    assert fields["topik_id"] == MOUNTAIN_NOTIFY_TOPIC_ID
+    assert fields["comment"] == "Line 1\nLine 2"
+    assert "Line 1<br>Line 2" in fields["messsage"]
+
+
+@pytest.mark.asyncio
+async def test_notify_mountain_message_change_skips_when_same_value_is_in_grist():
+    await mountain_notify_cache.invalidate(MOUNTAIN_NOTIFY_CACHE_KEY)
+
+    with (
+        patch(
+            "services.contracts.handlers.mountain_contract.grist_manager.load_table_data",
+            new=AsyncMock(
+                return_value=[
+                    {
+                        "id": 1,
+                        "chat_id": MOUNTAIN_NOTIFY_CHAT_ID,
+                        "reply_to": MOUNTAIN_NOTIFY_REPLY_TO,
+                        "topik_id": MOUNTAIN_NOTIFY_TOPIC_ID,
+                        "messsage": "<b>У горы сменился message</b><br>same",
+                        "comment": "same",
+                    }
+                ]
+            ),
+        ),
+        patch(
+            "services.contracts.handlers.mountain_contract.grist_manager.post_data",
+            new=AsyncMock(return_value=True),
+        ) as post_mock,
+    ):
+        result = await notify_mountain_message_change("same")
+
+    assert result == {"created": False, "reason": "grist", "error": ""}
+    post_mock.assert_not_awaited()
+    assert await mountain_notify_cache.get(MOUNTAIN_NOTIFY_CACHE_KEY) == "same"
+
+
+@pytest.mark.asyncio
+async def test_notify_mountain_message_change_skips_when_same_value_is_in_cache():
+    await mountain_notify_cache.set(MOUNTAIN_NOTIFY_CACHE_KEY, "cached")
+
+    with (
+        patch(
+            "services.contracts.handlers.mountain_contract.grist_manager.load_table_data",
+            new=AsyncMock(return_value=[]),
+        ) as load_mock,
+        patch(
+            "services.contracts.handlers.mountain_contract.grist_manager.post_data",
+            new=AsyncMock(return_value=True),
+        ) as post_mock,
+    ):
+        result = await notify_mountain_message_change("cached")
+
+    assert result == {"created": False, "reason": "cache", "error": ""}
+    load_mock.assert_not_awaited()
+    post_mock.assert_not_awaited()
 
 
 def test_format_raw_amount_to_eurmtl_converts_7_decimals():

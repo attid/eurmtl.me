@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 from loguru import logger
@@ -7,7 +8,7 @@ from stellar_sdk import StrKey, ServerAsync
 from stellar_sdk.client.aiohttp_client import AiohttpClient
 
 from other.cache_tools import AsyncTTLCache
-
+from other.telegram_tools import skynet_bot
 from db.sql_models import User
 from other.config_reader import config
 from other.web_tools import HTTPSessionManager
@@ -26,6 +27,7 @@ class MTLGrist:
     NOTIFY_ACCOUNTS = GristTableConfig("oNYTdHkEstf9X7dkh7yH11", "Accounts")
     NOTIFY_ASSETS = GristTableConfig("oNYTdHkEstf9X7dkh7yH11", "Assets")
     NOTIFY_TREASURY = GristTableConfig("oNYTdHkEstf9X7dkh7yH11", "Treasury")
+    NOTIFY_MESSAGES = GristTableConfig("oNYTdHkEstf9X7dkh7yH11", "Messages")
 
     MTLA_CHATS = GristTableConfig("aYk6cpKAp9CDPJe51sP3AT", "MTLA_CHATS")
     MTLA_COUNCILS = GristTableConfig("aYk6cpKAp9CDPJe51sP3AT", "MTLA_COUNCILS")
@@ -203,6 +205,102 @@ class GristAPI:
                 f"Ошибка при загрузке данных из таблицы {table.table_name}: {e}"
             )
             return None
+
+
+MAX_NOTIFY_ERROR_LENGTH = 500
+
+
+def extract_record_ids_from_grist_webhook(payload: Any) -> list[int]:
+    if not isinstance(payload, list):
+        return []
+
+    record_ids: list[int] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        record_id = item.get("id")
+        if record_id is None and isinstance(item.get("fields"), dict):
+            record_id = item["fields"].get("id")
+        try:
+            if record_id is not None:
+                record_ids.append(int(record_id))
+        except (TypeError, ValueError):
+            continue
+    return record_ids
+
+
+async def load_notify_message_records_by_ids(record_ids: list[int]) -> list[dict]:
+    records = await grist_manager.load_table_data(MTLGrist.NOTIFY_MESSAGES)
+    if not records:
+        return []
+    wanted_ids = set(record_ids)
+    return [record for record in records if int(record.get("id", 0)) in wanted_ids]
+
+
+def should_send_notify_message_record(record: dict) -> bool:
+    if not str(record.get("messsage") or "").strip():
+        return False
+    if record.get("send_date"):
+        return False
+    if str(record.get("error_message") or "").strip():
+        return False
+    return True
+
+
+def _normalize_optional_int(value: Any) -> int | None:
+    if value in (None, "", 0, 0.0, "0"):
+        return None
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return None
+    return normalized or None
+
+
+async def patch_notify_message_record(record_id: int, fields: dict[str, Any]) -> bool:
+    return await grist_manager.patch_data(
+        MTLGrist.NOTIFY_MESSAGES,
+        {"records": [{"id": record_id, "fields": fields}]},
+    )
+
+
+def _truncate_notify_error(error_text: str) -> str:
+    if len(error_text) <= MAX_NOTIFY_ERROR_LENGTH:
+        return error_text
+    return error_text[: MAX_NOTIFY_ERROR_LENGTH - 3] + "..."
+
+
+async def send_notify_message_record(record: dict) -> dict[str, Any]:
+    record_id = int(record["id"])
+    if not should_send_notify_message_record(record):
+        return {"status": "skipped", "id": record_id}
+
+    reply_to_message_id = _normalize_optional_int(record.get("reply_to"))
+    message_thread_id = _normalize_optional_int(record.get("topik_id"))
+
+    send_kwargs = {
+        "chat_id": record["chat_id"],
+        "text": record["messsage"],
+        "disable_web_page_preview": True,
+        "parse_mode": "HTML",
+    }
+    if reply_to_message_id is not None:
+        send_kwargs["reply_to_message_id"] = reply_to_message_id
+    if message_thread_id is not None:
+        send_kwargs["message_thread_id"] = message_thread_id
+
+    try:
+        await skynet_bot.send_message(**send_kwargs)
+    except Exception as exc:
+        error_text = _truncate_notify_error(str(exc))
+        await patch_notify_message_record(record_id, {"error_message": error_text})
+        return {"status": "failed", "id": record_id, "error": error_text}
+
+    await patch_notify_message_record(
+        record_id,
+        {"send_date": int(datetime.now(timezone.utc).timestamp()), "error_message": ""},
+    )
+    return {"status": "sent", "id": record_id}
 
 
 async def update_mtl_shareholders_balance():
