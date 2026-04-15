@@ -29,7 +29,7 @@
         </div>
         {% endif %}
         {% if block_name == 'message' %}
-        <div id="message-result" class="alert {{ 'alert-success' if message_result and message_result.ok else 'alert-warning' }}">
+        <div id="message-result" class="alert {{ 'alert-success' if message_result and message_result.ok else 'alert-warning' }}" style="white-space: pre-wrap;">
             {% if message_result and message_result.ok %}
             {{ message_result.message }}
             {% else %}
@@ -122,7 +122,7 @@
                     </div>
                 </div>
                 <div class="col-12">
-                    <label class="form-label" for="field-amount">Amount</label>
+                    <label class="form-label" for="field-amount">Amount (in raw units. 1 unit = 0.0000001 EURMTL)</label>
                     <input class="form-control" id="field-amount" name="amount" inputmode="numeric">
                     {% if range_result and range_result.ok %}
                     <div id="range-result" class="alert alert-info mt-2 mb-0">

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from html import escape
 from decimal import Decimal
 
 from stellar_sdk import StrKey, scval
 
+from other.cache_tools import AsyncTTLCache
 from other.config_reader import config
+from other.grist_tools import MTLGrist, grist_manager
 from other.stellar_soroban import (
     prepare_contract_transaction_uri,
     read_contract_string,
@@ -15,6 +18,15 @@ MOUNTAIN_CONTRACT_ID = "CAFXUALXFPTBTLSRCDSMJXNPSN3AVL2ZPXJUDDHVTUTLRX5SCNP2SISM
 MOUNTAIN_TOKEN_CONTRACT_ID = "CDUYP3U6HGTOBUNQD2WTLWNMNADWMENROKZZIHGEVGKIU3ZUDF42CDOK"
 HIDDEN_CONTRACT_ID = "CBHIDDENCONTRACTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 EURMTL_RAW_SCALE = Decimal("10000000")
+MOUNTAIN_NOTIFY_CHAT_ID = -1001429770534
+MOUNTAIN_NOTIFY_REPLY_TO = 160275
+MOUNTAIN_NOTIFY_TOPIC_ID = 0
+MOUNTAIN_NOTIFY_PREFIX = "<b>У горы сменился message</b>"
+MOUNTAIN_NOTIFY_LINK = (
+    f"https://eurmtl.me/contracts/{MOUNTAIN_CONTRACT_ID}"
+)
+MOUNTAIN_NOTIFY_CACHE_KEY = "mountain:last_notified_message"
+mountain_notify_cache = AsyncTTLCache(ttl_seconds=24 * 60 * 60, maxsize=8)
 
 
 def choose_candidate_address(
@@ -26,6 +38,93 @@ def choose_candidate_address(
     if session_address:
         return session_address
     return ""
+
+
+def _normalize_message_text(message: str) -> str:
+    return message.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def render_mountain_notification_html(message: str) -> str:
+    escaped_message = escape(_normalize_message_text(message)).replace("\n", "<br>")
+    return (
+        f"{MOUNTAIN_NOTIFY_PREFIX}<br><br>"
+        f"{escaped_message}<br><br>"
+        f'<a href="{MOUNTAIN_NOTIFY_LINK}">Открыть контракт</a>'
+    )
+
+
+def is_mountain_notification_record(record: dict) -> bool:
+    return (
+        record.get("chat_id") == MOUNTAIN_NOTIFY_CHAT_ID
+        and record.get("reply_to") == MOUNTAIN_NOTIFY_REPLY_TO
+        and record.get("topik_id", 0) == MOUNTAIN_NOTIFY_TOPIC_ID
+        and str(record.get("messsage") or "").startswith(MOUNTAIN_NOTIFY_PREFIX)
+    )
+
+
+async def load_last_mountain_notification_comment() -> str:
+    records = await grist_manager.load_table_data(
+        MTLGrist.NOTIFY_MESSAGES,
+        filter_dict={
+            "chat_id": [MOUNTAIN_NOTIFY_CHAT_ID],
+            "reply_to": [MOUNTAIN_NOTIFY_REPLY_TO],
+            "topik_id": [MOUNTAIN_NOTIFY_TOPIC_ID],
+        },
+    )
+    if not records:
+        return ""
+
+    matching_records = [record for record in records if is_mountain_notification_record(record)]
+    if not matching_records:
+        return ""
+
+    latest_record = max(matching_records, key=lambda record: int(record.get("id", 0)))
+    return str(latest_record.get("comment") or "")
+
+
+async def notify_mountain_message_change(message: str) -> dict:
+    normalized_message = _normalize_message_text(message)
+    if not normalized_message:
+        return {"created": False, "reason": "empty", "error": ""}
+
+    cached_message = await mountain_notify_cache.get(MOUNTAIN_NOTIFY_CACHE_KEY)
+    if cached_message == normalized_message:
+        return {"created": False, "reason": "cache", "error": ""}
+
+    try:
+        last_comment = await load_last_mountain_notification_comment()
+    except Exception as exc:
+        return {"created": False, "reason": "grist_read_error", "error": str(exc)}
+
+    if _normalize_message_text(last_comment) == normalized_message:
+        await mountain_notify_cache.set(MOUNTAIN_NOTIFY_CACHE_KEY, normalized_message)
+        return {"created": False, "reason": "grist", "error": ""}
+
+    try:
+        await grist_manager.post_data(
+            MTLGrist.NOTIFY_MESSAGES,
+            {
+                "records": [
+                    {
+                        "fields": {
+                            "reply_to": MOUNTAIN_NOTIFY_REPLY_TO,
+                            "chat_id": MOUNTAIN_NOTIFY_CHAT_ID,
+                            "messsage": render_mountain_notification_html(
+                                normalized_message
+                            ),
+                            "error_message": "",
+                            "topik_id": MOUNTAIN_NOTIFY_TOPIC_ID,
+                            "comment": normalized_message,
+                        }
+                    }
+                ]
+            },
+        )
+    except Exception as exc:
+        return {"created": False, "reason": "grist_write_error", "error": str(exc)}
+
+    await mountain_notify_cache.set(MOUNTAIN_NOTIFY_CACHE_KEY, normalized_message)
+    return {"created": True, "reason": "posted", "error": ""}
 
 
 def _normalize_i128_like(value) -> str:

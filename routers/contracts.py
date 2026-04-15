@@ -16,6 +16,7 @@ from services.contracts.handlers.mountain_contract import (
     choose_candidate_address,
     load_range,
     load_message,
+    notify_mountain_message_change,
     prepare_capture_flow as prepare_mountain_capture_flow,
     validate_capture_form,
 )
@@ -33,6 +34,7 @@ from services.contracts.registry import get_contract, list_public_contracts
 from services.xdr_parser import is_valid_base64
 
 blueprint = Blueprint("contracts", __name__)
+MOUNTAIN_CONTRACT_ID = "CAFXUALXFPTBTLSRCDSMJXNPSN3AVL2ZPXJUDDHVTUTLRX5SCNP2SISM"
 
 
 def _resolve_swap_direction(direction: str) -> tuple[str, str]:
@@ -42,6 +44,22 @@ def _resolve_swap_direction(direction: str) -> tuple[str, str]:
     if normalized == "USDM_TO_EURMTL":
         return "USDM", "EURMTL"
     raise ValueError("Invalid swap direction")
+
+
+async def _notify_mountain_message_if_changed(
+    contract_id: str,
+    message_result: dict,
+) -> None:
+    if contract_id != MOUNTAIN_CONTRACT_ID or not message_result.get("ok"):
+        return
+
+    notify_result = await notify_mountain_message_change(message_result["message"])
+    if notify_result.get("error"):
+        logger.warning(
+            "mountain notification failed: reason={} error={}",
+            notify_result.get("reason", ""),
+            notify_result["error"],
+        )
 
 
 async def prepare_capture_flow(contract_id: str, form_data: dict) -> dict:
@@ -200,8 +218,9 @@ async def contract_detail(contract_id: str):
         "error": "",
     }
     pool_overview = None
-    if contract_id == "CAFXUALXFPTBTLSRCDSMJXNPSN3AVL2ZPXJUDDHVTUTLRX5SCNP2SISM":
+    if contract_id == MOUNTAIN_CONTRACT_ID:
         message_result = await load_message(contract_id)
+        await _notify_mountain_message_if_changed(contract_id, message_result)
         range_result = await load_range(contract_id)
     if contract_id == SWAP_POOL_CONTRACT_ID:
         pool_overview = await load_swap_pool_overview()
@@ -229,7 +248,9 @@ async def contract_message_action(contract_id: str):
     if contract is None:
         abort(404)
 
-    return jsonify(await load_message(contract_id))
+    message_result = await load_message(contract_id)
+    await _notify_mountain_message_if_changed(contract_id, message_result)
+    return jsonify(message_result)
 
 
 @blueprint.route("/contracts/<contract_id>/actions/range")

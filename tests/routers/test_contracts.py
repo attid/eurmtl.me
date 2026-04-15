@@ -63,23 +63,30 @@ async def test_swap_contract_detail_renders_overview_and_swap_blocks(client):
 
 @pytest.mark.asyncio
 async def test_mountain_contract_detail_explains_raw_amount_units(client):
-    with patch(
-        "routers.contracts.load_range",
-        new=AsyncMock(
-            return_value={
-                "ok": True,
-                "min_amount_raw": "10000000",
-                "max_amount_raw": "25000000",
-                "min_amount_eurmtl": "1",
-                "max_amount_eurmtl": "2.5",
-                "error": "",
-            }
+    with (
+        patch(
+            "routers.contracts.load_range",
+            new=AsyncMock(
+                return_value={
+                    "ok": True,
+                    "min_amount_raw": "10000000",
+                    "max_amount_raw": "25000000",
+                    "min_amount_eurmtl": "1",
+                    "max_amount_eurmtl": "2.5",
+                    "error": "",
+                }
+            ),
+        ),
+        patch(
+            "routers.contracts.notify_mountain_message_change",
+            new=AsyncMock(return_value={"created": False, "reason": "grist", "error": ""}),
         ),
     ):
         response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}")
 
     assert response.status_code == 200
     body = await response.get_data(as_text=True)
+    assert "Amount (in raw units. 1 unit = 0.0000001 EURMTL)" in body
     assert "Amount uses raw token units" in body
     assert "1 EURMTL = 10,000,000 raw units" in body
     assert "1 raw unit = 0.0000001 EURMTL" in body
@@ -88,6 +95,8 @@ async def test_mountain_contract_detail_explains_raw_amount_units(client):
     assert "25000000" in body
     assert "1 EURMTL" in body
     assert "2.5 EURMTL" in body
+    assert 'id="message-result"' in body
+    assert "white-space: pre-wrap" in body
     assert f'href="https://viewer.eurmtl.me/contract/{FIRST_CONTRACT_ID}"' in body
 
 
@@ -130,6 +139,37 @@ async def test_mountain_contract_detail_exposes_current_user_address_without_pre
     assert 'id="field-user" name="user"' in body
     assert f'const prefillUser = "{VALID_USER}"' in body
     assert f'value="{VALID_USER}"' not in body
+
+
+@pytest.mark.asyncio
+async def test_mountain_contract_detail_notifies_on_page_load_when_message_loaded(client):
+    with (
+        patch(
+            "routers.contracts.load_message",
+            new=AsyncMock(return_value={"ok": True, "message": "Changed", "error": ""}),
+        ),
+        patch(
+            "routers.contracts.load_range",
+            new=AsyncMock(
+                return_value={
+                    "ok": True,
+                    "min_amount_raw": "1",
+                    "max_amount_raw": "2",
+                    "min_amount_eurmtl": "0.0000001",
+                    "max_amount_eurmtl": "0.0000002",
+                    "error": "",
+                }
+            ),
+        ),
+        patch(
+            "routers.contracts.notify_mountain_message_change",
+            new=AsyncMock(return_value={"created": True, "reason": "posted", "error": ""}),
+        ) as notify_mock,
+    ):
+        response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}")
+
+    assert response.status_code == 200
+    notify_mock.assert_awaited_once_with("Changed")
 
 @pytest.mark.asyncio
 async def test_contracts_index_hides_internal_contracts(client):
@@ -263,11 +303,17 @@ async def test_flow_status_rejects_request_from_another_session(client):
 
 @pytest.mark.asyncio
 async def test_message_action_returns_latest_message_json(client):
-    with patch(
-        "routers.contracts.load_message",
-        new=AsyncMock(
-            return_value={"ok": True, "message": "Long live the king", "error": ""}
+    with (
+        patch(
+            "routers.contracts.load_message",
+            new=AsyncMock(
+                return_value={"ok": True, "message": "Long live the king", "error": ""}
+            ),
         ),
+        patch(
+            "routers.contracts.notify_mountain_message_change",
+            new=AsyncMock(return_value={"created": False, "reason": "grist", "error": ""}),
+        ) as notify_mock,
     ):
         response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}/actions/message")
 
@@ -277,6 +323,7 @@ async def test_message_action_returns_latest_message_json(client):
         "message": "Long live the king",
         "error": "",
     }
+    notify_mock.assert_awaited_once_with("Long live the king")
 
 
 @pytest.mark.asyncio

@@ -2,7 +2,13 @@ from datetime import datetime
 from quart import Blueprint, jsonify, render_template, request
 
 from other.config_reader import config
-from other.grist_tools import grist_manager, MTLGrist
+from other.grist_tools import (
+    MTLGrist,
+    extract_record_ids_from_grist_webhook,
+    grist_manager,
+    load_notify_message_records_by_ids,
+    send_notify_message_record,
+)
 from loguru import logger
 
 blueprint = Blueprint("grist", __name__)
@@ -256,6 +262,35 @@ async def grist_webhook_table(table_name: str):
 
     if not auth_key or not grist_income or auth_key != grist_income:
         logger.warning("Grist webhook: неверный ключ")
+        return jsonify({"status": "accepted"})
+
+    if table_name == "NOTIFY_MESSAGES":
+        try:
+            data = await request.get_json(silent=True)
+        except Exception as e:
+            logger.warning(f"Grist webhook NOTIFY_MESSAGES: invalid payload: {e}")
+            data = None
+
+        record_ids = extract_record_ids_from_grist_webhook(data)
+        if not record_ids:
+            logger.info("Grist webhook NOTIFY_MESSAGES: no record ids in payload")
+            return jsonify({"status": "accepted"})
+
+        try:
+            records = await load_notify_message_records_by_ids(record_ids)
+        except Exception as e:
+            logger.error(f"Grist webhook NOTIFY_MESSAGES: load failed: {e}")
+            return jsonify({"status": "accepted"})
+
+        for record in records:
+            try:
+                await send_notify_message_record(record)
+            except Exception as e:
+                logger.error(
+                    f"Grist webhook NOTIFY_MESSAGES: unexpected send error for "
+                    f"id={record.get('id')}: {e}"
+                )
+
         return jsonify({"status": "accepted"})
 
     # Обновляем кеш для таблицы

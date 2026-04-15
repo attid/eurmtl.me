@@ -91,6 +91,68 @@ async def test_grist_webhook_table_authorized_updates_cache(client):
 
 
 @pytest.mark.asyncio
+async def test_grist_webhook_notify_messages_authorized_sends_selected_records(client):
+    with patch("routers.grist.config") as mock_config:
+        mock_config.grist_income = "secret"
+        with (
+            patch(
+                "routers.grist.load_notify_message_records_by_ids",
+                new=AsyncMock(
+                    return_value=[
+                        {"id": 10, "messsage": "One"},
+                        {"id": 11, "messsage": "Two"},
+                    ]
+                ),
+            ) as load_mock,
+            patch(
+                "routers.grist.send_notify_message_record",
+                new=AsyncMock(),
+            ) as send_mock,
+            patch(
+                "other.grist_cache.grist_cache.update_cache_by_webhook",
+                new=AsyncMock(),
+            ) as update_mock,
+        ):
+            response = await client.post(
+                "/grist/webhook/NOTIFY_MESSAGES",
+                headers={"Authorization": "Bearer secret"},
+                json=[{"id": 10}, {"id": 11}],
+            )
+
+    assert response.status_code == 200
+    assert await response.get_json() == {"status": "accepted"}
+    load_mock.assert_awaited_once_with([10, 11])
+    assert send_mock.await_count == 2
+    update_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_grist_webhook_notify_messages_without_ids_is_accepted(client):
+    with patch("routers.grist.config") as mock_config:
+        mock_config.grist_income = "secret"
+        with (
+            patch(
+                "routers.grist.load_notify_message_records_by_ids",
+                new=AsyncMock(),
+            ) as load_mock,
+            patch(
+                "routers.grist.send_notify_message_record",
+                new=AsyncMock(),
+            ) as send_mock,
+        ):
+            response = await client.post(
+                "/grist/webhook/NOTIFY_MESSAGES",
+                headers={"Authorization": "Bearer secret"},
+                json=[{"fields": {}}],
+            )
+
+    assert response.status_code == 200
+    assert await response.get_json() == {"status": "accepted"}
+    load_mock.assert_not_awaited()
+    send_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_grist_webhook_authorized_processes_update_key(client):
     with patch("routers.grist.config") as mock_config:
         mock_config.grist_income = "secret"
