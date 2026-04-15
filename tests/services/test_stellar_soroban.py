@@ -1,7 +1,11 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from other.stellar_soroban import read_contract_string, submit_signed_transaction
+from other.stellar_soroban import (
+    read_contract_string,
+    read_token_contract_display_name,
+    submit_signed_transaction,
+)
 
 
 @pytest.mark.asyncio
@@ -110,6 +114,37 @@ async def test_read_contract_string_surfaces_clean_errors():
                 contract_id="CAFXUALXFPTBTLSRCDSMJXNPSN3AVL2ZPXJUDDHVTUTLRX5SCNP2SISM",
                 function_name="message",
             )
+
+
+@pytest.mark.asyncio
+async def test_read_token_contract_display_name_normalizes_and_caches_result():
+    with patch(
+        "other.stellar_soroban.read_contract_string",
+        new=AsyncMock(return_value="EURMTL:GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"),
+    ) as read_string_mock:
+        first = await read_token_contract_display_name(
+            rpc_url="https://soroban-rpc.mainnet.stellar.gateway.fm",
+            contract_id="CDUYP3U6HGTOBUNQD2WTLWNMNADWMENROKZZIHGEVGKIU3ZUDF42CDOK",
+        )
+        second = await read_token_contract_display_name(
+            rpc_url="https://soroban-rpc.mainnet.stellar.gateway.fm",
+            contract_id="CDUYP3U6HGTOBUNQD2WTLWNMNADWMENROKZZIHGEVGKIU3ZUDF42CDOK",
+        )
+
+    assert first == "EURMTL"
+    assert second == "EURMTL"
+    read_string_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_read_token_contract_display_name_live_eurmtl_contract():
+    result = await read_token_contract_display_name(
+        rpc_url="https://soroban-rpc.mainnet.stellar.gateway.fm",
+        contract_id="CDUYP3U6HGTOBUNQD2WTLWNMNADWMENROKZZIHGEVGKIU3ZUDF42CDOK",
+    )
+
+    assert result == "EURMTL"
 
 
 @pytest.mark.asyncio

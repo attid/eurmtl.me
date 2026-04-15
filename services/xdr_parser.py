@@ -3,7 +3,6 @@ import base64
 import json
 import copy
 from datetime import datetime, timezone
-import jsonpickle
 from loguru import logger
 from quart import current_app
 from stellar_sdk import (
@@ -32,6 +31,7 @@ from stellar_sdk.operation.create_claimable_balance import ClaimPredicateType
 
 from infrastructure.repositories.transaction_repository import TransactionRepository
 from other.grist_cache import grist_cache
+from other.stellar_soroban import read_token_contract_display_name
 from services.stellar_client import (
     get_available_balance_str,
     check_asset,
@@ -360,6 +360,11 @@ def pool_id_to_link(key) -> str:
     return f'<a href="{start_url}{key}" target="_blank">{key[:4] + ".." + key[-4:]}</a>'
 
 
+def contract_id_to_link(key) -> str:
+    start_url = "https://viewer.eurmtl.me/contract/"
+    return f'<a href="{start_url}{key}" target="_blank">{key[:4] + ".." + key[-4:]}</a>'
+
+
 async def asset_to_link(operation_asset) -> str:
     start_url = "https://viewer.eurmtl.me/asset/"
     if operation_asset.code == "XLM":
@@ -556,35 +561,16 @@ async def decode_invoke_host_function(operation):
     result = []
     try:
         hf = operation.host_function
-        result.append(f"      Function Type: {hf.type}")
 
         if hasattr(hf, "invoke_contract") and hf.invoke_contract:
             ic = hf.invoke_contract
-
-            # Decode contract address
-            contract_id_bytes = ic.contract_address.contract_id.hash
-            try:
-                contract_id_str = StrKey.encode_contract(contract_id_bytes)
-            except Exception:
-                contract_id_str = contract_id_bytes.hex()
-            result.append(f"      Contract: {contract_id_str}")
-
-            # Decode function name
-            fn = (
-                ic.function_name.sc_symbol.decode("utf-8")
-                if hasattr(ic.function_name, "sc_symbol")
-                else str(ic.function_name)
+            contract_id_str = _decode_contract_address_to_string(ic.contract_address)
+            fn = _decode_sc_symbol(ic.function_name)
+            args_rendered = ", ".join(_render_call_argument(arg) for arg in ic.args or [])
+            result.append(
+                f"      Contract call: {contract_id_to_link(contract_id_str)}.{fn}({args_rendered})"
             )
-            result.append(f"      Function: {fn}")
-
-            # Decode arguments with indexes
-            if ic.args:
-                result.append("      Arguments:")
-                for i, arg in enumerate(ic.args):
-                    decoded = decode_scval(arg)
-                    result.append(f"        [{i}] {decoded}")
-            else:
-                result.append("      No arguments")
+            result.extend(await _render_auth_sub_invocation_summaries(operation))
 
         elif hasattr(hf, "create_contract") and hf.create_contract:
             cc = hf.create_contract
@@ -605,6 +591,99 @@ async def decode_invoke_host_function(operation):
         result.append(f"      <error parsing HostFunction: {str(e)}>")
 
     return result
+
+
+def _decode_sc_symbol(symbol) -> str:
+    if hasattr(symbol, "sc_symbol"):
+        return symbol.sc_symbol.decode("utf-8")
+    return str(symbol)
+
+
+def _decode_contract_address_to_string(address) -> str:
+    try:
+        return StrKey.encode_contract(address.contract_id.hash)
+    except Exception:
+        return address.contract_id.hash.hex()
+
+
+def _decode_sc_string_value(sc_string) -> str:
+    raw = getattr(sc_string, "sc_string", sc_string)
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", errors="replace")
+    return str(raw)
+
+
+def _render_call_argument(val) -> str:
+    if val.type.value == 18:
+        addr = val.address
+        if addr and addr.type.value == 0 and addr.account_id:
+            account_id_bytes = addr.account_id.account_id.ed25519.uint256
+            return address_id_to_link(StrKey.encode_ed25519_public_key(account_id_bytes))
+        if addr and addr.type.value == 1 and addr.contract_id:
+            return contract_id_to_link(StrKey.encode_contract(addr.contract_id.hash))
+
+    if hasattr(val, "str") and val.str is not None:
+        return json.dumps(_decode_sc_string_value(val.str), ensure_ascii=False)
+
+    return str(decode_scval(val))
+
+
+async def _render_auth_sub_invocation_summaries(operation) -> list[str]:
+    lines = []
+    for auth_entry in getattr(operation, "auth", []) or []:
+        root_invocation = getattr(auth_entry, "root_invocation", None)
+        if root_invocation is not None:
+            lines.extend(await _render_sub_invocation_summaries(root_invocation))
+    return lines
+
+
+async def _render_sub_invocation_summaries(invocation) -> list[str]:
+    lines = []
+    for sub_invocation in getattr(invocation, "sub_invocations", []) or []:
+        line = await _render_sub_invocation_summary(sub_invocation)
+        if line:
+            lines.append(line)
+        lines.extend(await _render_sub_invocation_summaries(sub_invocation))
+    return lines
+
+
+async def _render_sub_invocation_summary(invocation) -> str:
+    function = getattr(invocation, "function", None)
+    contract_fn = getattr(function, "contract_fn", None)
+    if contract_fn is None:
+        return ""
+
+    function_name = _decode_sc_symbol(contract_fn.function_name)
+    if function_name != "transfer" or len(contract_fn.args) < 3:
+        return ""
+
+    token_contract_id = _decode_contract_address_to_string(contract_fn.contract_address)
+    try:
+        token_name = await read_token_contract_display_name(
+            rpc_url="https://soroban-rpc.mainnet.stellar.gateway.fm",
+            contract_id=token_contract_id,
+        )
+    except Exception:
+        token_name = token_contract_id[:4] + ".." + token_contract_id[-4:]
+    if token_name == "native":
+        token_name = "XLM"
+
+    source = _render_call_argument(contract_fn.args[0])
+    destination = _render_call_argument(contract_fn.args[1])
+    amount_raw = decode_scval(contract_fn.args[2])
+    amount_display = _format_sub_invocation_amount(amount_raw)
+    return (
+        f"      Transfer {amount_display} {token_name} ({amount_raw} raw) "
+        f"from {source} to {destination}"
+    )
+
+
+def _format_sub_invocation_amount(amount_raw: str) -> str:
+    try:
+        scaled = int(amount_raw) / 10_000_000
+        return f"{scaled:.7f}".rstrip("0").rstrip(".")
+    except Exception:
+        return amount_raw
 
 
 def decode_scval(val):
@@ -630,13 +709,25 @@ def decode_scval(val):
         if hasattr(val, "sym") and val.sym:
             return val.sym.sc_symbol.decode("utf-8")
 
+        # Bool
+        if hasattr(val, "b") and val.b is not None:
+            return "true" if bool(val.b) else "false"
+
         # Строка
-        if hasattr(val, "str") and val.str:
-            return val.str
+        if hasattr(val, "str") and val.str is not None:
+            return _decode_sc_string_value(val.str)
+
+        # Bytes
+        if hasattr(val, "bytes") and val.bytes is not None:
+            return val.bytes.sc_bytes.hex()
 
         # Вектор
         if hasattr(val, "vec") and val.vec and val.vec.sc_vec:
             return "[" + ", ".join(decode_scval(v) for v in val.vec.sc_vec) + "]"
+
+        # u32
+        if hasattr(val, "u32") and val.u32 is not None:
+            return str(val.u32.uint32)
 
         # u128
         if hasattr(val, "u128") and val.u128:
