@@ -45,10 +45,10 @@ def _normalize_message_text(message: str) -> str:
 
 
 def render_mountain_notification_html(message: str) -> str:
-    escaped_message = escape(_normalize_message_text(message)).replace("\n", "<br>")
+    escaped_message = escape(_normalize_message_text(message))
     return (
-        f"{MOUNTAIN_NOTIFY_PREFIX}<br><br>"
-        f"{escaped_message}<br><br>"
+        f"{MOUNTAIN_NOTIFY_PREFIX}\n\n"
+        f"{escaped_message}\n\n"
         f'<a href="{MOUNTAIN_NOTIFY_LINK}">Открыть контракт</a>'
     )
 
