@@ -630,21 +630,37 @@ def _render_call_argument(val) -> str:
 
 async def _render_auth_sub_invocation_summaries(operation) -> list[str]:
     lines = []
+    unknown_count = 0
     for auth_entry in getattr(operation, "auth", []) or []:
         root_invocation = getattr(auth_entry, "root_invocation", None)
         if root_invocation is not None:
-            lines.extend(await _render_sub_invocation_summaries(root_invocation))
+            nested_lines, nested_unknown_count = await _render_sub_invocation_summaries(
+                root_invocation
+            )
+            lines.extend(nested_lines)
+            unknown_count += nested_unknown_count
+    if unknown_count:
+        lines.append(
+            f"      Warning: also contains {unknown_count} additional sub-invocation(s) not yet decoded"
+        )
     return lines
 
 
-async def _render_sub_invocation_summaries(invocation) -> list[str]:
+async def _render_sub_invocation_summaries(invocation) -> tuple[list[str], int]:
     lines = []
+    unknown_count = 0
     for sub_invocation in getattr(invocation, "sub_invocations", []) or []:
         line = await _render_sub_invocation_summary(sub_invocation)
         if line:
             lines.append(line)
-        lines.extend(await _render_sub_invocation_summaries(sub_invocation))
-    return lines
+        else:
+            unknown_count += 1
+        nested_lines, nested_unknown_count = await _render_sub_invocation_summaries(
+            sub_invocation
+        )
+        lines.extend(nested_lines)
+        unknown_count += nested_unknown_count
+    return lines, unknown_count
 
 
 async def _render_sub_invocation_summary(invocation) -> str:
@@ -654,10 +670,36 @@ async def _render_sub_invocation_summary(invocation) -> str:
         return ""
 
     function_name = _decode_sc_symbol(contract_fn.function_name)
-    if function_name != "transfer" or len(contract_fn.args) < 3:
-        return ""
-
     token_contract_id = _decode_contract_address_to_string(contract_fn.contract_address)
+    token_name = await _resolve_sub_invocation_token_name(token_contract_id)
+
+    if function_name == "transfer" and len(contract_fn.args) >= 3:
+        source = _render_call_argument(contract_fn.args[0])
+        destination = _render_call_argument(contract_fn.args[1])
+        amount_raw = decode_scval(contract_fn.args[2])
+        amount_display = _format_sub_invocation_amount(amount_raw)
+        return (
+            f"      Transfer {amount_display} {token_name} ({amount_raw} raw) "
+            f"from {source} to {destination}"
+        )
+
+    if function_name == "burn" and len(contract_fn.args) >= 2:
+        source = _render_call_argument(contract_fn.args[0])
+        amount_raw = decode_scval(contract_fn.args[1])
+        amount_display = _format_sub_invocation_amount(amount_raw)
+        return (
+            f"      Burn {amount_display} {token_name} ({amount_raw} raw) "
+            f"from {source}"
+        )
+
+    args_rendered = ", ".join(_render_call_argument(arg) for arg in contract_fn.args or [])
+    return (
+        f"      Nested call: {contract_id_to_link(token_contract_id)}."
+        f"{function_name}({args_rendered})"
+    )
+
+
+async def _resolve_sub_invocation_token_name(token_contract_id: str) -> str:
     try:
         token_name = await read_token_contract_display_name(
             rpc_url="https://soroban-rpc.mainnet.stellar.gateway.fm",
@@ -667,15 +709,7 @@ async def _render_sub_invocation_summary(invocation) -> str:
         token_name = token_contract_id[:4] + ".." + token_contract_id[-4:]
     if token_name == "native":
         token_name = "XLM"
-
-    source = _render_call_argument(contract_fn.args[0])
-    destination = _render_call_argument(contract_fn.args[1])
-    amount_raw = decode_scval(contract_fn.args[2])
-    amount_display = _format_sub_invocation_amount(amount_raw)
-    return (
-        f"      Transfer {amount_display} {token_name} ({amount_raw} raw) "
-        f"from {source} to {destination}"
-    )
+    return token_name
 
 
 def _format_sub_invocation_amount(amount_raw: str) -> str:

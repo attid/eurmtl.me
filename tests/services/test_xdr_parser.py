@@ -24,6 +24,7 @@ from stellar_sdk import (
 
 from services.xdr_parser import (
     _parse_transaction_envelope,
+    _render_auth_sub_invocation_summaries,
     decode_xdr_to_base64,
     is_valid_base64,
     decode_data_value,
@@ -47,6 +48,82 @@ MOUNTAIN_CAPTURE_WITH_TRANSFER_XDR = (
     .read_text()
     .strip()
 )
+SWAP_CHAINED_WITH_XLM_TRANSFER_XDR = (
+    pathlib.Path("tests/fixtures/xdr/swap_chained_with_xlm_transfer.xdr")
+    .read_text()
+    .strip()
+)
+SWAP_WITH_USDM_TRANSFER_XDR = (
+    pathlib.Path("tests/fixtures/xdr/swap_with_usdm_transfer.xdr").read_text().strip()
+)
+SWAP_CHAINED_WITH_YUSDC_TRANSFER_XDR = (
+    pathlib.Path("tests/fixtures/xdr/swap_chained_with_yusdc_transfer.xdr")
+    .read_text()
+    .strip()
+)
+DEPOSIT_WITH_DUAL_TRANSFERS_XDR = (
+    pathlib.Path("tests/fixtures/xdr/deposit_with_dual_transfers.xdr")
+    .read_text()
+    .strip()
+)
+WITHDRAW_WITH_UNKNOWN_SUBINVOCATION_XDR = (
+    pathlib.Path("tests/fixtures/xdr/withdraw_with_unknown_subinvocation.xdr")
+    .read_text()
+    .strip()
+)
+INIT_STABLESWAP_POOL_WITH_AQUA_TRANSFER_XDR = (
+    pathlib.Path("tests/fixtures/xdr/init_stableswap_pool_with_aqua_transfer.xdr")
+    .read_text()
+    .strip()
+)
+
+
+async def _decode_fixture_xdr(
+    xdr: str, token_display_name: str | dict[str, str] = "EURMTL"
+) -> str:
+    source_account_id = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
+    source_account = {
+        "id": source_account_id,
+        "sequence": "151245301938660176",
+        "balances": [{"asset_type": "native", "balance": "704.4409099"}],
+    }
+    repo = SimpleNamespace(get_by_sequence=AsyncMock(return_value=[]))
+
+    if isinstance(token_display_name, dict):
+        async def _resolve_token_name(*, rpc_url: str, contract_id: str) -> str:
+            return token_display_name.get(contract_id, contract_id[:4] + ".." + contract_id[-4:])
+    else:
+        async def _resolve_token_name(*, rpc_url: str, contract_id: str) -> str:
+            return token_display_name
+
+    with (
+        patch("services.xdr_parser.current_app", _mock_current_app()),
+        patch("services.xdr_parser.TransactionRepository", return_value=repo),
+        patch(
+            "services.xdr_parser.get_available_balance_str",
+            AsyncMock(return_value="704.4409099 XLM"),
+        ),
+        patch(
+            "services.xdr_parser.get_account_fresh",
+            AsyncMock(return_value=source_account),
+        ),
+        patch(
+            "services.xdr_parser.get_account",
+            AsyncMock(
+                side_effect=lambda account_id: source_account
+                if account_id == source_account_id
+                else {"id": account_id, "balances": []}
+            ),
+        ),
+        patch(
+            "services.xdr_parser.read_token_contract_display_name",
+            new=AsyncMock(side_effect=_resolve_token_name),
+            create=True,
+        ),
+    ):
+        result = await decode_xdr_to_text(xdr)
+
+    return "\n".join(result)
 
 
 class TestUtilityFunctions:
@@ -868,46 +945,83 @@ async def test_decode_xdr_to_text_describes_pool_and_special_operations():
 
 @pytest.mark.asyncio
 async def test_decode_xdr_to_text_from_fixture_renders_capture_and_transfer_summary():
-    source_account_id = "GDLTH4KKMA4R2JGKA7XKI5DLHJBUT42D5RHVK6SS6YHZZLHVLCWJAYXI"
-    source_account = {
-        "id": source_account_id,
-        "sequence": "151245301938660174",
-        "balances": [{"asset_type": "native", "balance": "705.4533308"}],
-    }
-    repo = SimpleNamespace(get_by_sequence=AsyncMock(return_value=[]))
-
-    with (
-        patch("services.xdr_parser.current_app", _mock_current_app()),
-        patch("services.xdr_parser.TransactionRepository", return_value=repo),
-        patch(
-            "services.xdr_parser.get_available_balance_str",
-            AsyncMock(return_value="705.4533308 XLM"),
-        ),
-        patch(
-            "services.xdr_parser.get_account_fresh",
-            AsyncMock(return_value=source_account),
-        ),
-        patch(
-            "services.xdr_parser.get_account",
-            AsyncMock(
-                side_effect=lambda account_id: source_account
-                if account_id == source_account_id
-                else {"id": account_id, "balances": []}
-            ),
-        ),
-        patch(
-            "services.xdr_parser.read_token_contract_display_name",
-            new=AsyncMock(return_value="EURMTL"),
-            create=True,
-        ),
-    ):
-        result = await decode_xdr_to_text(MOUNTAIN_CAPTURE_WITH_TRANSFER_XDR)
-
-    text = "\n".join(result)
+    text = await _decode_fixture_xdr(
+        MOUNTAIN_CAPTURE_WITH_TRANSFER_XDR, token_display_name="EURMTL"
+    )
     assert "Contract call:" in text
     assert ".capture(" in text
     assert '"А Соз llms.txt не сделал 👀"' in text
     assert "Transfer 0.0000012 EURMTL (12 raw)" in text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("xdr", "token_display_name", "expected_snippets"),
+    [
+        (
+            SWAP_CHAINED_WITH_XLM_TRANSFER_XDR,
+            "native",
+            [
+                ".swap_chained(",
+                "Transfer 1 XLM (10000000 raw)",
+            ],
+        ),
+        (
+            SWAP_WITH_USDM_TRANSFER_XDR,
+            "USDM",
+            [
+                ".swap(",
+                "Transfer 1 USDM (10000000 raw)",
+            ],
+        ),
+        (
+            SWAP_CHAINED_WITH_YUSDC_TRANSFER_XDR,
+            "yUSDC",
+            [
+                ".swap_chained(",
+                "Transfer 1.2293597 yUSDC (12293597 raw)",
+            ],
+        ),
+        (
+            DEPOSIT_WITH_DUAL_TRANSFERS_XDR,
+            "USDM",
+            [
+                ".deposit(",
+                "Transfer 540 USDM (5400000000 raw)",
+                "Transfer 500 USDM (5000000000 raw)",
+            ],
+        ),
+        (
+            INIT_STABLESWAP_POOL_WITH_AQUA_TRANSFER_XDR,
+            "AQUA",
+            [
+                ".init_stableswap_pool(",
+                "Transfer 300000 AQUA (3000000000000 raw)",
+            ],
+        ),
+    ],
+)
+async def test_decode_xdr_to_text_from_real_fixtures_renders_distinct_transfer_summaries(
+    xdr, token_display_name, expected_snippets
+):
+    text = await _decode_fixture_xdr(xdr, token_display_name=token_display_name)
+
+    for snippet in expected_snippets:
+        assert snippet in text
+
+
+@pytest.mark.asyncio
+async def test_decode_xdr_to_text_from_withdraw_fixture_warns_about_unknown_subinvocation():
+    text = await _decode_fixture_xdr(
+        WITHDRAW_WITH_UNKNOWN_SUBINVOCATION_XDR,
+        token_display_name={
+            "CDOY7ILRR7PDGLBXZUPSENB6XOET77PR2JY3HXDGQS3TS4T764OYBUGO": "stPool",
+        },
+    )
+
+    assert ".withdraw(" in text
+    assert "Burn 14.2949196 stPool (142949196 raw)" in text
+    assert "additional sub-invocation" not in text
 
 
 @pytest.mark.asyncio
@@ -966,3 +1080,173 @@ async def test_render_sub_invocation_summary_formats_native_as_xlm_and_scales_ra
         line = await _render_sub_invocation_summary(invocation)
 
     assert "Transfer 1 XLM (10000000 raw)" in line
+
+
+@pytest.mark.asyncio
+async def test_render_auth_sub_invocation_summaries_renders_generic_nested_calls():
+    source_kp = Keypair.random()
+    source_bytes = StrKey.decode_ed25519_public_key(source_kp.public_key)
+    destination_contract = bytes.fromhex("ab" * 32)
+    token_contract = bytes.fromhex("cd" * 32)
+    unknown_contract = bytes.fromhex("ef" * 32)
+
+    transfer_invocation = SimpleNamespace(
+        function=SimpleNamespace(
+            contract_fn=SimpleNamespace(
+                contract_address=SimpleNamespace(
+                    contract_id=SimpleNamespace(hash=token_contract)
+                ),
+                function_name=SimpleNamespace(sc_symbol=b"transfer"),
+                args=[
+                    SimpleNamespace(
+                        type=SimpleNamespace(value=18),
+                        address=SimpleNamespace(
+                            type=SimpleNamespace(value=0),
+                            account_id=SimpleNamespace(
+                                account_id=SimpleNamespace(
+                                    ed25519=SimpleNamespace(uint256=source_bytes)
+                                )
+                            ),
+                            contract_id=None,
+                        ),
+                    ),
+                    SimpleNamespace(
+                        type=SimpleNamespace(value=18),
+                        address=SimpleNamespace(
+                            type=SimpleNamespace(value=1),
+                            account_id=None,
+                            contract_id=SimpleNamespace(hash=destination_contract),
+                        ),
+                    ),
+                    SimpleNamespace(
+                        type=SimpleNamespace(value=10),
+                        i128=SimpleNamespace(
+                            lo=SimpleNamespace(uint64=10_000_000),
+                            hi=SimpleNamespace(int64=0),
+                        ),
+                        b=None,
+                    ),
+                ],
+                sub_invocations=[],
+            )
+        ),
+        sub_invocations=[],
+    )
+    approve_invocation = SimpleNamespace(
+        function=SimpleNamespace(
+            contract_fn=SimpleNamespace(
+                contract_address=SimpleNamespace(
+                    contract_id=SimpleNamespace(hash=unknown_contract)
+                ),
+                function_name=SimpleNamespace(sc_symbol=b"approve"),
+                args=[],
+            )
+        ),
+        sub_invocations=[],
+    )
+    operation = SimpleNamespace(
+        auth=[
+            SimpleNamespace(
+                root_invocation=SimpleNamespace(
+                    sub_invocations=[transfer_invocation, approve_invocation]
+                )
+            )
+        ]
+    )
+
+    with patch(
+        "services.xdr_parser.read_token_contract_display_name",
+        new=AsyncMock(return_value="native"),
+        create=True,
+    ):
+        lines = await _render_auth_sub_invocation_summaries(operation)
+
+    text = "\n".join(lines)
+    assert "Transfer 1 XLM (10000000 raw)" in text
+    assert "Nested call:" in text
+    assert ".approve()" in text
+    assert "additional sub-invocation" not in text
+
+
+@pytest.mark.asyncio
+async def test_render_sub_invocation_summary_formats_burn_and_generic_nested_calls():
+    source_kp = Keypair.random()
+    source_bytes = StrKey.decode_ed25519_public_key(source_kp.public_key)
+    token_contract = bytes.fromhex("cd" * 32)
+
+    burn_invocation = SimpleNamespace(
+        function=SimpleNamespace(
+            contract_fn=SimpleNamespace(
+                contract_address=SimpleNamespace(
+                    contract_id=SimpleNamespace(hash=token_contract)
+                ),
+                function_name=SimpleNamespace(sc_symbol=b"burn"),
+                args=[
+                    SimpleNamespace(
+                        type=SimpleNamespace(value=18),
+                        address=SimpleNamespace(
+                            type=SimpleNamespace(value=0),
+                            account_id=SimpleNamespace(
+                                account_id=SimpleNamespace(
+                                    ed25519=SimpleNamespace(uint256=source_bytes)
+                                )
+                            ),
+                            contract_id=None,
+                        ),
+                    ),
+                    SimpleNamespace(
+                        type=SimpleNamespace(value=10),
+                        i128=SimpleNamespace(
+                            lo=SimpleNamespace(uint64=142_949_196),
+                            hi=SimpleNamespace(int64=0),
+                        ),
+                        b=None,
+                    ),
+                ],
+            )
+        )
+    )
+    approve_invocation = SimpleNamespace(
+        function=SimpleNamespace(
+            contract_fn=SimpleNamespace(
+                contract_address=SimpleNamespace(
+                    contract_id=SimpleNamespace(hash=token_contract)
+                ),
+                function_name=SimpleNamespace(sc_symbol=b"approve"),
+                args=[
+                    SimpleNamespace(
+                        type=SimpleNamespace(value=18),
+                        address=SimpleNamespace(
+                            type=SimpleNamespace(value=0),
+                            account_id=SimpleNamespace(
+                                account_id=SimpleNamespace(
+                                    ed25519=SimpleNamespace(uint256=source_bytes)
+                                )
+                            ),
+                            contract_id=None,
+                        ),
+                    ),
+                    SimpleNamespace(
+                        type=SimpleNamespace(value=10),
+                        i128=SimpleNamespace(
+                            lo=SimpleNamespace(uint64=10_000_000),
+                            hi=SimpleNamespace(int64=0),
+                        ),
+                        b=None,
+                    ),
+                ],
+            )
+        )
+    )
+
+    with patch(
+        "services.xdr_parser.read_token_contract_display_name",
+        new=AsyncMock(return_value="stPool"),
+        create=True,
+    ):
+        burn_line = await _render_sub_invocation_summary(burn_invocation)
+        approve_line = await _render_sub_invocation_summary(approve_invocation)
+
+    assert "Burn 14.2949196 stPool (142949196 raw)" in burn_line
+    assert "Nested call:" in approve_line
+    assert ".approve(" in approve_line
