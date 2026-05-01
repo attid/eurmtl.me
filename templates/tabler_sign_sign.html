@@ -300,7 +300,7 @@
 <script>
     // Функция для проверки, является ли браузер встроенным браузером Telegram
     function isInTelegramBrowser() {
-        return typeof window.TelegramWebview !== 'undefined';
+        return 'TelegramWebview' in window || 'TelegramWebviewProxy' in window || 'TelegramWebviewProxyProto' in window;
     }
 
     // Элементы DOM, к которым часто обращаемся
