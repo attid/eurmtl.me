@@ -1,9 +1,18 @@
 EURMTL machine API guide
 
 Use HTTP endpoints directly. Prefer JSON or plain text responses. Do not rely on HTML pages if an API route exists.
+For structured discovery, check the published resources below before traversing ad hoc routes.
 
 Entry point:
-- GET /llm.txt : this file
+- GET /llms.txt : this file
+
+Discovery resources:
+- GET /robots.txt : crawl rules and sitemap reference
+- GET /sitemap.xml : canonical public URLs
+- GET /.well-known/api-catalog : machine-readable API discovery document
+- GET /openapi.json : compact OpenAPI description for core machine routes
+- GET /.well-known/agent-skills/index.json : published skill index
+- GET /.well-known/agent-skills/eurmtl-http/SKILL.md : procedural guidance for agent use
 
 Useful machine routes:
 - POST /remote/decode : decode Stellar XDR from JSON body {"xdr": "<base64 xdr>"}
@@ -31,6 +40,7 @@ Federation and wallet integration:
 Utility routes:
 - POST /lab/build_xdr : build XDR from JSON payload, see full contract below
 - POST /lab/xdr_to_json : convert XDR to JSON
+- GET /healthz : simple service status endpoint
 - GET /uuid : generate random request correlation id
 - GET /myip : return caller IP
 

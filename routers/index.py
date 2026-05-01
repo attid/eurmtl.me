@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 import signal
 import subprocess
@@ -7,6 +9,7 @@ from sqlalchemy import select
 from quart import (
     Blueprint,
     Response,
+    make_response,
     send_file,
     request,
     session,
@@ -24,6 +27,32 @@ from other.tailscale import get_latest_version_package
 from loguru import logger
 
 blueprint = Blueprint("index", __name__)
+
+
+def _absolute_url(path: str) -> str:
+    base_url = request.url_root.rstrip("/")
+    if path == "/":
+        return f"{base_url}/"
+    return f"{base_url}{path}"
+
+
+def _sitemap_paths() -> list[str]:
+    return [
+        "/",
+        "/llms.txt",
+        "/robots.txt",
+        "/sitemap.xml",
+        "/healthz",
+        "/openapi.json",
+        "/.well-known/stellar.toml",
+        "/.well-known/api-catalog",
+        "/.well-known/agent-skills/index.json",
+        "/.well-known/agent-skills/eurmtl-http/SKILL.md",
+        "/federation",
+        "/sep6/info",
+        "/lab",
+        "/contracts",
+    ]
 
 
 @blueprint.route("/tailscale", methods=("GET", "POST"))
@@ -52,13 +81,142 @@ async def tailscale_static_redirect_route():
 
 @blueprint.route("/")
 async def cmd_index():
-    return await render_template("index.html")
+    response = await make_response(await render_template("index.html"))
+    response.headers["Link"] = ", ".join(
+        [
+            '</.well-known/api-catalog>; rel="api-catalog"',
+            '</llms.txt>; rel="service-doc"; type="text/plain"',
+            '</.well-known/stellar.toml>; rel="service-desc"; type="text/plain"',
+            '</.well-known/agent-skills/index.json>; rel="describedby"; type="application/json"',
+        ]
+    )
+    return response
 
 
-@blueprint.route("/llm.txt")
 @blueprint.route("/llms.txt")
 async def llm_txt():
     return Response(await render_template("llm.txt"), mimetype="text/plain")
+
+
+@blueprint.route("/robots.txt")
+async def robots_txt():
+    return Response(
+        await render_template("robots.txt", sitemap_url=_absolute_url("/sitemap.xml")),
+        mimetype="text/plain",
+    )
+
+
+@blueprint.route("/sitemap.xml")
+async def sitemap_xml():
+    urls = [_absolute_url(path) for path in _sitemap_paths()]
+    return Response(
+        await render_template("sitemap.xml", urls=urls), mimetype="application/xml"
+    )
+
+
+@blueprint.route("/healthz")
+async def healthz():
+    return Response('{"status":"ok"}', mimetype="application/json")
+
+
+@blueprint.route("/openapi.json")
+async def openapi_json():
+    base_url = _absolute_url("/")
+    document = {
+        "openapi": "3.1.0",
+        "info": {
+            "title": "EURMTL Machine API",
+            "version": "1.0.0",
+            "description": "Machine-oriented subset of EURMTL HTTP endpoints.",
+        },
+        "servers": [{"url": base_url}],
+        "paths": {
+            "/llms.txt": {
+                "get": {
+                    "summary": "Machine-readable overview for agents",
+                    "responses": {"200": {"description": "Plain text guide"}},
+                }
+            },
+            "/remote/decode": {
+                "post": {
+                    "summary": "Decode Stellar XDR from JSON body",
+                    "responses": {
+                        "200": {"description": "Decoded XDR"},
+                        "400": {"description": "Invalid input"},
+                    },
+                }
+            },
+            "/remote/sep07/auth/init": {
+                "post": {
+                    "summary": "Initialize SEP-7 auth flow",
+                    "responses": {
+                        "200": {"description": "Flow initialized"},
+                        "400": {"description": "Invalid input"},
+                    },
+                }
+            },
+            "/lab/build_xdr": {
+                "post": {
+                    "summary": "Build Stellar transaction XDR from structured JSON",
+                    "responses": {
+                        "200": {"description": "Built XDR"},
+                        "400": {"description": "Invalid input"},
+                    },
+                }
+            },
+            "/.well-known/stellar.toml": {
+                "get": {
+                    "summary": "Stellar ecosystem metadata",
+                    "responses": {"200": {"description": "Stellar TOML"}},
+                }
+            },
+        },
+    }
+    return Response(json.dumps(document, indent=2), mimetype="application/json")
+
+
+@blueprint.route("/.well-known/api-catalog")
+async def api_catalog():
+    document = {
+        "linkset": [
+            {
+                "anchor": _absolute_url("/"),
+                "service-doc": [{"href": _absolute_url("/llms.txt")}],
+                "service-desc": [{"href": _absolute_url("/openapi.json")}],
+                "status": [{"href": _absolute_url("/healthz")}],
+            }
+        ]
+    }
+    return Response(
+        json.dumps(document, indent=2),
+        content_type='application/linkset+json; profile="https://www.rfc-editor.org/info/rfc9727"',
+    )
+
+
+@blueprint.route("/.well-known/agent-skills/eurmtl-http/SKILL.md")
+async def published_skill():
+    return Response(
+        await render_template("eurmtl_http_skill.md"), mimetype="text/markdown"
+    )
+
+
+@blueprint.route("/.well-known/agent-skills/index.json")
+async def agent_skills_index():
+    skill_body = await render_template("eurmtl_http_skill.md")
+    skill_digest = f"sha256:{hashlib.sha256(skill_body.encode('utf-8')).hexdigest()}"
+    document = {
+        "$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
+        "skills": [
+            {
+                "name": "eurmtl-http",
+                "type": "skill-md",
+                "description": "Use when an agent needs the public EURMTL HTTP routes, machine entrypoints, and request patterns without relying on browser-only pages.",
+                "url": "/.well-known/agent-skills/eurmtl-http/SKILL.md",
+                "digest": skill_digest,
+            }
+        ],
+    }
+    return Response(json.dumps(document, indent=2), mimetype="application/json")
 
 
 @blueprint.route("/mytest", methods=("GET", "POST"))

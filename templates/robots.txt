@@ -1,0 +1,47 @@
+User-agent: *
+Allow: /
+Allow: /.well-known/
+Allow: /llms.txt
+Sitemap: {{ sitemap_url }}
+Content-Signal: ai-train=no, search=yes, ai-input=yes
+Disallow: /authorize
+Disallow: /err
+Disallow: /log
+Disallow: /restart
+Disallow: /updatedb
+
+User-agent: GPTBot
+Allow: /
+Content-Signal: ai-train=no, search=yes, ai-input=yes
+Disallow: /authorize
+Disallow: /err
+Disallow: /log
+Disallow: /restart
+Disallow: /updatedb
+
+User-agent: OAI-SearchBot
+Allow: /
+Content-Signal: ai-train=no, search=yes, ai-input=yes
+Disallow: /authorize
+Disallow: /err
+Disallow: /log
+Disallow: /restart
+Disallow: /updatedb
+
+User-agent: Claude-Web
+Allow: /
+Content-Signal: ai-train=no, search=yes, ai-input=yes
+Disallow: /authorize
+Disallow: /err
+Disallow: /log
+Disallow: /restart
+Disallow: /updatedb
+
+User-agent: Google-Extended
+Allow: /
+Content-Signal: ai-train=no, search=yes, ai-input=yes
+Disallow: /authorize
+Disallow: /err
+Disallow: /log
+Disallow: /restart
+Disallow: /updatedb
