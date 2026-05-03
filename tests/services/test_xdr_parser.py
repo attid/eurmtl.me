@@ -452,6 +452,40 @@ class TestXDRConversion:
             == 1710000000
         )
 
+    def test_decode_xdr_to_base64_serializes_path_payment_for_lab_swap_import(self):
+        source_keypair = Keypair.random()
+        issuer_keypair = Keypair.random()
+        source_account = Account(source_keypair.public_key, 123456)
+
+        transaction = (
+            TransactionBuilder(
+                source_account=source_account,
+                network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+                base_fee=100,
+            )
+            .append_path_payment_strict_send_op(
+                destination=source_keypair.public_key,
+                send_asset=Asset("USDM", issuer_keypair.public_key),
+                send_amount="1000",
+                dest_asset=Asset("EURMTL", issuer_keypair.public_key),
+                dest_min="821.2420659",
+                path=[],
+            )
+            .set_timeout(300)
+            .build()
+        )
+
+        result = decode_xdr_to_base64(transaction.to_xdr(), return_json=True)
+
+        operation = result["operations"][0]
+
+        assert operation["name"] == "swap"
+        assert operation["attributes"]["selling"]["code"] == "USDM"
+        assert operation["attributes"]["buying"]["code"] == "EURMTL"
+        assert operation["attributes"]["amount"] == "1000"
+        assert operation["attributes"]["destination"] == "821.2420659"
+        assert operation["attributes"]["path"] == []
+
     def test_decode_xdr_to_base64_raises_clear_error_for_truncated_xdr(self):
         with pytest.raises(ValueError, match="Invalid Stellar XDR"):
             decode_xdr_to_base64("AAAA", return_json=True)
