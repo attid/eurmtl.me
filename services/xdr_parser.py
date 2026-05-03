@@ -301,13 +301,18 @@ def decode_xdr_to_base64(xdr, return_json=False):
                     "home": operation.home_domain,
                 }
         elif isinstance(operation, PathPaymentStrictSend):
+            op_json["name"] = "swap"
             op_json["attributes"] = {
                 "sendAsset": operation.send_asset.to_dict(),
-                "destination": operation.destination.account_id,
-                "path": operation.path,
+                "selling": operation.send_asset.to_dict(),
+                "destinationAccount": operation.destination.account_id,
+                "path": [asset.to_dict() for asset in operation.path],
                 "destMin": operation.dest_min,
+                "destination": operation.dest_min,
                 "sendAmount": operation.send_amount,
+                "amount": operation.send_amount,
                 "destAsset": operation.dest_asset.to_dict(),
+                "buying": operation.dest_asset.to_dict(),
                 "sourceAccount": operation.source.account_id
                 if operation.source is not None
                 else None,
