@@ -10,48 +10,71 @@ def create_beautiful_code(file_name, logo_text, qr_text):
 
 
 def create_qr_with_logo(qr_code_text, logo_img):
-    # Создание QR-кода
     qr = qrcode.QRCode(
         version=None,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=5,
-        border=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=8,
+        border=4,
     )
     qr.add_data(qr_code_text)
     qr.make(fit=True)
     qr_code_img = qr.make_image(fill_color=decode_color("5A89B9")).convert("RGB")
 
-    # Размещение логотипа в центре QR-кода
-    pos = (
-        (qr_code_img.size[0] - logo_img.size[0]) // 2 + 5,
-        (qr_code_img.size[1] - logo_img.size[1]) // 2,
-    )
-    qr_code_img.paste(logo_img, pos)
+    logo_img = _resize_logo_to_safe_area(logo_img, qr_code_img.size[0])
+    _paste_logo_on_module_grid(qr_code_img, logo_img, qr.box_size)
 
     return qr_code_img
 
 
+def _resize_logo_to_safe_area(logo_img, qr_side):
+    max_width = max(1, int(qr_side * 0.35))
+    if logo_img.size[0] <= max_width:
+        return logo_img
+
+    scale = max_width / logo_img.size[0]
+    resized_height = max(1, int(logo_img.size[1] * scale))
+    return logo_img.resize((max_width, resized_height), Image.Resampling.NEAREST)
+
+
+def _paste_logo_on_module_grid(qr_code_img, logo_img, box_size):
+    padding_modules_x = 1
+    padding_modules_y = 1
+    padded_width = logo_img.size[0] + padding_modules_x * 2 * box_size
+    padded_height = logo_img.size[1] + padding_modules_y * 2 * box_size
+
+    overlay_modules_x = max(1, round(padded_width / box_size))
+    overlay_modules_y = max(1, round(padded_height / box_size))
+    overlay_width = overlay_modules_x * box_size
+    overlay_height = overlay_modules_y * box_size
+
+    overlay_img = Image.new("RGB", (overlay_width, overlay_height), color="white")
+    logo_x = (overlay_width - logo_img.size[0]) // 2
+    logo_y = (overlay_height - logo_img.size[1]) // 2
+    overlay_img.paste(logo_img, (logo_x, logo_y))
+
+    pos_x = ((qr_code_img.size[0] - overlay_width) // 2 // box_size) * box_size
+    pos_y = ((qr_code_img.size[1] - overlay_height) // 2 // box_size) * box_size
+    qr_code_img.paste(overlay_img, (pos_x, pos_y))
+
+
 def create_image_with_text(
-    text, font_path="DejaVuSansMono.ttf", font_size=30, image_size=(200, 50)
+    text, font_path="DejaVuSansMono.ttf", font_size=27, image_size=(182, 44)
 ):
-    # Создание пустого изображения
     image = Image.new("RGB", image_size, color="white")
     draw = ImageDraw.Draw(image)
-
-    # Загрузка шрифта
     font = ImageFont.truetype(font_path, font_size)
 
-    # Расчет позиции для размещения текста по центру с использованием textbbox
     textbox = draw.textbbox((0, 0), text, font=font)
     text_width, text_height = textbox[2] - textbox[0], textbox[3] - textbox[1]
     x = (image_size[0] - text_width) / 2
     y = (image_size[1] - text_height) / 2 - 5
 
     draw.text((x, y), text, font=font, fill=decode_color("C1D9F9"))
-
-    # Размещение рамки
-    xy = [0, 0, image_size[0] - 1, image_size[1] - 1]
-    draw.rectangle(xy, outline=decode_color("C1D9F9"), width=2)
+    draw.rectangle(
+        [0, 0, image_size[0] - 1, image_size[1] - 1],
+        outline=decode_color("C1D9F9"),
+        width=2,
+    )
 
     return image
 
