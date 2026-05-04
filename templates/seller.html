@@ -14,6 +14,12 @@
 <body>
     <section class="section">
         <div class="container">
+            <style>
+                .seller-qr {
+                    image-rendering: pixelated;
+                    image-rendering: crisp-edges;
+                }
+            </style>
             <!-- Языковые переключатели -->
             <div class="field is-grouped" style="justify-content: flex-end;">
                 <div class="control">
@@ -54,8 +60,8 @@
             <div class="box">
                 <div class="columns is-centered">
                     <div class="column is-half-desktop is-full-mobile is-centered">
-                        <figure class="image is-square has-background-white">
-                            <img src="{{ qr_img }}" alt="QR Code">
+                        <figure class="image has-background-white">
+                            <img class="seller-qr" src="{{ qr_img }}" alt="QR Code">
                         </figure>
                     </div>
                 </div>
