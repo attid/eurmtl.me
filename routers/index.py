@@ -4,6 +4,7 @@ import os
 import signal
 import subprocess
 import uuid
+from urllib.parse import urlencode
 
 from sqlalchemy import select
 from quart import (
@@ -21,12 +22,26 @@ from quart import (
 from other.config_reader import config, start_path
 from db.sql_models import Signers
 from services.stellar_client import check_user_weight
+from services.telegram_oidc import (
+    TELEGRAM_AUTH_URL,
+    TELEGRAM_OIDC_SCOPE,
+    build_pkce_challenge,
+    build_redirect_uri,
+    decode_telegram_id_token,
+    exchange_telegram_code,
+    generate_token_urlsafe,
+    telegram_claims_to_userdata,
+)
 from other.telegram_tools import check_response
 from other.quart_tools import get_ip
 from other.tailscale import get_latest_version_package
 from loguru import logger
 
 blueprint = Blueprint("index", __name__)
+
+TELEGRAM_OIDC_STATE_KEY = "telegram_oidc_state"
+TELEGRAM_OIDC_NONCE_KEY = "telegram_oidc_nonce"
+TELEGRAM_OIDC_VERIFIER_KEY = "telegram_oidc_code_verifier"
 
 
 def _absolute_url(path: str) -> str:
@@ -53,6 +68,26 @@ def _sitemap_paths() -> list[str]:
         "/lab",
         "/contracts",
     ]
+
+
+async def _update_signer_tg_id(username: str | None, tg_id: int | str | None) -> None:
+    if not username or tg_id is None:
+        return
+
+    async with current_app.db_pool() as db_session:
+        result = await db_session.execute(
+            select(Signers).filter(Signers.username == username)
+        )
+        user = result.scalars().first()
+        if user and user.tg_id != tg_id:
+            user.tg_id = tg_id
+            await db_session.commit()
+
+
+def _clear_telegram_oidc_session() -> None:
+    session.pop(TELEGRAM_OIDC_STATE_KEY, None)
+    session.pop(TELEGRAM_OIDC_NONCE_KEY, None)
+    session.pop(TELEGRAM_OIDC_VERIFIER_KEY, None)
 
 
 @blueprint.route("/tailscale", methods=("GET", "POST"))
@@ -296,14 +331,7 @@ async def authorize():
         session["userdata"] = data
         session["user_id"] = data["id"]
 
-        async with current_app.db_pool() as db_session:
-            result = await db_session.execute(
-                select(Signers).filter(Signers.username == data["username"])
-            )
-            user = result.scalars().first()
-            if user and user.tg_id != data["id"]:
-                user.tg_id = data["id"]
-                await db_session.commit()
+        await _update_signer_tg_id(data["username"], data["id"])
 
         return_to_url = session.get("return_to", None)
         if return_to_url:
@@ -317,6 +345,71 @@ async def authorize():
 @blueprint.route("/login")
 async def login():
     return await render_template("tabler_login.html")
+
+
+@blueprint.route("/login/telegram")
+async def login_telegram():
+    state = generate_token_urlsafe()
+    nonce = generate_token_urlsafe()
+    code_verifier = generate_token_urlsafe(48)
+    code_challenge = build_pkce_challenge(code_verifier)
+
+    session[TELEGRAM_OIDC_STATE_KEY] = state
+    session[TELEGRAM_OIDC_NONCE_KEY] = nonce
+    session[TELEGRAM_OIDC_VERIFIER_KEY] = code_verifier
+
+    query = urlencode(
+        {
+            "client_id": config.telegram_login_client_id,
+            "redirect_uri": build_redirect_uri(),
+            "response_type": "code",
+            "scope": TELEGRAM_OIDC_SCOPE,
+            "state": state,
+            "nonce": nonce,
+            "code_challenge": code_challenge,
+            "code_challenge_method": "S256",
+        }
+    )
+    return redirect(f"{TELEGRAM_AUTH_URL}?{query}")
+
+
+@blueprint.route("/login/telegram/callback")
+async def login_telegram_callback():
+    expected_state = session.get(TELEGRAM_OIDC_STATE_KEY)
+    actual_state = request.args.get("state")
+    if not expected_state or actual_state != expected_state:
+        return "Invalid Telegram login state", 400
+
+    code = request.args.get("code")
+    if not code:
+        return "Missing Telegram login code", 400
+
+    nonce = session.get(TELEGRAM_OIDC_NONCE_KEY)
+    code_verifier = session.get(TELEGRAM_OIDC_VERIFIER_KEY)
+    if not nonce or not code_verifier:
+        return "Telegram login session expired", 400
+
+    try:
+        token_response = await exchange_telegram_code(code, code_verifier)
+        id_token = token_response.get("id_token")
+        if not id_token:
+            raise ValueError("Telegram token response does not include id_token")
+        claims = await decode_telegram_id_token(id_token, nonce)
+    except Exception as exc:
+        logger.warning(f"Telegram OIDC login failed: {type(exc).__name__}: {exc}")
+        return "Telegram authorization failed", 400
+
+    userdata = telegram_claims_to_userdata(claims)
+    session["userdata"] = userdata
+    session["user_id"] = userdata["id"]
+    _clear_telegram_oidc_session()
+
+    await _update_signer_tg_id(userdata.get("username"), userdata.get("id"))
+
+    return_to_url = session.get("return_to", None)
+    if return_to_url:
+        return redirect(return_to_url)
+    return redirect("/lab")
 
 
 @blueprint.route("/addr")

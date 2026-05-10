@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     grist_token: str
     grist_income: str
     telegram_api_url: str | None = None
+    telegram_login_client_id: str = ""
+    telegram_login_client_secret: SecretStr = SecretStr("")
+    telegram_login_redirect_uri: str | None = None
 
 
 config = Settings()
