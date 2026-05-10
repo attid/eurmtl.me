@@ -1,0 +1,61 @@
+{% extends 'tabler_base.html' %}
+{% block page_title %}Вход через Telegram-бота{% endblock %}
+{% block content %}
+<h2 class="mb-4">Вход через Telegram-бота</h2>
+
+<div class="mb-4">
+  <p id="bot-login-status">Откройте myMTLBot и подтвердите вход.</p>
+  <a href="{{ bot_url }}" class="btn btn-primary" target="_blank" rel="noopener">
+    Открыть myMTLBot
+  </a>
+  <a id="bot-login-retry" href="/login/bot" class="btn btn-outline-primary d-none">
+    Попробовать снова
+  </a>
+</div>
+
+<script>
+  const botLoginToken = {{ token|tojson }};
+  const botLoginStatusUrl = {{ ('/login/bot/status/' ~ token)|tojson }};
+  const botLoginTtlMs = {{ ttl_seconds|tojson }} * 1000;
+  const botLoginStartedAt = Date.now();
+  let botLoginTimer = null;
+
+  async function pollBotLogin() {
+    if (Date.now() - botLoginStartedAt >= botLoginTtlMs) {
+      stopBotLoginPolling("Время входа истекло");
+      return;
+    }
+
+    const statusElement = document.getElementById("bot-login-status");
+    const retryElement = document.getElementById("bot-login-retry");
+    const response = await fetch(botLoginStatusUrl, {
+      headers: {"Accept": "application/json"}
+    });
+    const data = await response.json();
+
+    if (data.status === "confirmed" && data.redirect) {
+      window.location.href = data.redirect;
+      return;
+    }
+
+    if (data.status === "expired") {
+      stopBotLoginPolling("Время входа истекло");
+      return;
+    }
+
+    if (data.status === "error") {
+      statusElement.textContent = "Вход не подтвержден";
+      retryElement.classList.remove("d-none");
+      clearInterval(botLoginTimer);
+    }
+  }
+
+  function stopBotLoginPolling(message) {
+    document.getElementById("bot-login-status").textContent = message;
+    document.getElementById("bot-login-retry").classList.remove("d-none");
+    clearInterval(botLoginTimer);
+  }
+
+  botLoginTimer = setInterval(pollBotLogin, 2000);
+</script>
+{% endblock %}

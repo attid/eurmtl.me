@@ -79,6 +79,18 @@ class Signatures(Base):
     # Column('updated_dt', DateTime(), default=datetime.now, onupdate=datetime.now)
 
 
+class BotLoginToken(Base):
+    __tablename__ = "t_bot_login_tokens"
+    token = Column("token", String(64), primary_key=True)
+    status = Column("status", String(16), nullable=False, default="pending")
+    userdata_json = Column("userdata_json", Text(), nullable=True)
+    return_to = Column("return_to", String(2048), nullable=True)
+    created_at = Column("created_at", DateTime(), default=datetime.now, nullable=False)
+    expires_at = Column("expires_at", DateTime(), nullable=False)
+    confirmed_at = Column("confirmed_at", DateTime(), nullable=True)
+    used_at = Column("used_at", DateTime(), nullable=True)
+
+
 # class EurmtlDicts(Base):
 #     __tablename__ = 'eurmtl_dicts'
 #     id = Column(Integer, primary_key=True)
