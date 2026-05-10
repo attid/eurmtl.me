@@ -4,6 +4,7 @@ import os
 import signal
 import subprocess
 import uuid
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
 from sqlalchemy import select
@@ -17,10 +18,11 @@ from quart import (
     redirect,
     render_template,
     current_app,
+    jsonify,
 )
 
 from other.config_reader import config, start_path
-from db.sql_models import Signers
+from db.sql_models import BotLoginToken, Signers
 from services.stellar_client import check_user_weight
 from services.telegram_oidc import (
     TELEGRAM_AUTH_URL,
@@ -42,6 +44,9 @@ blueprint = Blueprint("index", __name__)
 TELEGRAM_OIDC_STATE_KEY = "telegram_oidc_state"
 TELEGRAM_OIDC_NONCE_KEY = "telegram_oidc_nonce"
 TELEGRAM_OIDC_VERIFIER_KEY = "telegram_oidc_code_verifier"
+BOT_LOGIN_SESSION_KEY = "bot_login_token"
+BOT_LOGIN_PREFIX = "eurmtl_"
+BOT_LOGIN_TTL_SECONDS = 5 * 60
 
 
 def _absolute_url(path: str) -> str:
@@ -88,6 +93,43 @@ def _clear_telegram_oidc_session() -> None:
     session.pop(TELEGRAM_OIDC_STATE_KEY, None)
     session.pop(TELEGRAM_OIDC_NONCE_KEY, None)
     session.pop(TELEGRAM_OIDC_VERIFIER_KEY, None)
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _is_expired(expires_at: datetime) -> bool:
+    if expires_at.tzinfo is not None:
+        expires_at = expires_at.astimezone(timezone.utc).replace(tzinfo=None)
+    return expires_at <= _utcnow()
+
+
+def _normalize_bot_token(token: str | None) -> str:
+    if not token:
+        return ""
+    if token.startswith(BOT_LOGIN_PREFIX):
+        return token[len(BOT_LOGIN_PREFIX) :]
+    return token
+
+
+def _bot_userdata_from_payload(payload: dict) -> dict:
+    return {
+        "id": payload.get("id"),
+        "first_name": payload.get("first_name", ""),
+        "last_name": payload.get("last_name", ""),
+        "username": payload.get("username"),
+        "photo_url": payload.get("photo_url"),
+        "auth_date": payload.get("auth_date"),
+        "hash": None,
+    }
+
+
+async def _finalize_telegram_login(userdata: dict) -> str:
+    session["userdata"] = userdata
+    session["user_id"] = userdata["id"]
+    await _update_signer_tg_id(userdata.get("username"), userdata.get("id"))
+    return session.get("return_to", None) or "/lab"
 
 
 @blueprint.route("/tailscale", methods=("GET", "POST"))
@@ -347,6 +389,100 @@ async def login():
     return await render_template("tabler_login.html")
 
 
+@blueprint.route("/login/bot")
+async def login_bot():
+    token = generate_token_urlsafe(32)
+    now = _utcnow()
+    expires_at = now + timedelta(seconds=BOT_LOGIN_TTL_SECONDS)
+    login_token = BotLoginToken(
+        token=token,
+        status="pending",
+        return_to=session.get("return_to", None),
+        created_at=now,
+        expires_at=expires_at,
+    )
+
+    async with current_app.db_pool() as db_session:
+        db_session.add(login_token)
+        await db_session.commit()
+
+    session[BOT_LOGIN_SESSION_KEY] = token
+    bot_url = f"https://t.me/myMTLBot?start={BOT_LOGIN_PREFIX}{token}"
+    return await render_template(
+        "tabler_bot_login.html",
+        token=token,
+        bot_url=bot_url,
+        ttl_seconds=BOT_LOGIN_TTL_SECONDS,
+    )
+
+
+@blueprint.route("/login/bot/confirm", methods=("POST",))
+async def login_bot_confirm():
+    api_key = request.headers.get("Authorization", "")
+    if api_key != f"Bearer {config.eurmtl_key.get_secret_value()}":
+        return jsonify({"status": "error", "message": "unauthorized"}), 401
+
+    payload = await request.get_json(silent=True) or {}
+    token = _normalize_bot_token(payload.get("token"))
+    if not token or not payload.get("id"):
+        return jsonify({"status": "error", "message": "invalid_payload"}), 400
+
+    async with current_app.db_pool() as db_session:
+        login_token = await db_session.get(BotLoginToken, token)
+        if not login_token or login_token.status != "pending":
+            return jsonify({"status": "error", "message": "invalid_token"}), 400
+
+        if _is_expired(login_token.expires_at):
+            login_token.status = "expired"
+            await db_session.commit()
+            return jsonify({"status": "error", "message": "expired"}), 400
+
+        userdata = _bot_userdata_from_payload(payload)
+        login_token.userdata_json = json.dumps(userdata, ensure_ascii=False)
+        login_token.status = "confirmed"
+        login_token.confirmed_at = _utcnow()
+        await db_session.commit()
+
+    return jsonify({"status": "ok"})
+
+
+@blueprint.route("/login/bot/status/<token>")
+async def login_bot_status(token: str):
+    session_token = session.get(BOT_LOGIN_SESSION_KEY)
+    if not session_token or session_token != token:
+        return jsonify({"status": "error", "message": "forbidden"}), 403
+
+    async with current_app.db_pool() as db_session:
+        login_token = await db_session.get(BotLoginToken, token)
+        if not login_token:
+            return jsonify({"status": "error", "message": "not_found"}), 404
+
+        if login_token.status in {"pending", "confirmed"} and _is_expired(
+            login_token.expires_at
+        ):
+            login_token.status = "expired"
+            await db_session.commit()
+            return jsonify({"status": "expired"})
+
+        if login_token.status == "pending":
+            return jsonify({"status": "pending"})
+
+        if login_token.status == "expired":
+            return jsonify({"status": "expired"})
+
+        if login_token.status != "confirmed" or not login_token.userdata_json:
+            return jsonify({"status": login_token.status})
+
+        userdata = json.loads(login_token.userdata_json)
+        redirect_url = await _finalize_telegram_login(userdata)
+        login_token.status = "used"
+        login_token.used_at = _utcnow()
+        await db_session.commit()
+        session.pop(BOT_LOGIN_SESSION_KEY, None)
+
+    return jsonify({"status": "confirmed", "redirect": redirect_url})
+
+
 @blueprint.route("/login/telegram")
 async def login_telegram():
     state = generate_token_urlsafe()
@@ -400,16 +536,9 @@ async def login_telegram_callback():
         return "Telegram authorization failed", 400
 
     userdata = telegram_claims_to_userdata(claims)
-    session["userdata"] = userdata
-    session["user_id"] = userdata["id"]
     _clear_telegram_oidc_session()
 
-    await _update_signer_tg_id(userdata.get("username"), userdata.get("id"))
-
-    return_to_url = session.get("return_to", None)
-    if return_to_url:
-        return redirect(return_to_url)
-    return redirect("/lab")
+    return redirect(await _finalize_telegram_login(userdata))
 
 
 @blueprint.route("/addr")
