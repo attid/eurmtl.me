@@ -35,10 +35,10 @@ dependencies = [
     "jsonpickle>=4.1.1",
     "python-dateutil>=2.9.0.post0",
     "fdb>=2.0.4",
-    "sqlalchemy-firebird==2.0.2",
+    "sqlalchemy-firebird>=2.1",
     "gspread-asyncio>=2.0.0",
     "quart-cors>=0.8.0",
-    "sqlalchemy-firebird-async>=0.2.1",
+    "sqlalchemy-firebird-async>=0.2.2",
     "pyjwt[crypto]>=2.12.1",
 ]
 
