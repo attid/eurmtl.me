@@ -20,21 +20,17 @@
 </div>
 
 <div class="mb-4">
-  <h3>Вариант 2: Вход через виджет Telegram</h3>
+  <h3>Вариант 2: Вход через Telegram</h3>
   <p>
-    Этот метод использует виджет Telegram для быстрого входа:
+    Этот метод открывает официальный экран подтверждения Telegram без ввода номера телефона:
   </p>
   <ol>
-    <li>Нажмите на кнопку входа через Telegram ниже.</li>
-    <li>Откроется виджет Telegram, запрашивающий ваш номер телефона.</li>
-    <li>Введите номер телефона, привязанный к вашему аккаунту Telegram.</li>
-    <li>Следуйте инструкциям для завершения процесса аутентификации.</li>
+    <li>Нажмите на кнопку ниже.</li>
+    <li>Подтвердите вход в Telegram.</li>
+    <li>После подтверждения вы вернетесь на сайт.</li>
   </ol>
-  <script async src="https://telegram.org/js/telegram-widget.js?22"
-          data-telegram-login="myMTLBot"
-          data-size="large"
-          data-auth-url="https://eurmtl.me/authorize"
-          data-request-access="write">
-  </script>
+  <a href="/login/telegram" class="btn btn-primary">
+    Войти через Telegram
+  </a>
 </div>
 {% endblock %}
