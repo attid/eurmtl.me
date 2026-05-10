@@ -3,6 +3,7 @@ from datetime import datetime
 from loguru import logger
 from quart import session, flash, current_app
 from stellar_sdk import (
+    Account,
     Keypair,
     ServerAsync,
     AiohttpClient,
@@ -799,11 +800,7 @@ async def process_xdr_transaction(signed_xdr: str) -> dict:
 
 
 def add_trust_line_uri(public_key, asset_code, asset_issuer) -> str:
-    from stellar_sdk import Server
-
-    source_account = Server("https://horizon.stellar.org").load_account(
-        account_id=public_key
-    )
+    source_account = Account(public_key, 0)
 
     transaction = (
         TransactionBuilder(

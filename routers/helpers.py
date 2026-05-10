@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timedelta
 from urllib.parse import quote_plus
 
+import sentry_sdk
 from loguru import logger
 from quart import Blueprint, request, render_template, flash
 
@@ -80,11 +81,31 @@ async def cmd_asset(asset_code):
             asset_issuer = asset_data["issuer"]
             asset_code = asset_data["code"]
 
-            qr_text = add_trust_line_uri(asset_issuer, asset_code, asset_issuer)
-            qr_img = f"/static/qr/{asset_code}.png"
-            # если файл не существует, то создаем его
-            if not os.path.exists(start_path + qr_img):
-                create_beautiful_code(qr_img, asset_code, qr_text)
+            try:
+                qr_text = add_trust_line_uri(asset_issuer, asset_code, asset_issuer)
+                qr_img = f"/static/qr/{asset_code}.png"
+                # если файл не существует, то создаем его
+                if not os.path.exists(start_path + qr_img):
+                    create_beautiful_code(qr_img, asset_code, qr_text)
+            except Exception as ex:
+                logger.exception(
+                    "Failed to build asset QR from Grist data: {} {}",
+                    asset_code,
+                    asset_issuer,
+                )
+                with sentry_sdk.new_scope() as scope:
+                    scope.set_tag("asset_code", asset_code)
+                    scope.set_context(
+                        "grist_asset",
+                        {
+                            "code": asset_code,
+                            "issuer": asset_issuer,
+                            "source": "EURMTL_assets",
+                        },
+                    )
+                    sentry_sdk.capture_exception(ex)
+                qr_text = None
+                qr_img = None
         else:
             await flash("BAD asset code")
             asset_code = None

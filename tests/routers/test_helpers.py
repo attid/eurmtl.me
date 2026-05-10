@@ -41,6 +41,25 @@ async def test_helpers_asset_get(client):
 
 
 @pytest.mark.asyncio
+async def test_helpers_asset_reports_qr_generation_failure_to_sentry(client):
+    """GET /asset/<asset_code> reports bad Grist asset data without a 500."""
+    mock_asset = {"code": "MTLTask", "issuer": "GABC", "need_QR": True}
+    error = ValueError("bad issuer")
+
+    with patch(
+        "routers.helpers.get_grist_asset_by_code",
+        new=AsyncMock(return_value=mock_asset),
+    ):
+        with patch("routers.helpers.add_trust_line_uri", side_effect=error):
+            with patch("routers.helpers.sentry_sdk.capture_exception") as capture:
+                response = await client.get("/asset/MTLTask")
+
+    assert response.status_code == 200
+    assert b"No QR code information available." in await response.get_data()
+    capture.assert_called_once_with(error)
+
+
+@pytest.mark.asyncio
 async def test_helpers_uri_get(client):
     """Test GET /uri"""
     response = await client.get("/uri")

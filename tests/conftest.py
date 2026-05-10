@@ -11,8 +11,6 @@ For better organization, fixtures are split into separate modules:
 All fixtures are available to tests automatically via pytest's fixture discovery.
 """
 
-import pytest
-
 # Import all fixture modules to make them available to tests
 from tests.fixtures.app import app, client
 from tests.fixtures.database import (
@@ -30,7 +28,6 @@ from tests.fixtures.horizon import (
     HorizonMockState,
     get_free_port,
 )
-from tests.fixtures.constants import *
 
 # Make fixtures available at module level
 __all__ = [
