@@ -190,6 +190,7 @@ class TestQRTools:
         self, mock_qr_class
     ):
         mock_qr = mock_qr_class.return_value
+        mock_qr.box_size = 8
         mock_image = Image.new("RGB", (200, 200), "white")
         mock_qr.make_image.return_value = mock_image
         logo = Image.new("RGB", (50, 20), "white")
@@ -198,7 +199,9 @@ class TestQRTools:
 
         _, kwargs = mock_qr_class.call_args
         assert kwargs["version"] is None
-        assert kwargs["error_correction"] == qrcode.constants.ERROR_CORRECT_L
+        assert kwargs["error_correction"] == qrcode.constants.ERROR_CORRECT_H
+        assert kwargs["box_size"] == 8
+        assert kwargs["border"] == 4
         mock_qr.make.assert_called_once_with(fit=True)
 
     def test_qr_code_size_and_format(self):
