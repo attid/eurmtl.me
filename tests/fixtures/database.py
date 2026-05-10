@@ -9,7 +9,6 @@ This module provides pytest fixtures for:
 """
 
 import json
-import pytest
 import pytest_asyncio
 from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession

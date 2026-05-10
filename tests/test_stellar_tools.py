@@ -6,13 +6,9 @@ from stellar_sdk.operation import (
     Payment,
     SetTrustLineFlags,
     ManageData,
-    Inflation,
     ChangeTrust,
     PathPaymentStrictReceive,
-    PathPaymentStrictSend,
     ManageSellOffer,
-    ManageBuyOffer,
-    CreatePassiveSellOffer,
     BumpSequence,
 )
 

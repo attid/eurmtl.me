@@ -248,7 +248,10 @@ class TestSep7Helpers:
         )
 
         with (
-            patch("stellar_sdk.Server.load_account", return_value=trustor),
+            patch(
+                "stellar_sdk.Server.load_account",
+                side_effect=AssertionError("Horizon account load is not needed"),
+            ),
             patch(
                 "services.stellar_client.config.domain_key",
                 SecretStr(signing_key),

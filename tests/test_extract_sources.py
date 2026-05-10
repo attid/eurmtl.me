@@ -57,8 +57,6 @@ def mock_horizon_response(low, med, high):
 
 def create_test_transaction_builder(source_kp, operations):
     """Создает TransactionBuilder для тестов."""
-    import time
-
     source_account = Account(source_kp.public_key, 12345)
     tx_builder = TransactionBuilder(
         source_account=source_account,
