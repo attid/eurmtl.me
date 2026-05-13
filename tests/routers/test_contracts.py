@@ -79,7 +79,9 @@ async def test_mountain_contract_detail_explains_raw_amount_units(client):
         ),
         patch(
             "routers.contracts.notify_mountain_message_change",
-            new=AsyncMock(return_value={"created": False, "reason": "grist", "error": ""}),
+            new=AsyncMock(
+                return_value={"created": False, "reason": "grist", "error": ""}
+            ),
         ),
     ):
         response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}")
@@ -142,7 +144,9 @@ async def test_mountain_contract_detail_exposes_current_user_address_without_pre
 
 
 @pytest.mark.asyncio
-async def test_mountain_contract_detail_notifies_on_page_load_when_message_loaded(client):
+async def test_mountain_contract_detail_notifies_on_page_load_when_message_loaded(
+    client,
+):
     with (
         patch(
             "routers.contracts.load_message",
@@ -163,13 +167,16 @@ async def test_mountain_contract_detail_notifies_on_page_load_when_message_loade
         ),
         patch(
             "routers.contracts.notify_mountain_message_change",
-            new=AsyncMock(return_value={"created": True, "reason": "posted", "error": ""}),
+            new=AsyncMock(
+                return_value={"created": True, "reason": "posted", "error": ""}
+            ),
         ) as notify_mock,
     ):
         response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}")
 
     assert response.status_code == 200
     notify_mock.assert_awaited_once_with("Changed")
+
 
 @pytest.mark.asyncio
 async def test_contracts_index_hides_internal_contracts(client):
@@ -312,7 +319,9 @@ async def test_message_action_returns_latest_message_json(client):
         ),
         patch(
             "routers.contracts.notify_mountain_message_change",
-            new=AsyncMock(return_value={"created": False, "reason": "grist", "error": ""}),
+            new=AsyncMock(
+                return_value={"created": False, "reason": "grist", "error": ""}
+            ),
         ) as notify_mock,
     ):
         response = await client.get(f"/contracts/{FIRST_CONTRACT_ID}/actions/message")
@@ -618,7 +627,9 @@ async def test_contract_detail_use_my_address_button_uses_prefill_user(client):
 
 
 @pytest.mark.asyncio
-async def test_mountain_contract_detail_disables_capture_when_range_loading_fails(client):
+async def test_mountain_contract_detail_disables_capture_when_range_loading_fails(
+    client,
+):
     with patch(
         "routers.contracts.load_range",
         new=AsyncMock(

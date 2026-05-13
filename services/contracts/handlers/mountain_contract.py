@@ -22,9 +22,7 @@ MOUNTAIN_NOTIFY_CHAT_ID = -1001429770534
 MOUNTAIN_NOTIFY_REPLY_TO = 160275
 MOUNTAIN_NOTIFY_TOPIC_ID = 0
 MOUNTAIN_NOTIFY_PREFIX = "<b>У горы сменился message</b>"
-MOUNTAIN_NOTIFY_LINK = (
-    f"https://eurmtl.me/contracts/{MOUNTAIN_CONTRACT_ID}"
-)
+MOUNTAIN_NOTIFY_LINK = f"https://eurmtl.me/contracts/{MOUNTAIN_CONTRACT_ID}"
 MOUNTAIN_NOTIFY_CACHE_KEY = "mountain:last_notified_message"
 mountain_notify_cache = AsyncTTLCache(ttl_seconds=24 * 60 * 60, maxsize=8)
 
@@ -74,7 +72,9 @@ async def load_last_mountain_notification_comment() -> str:
     if not records:
         return ""
 
-    matching_records = [record for record in records if is_mountain_notification_record(record)]
+    matching_records = [
+        record for record in records if is_mountain_notification_record(record)
+    ]
     if not matching_records:
         return ""
 
@@ -141,12 +141,20 @@ def _normalize_i128_like(value) -> str:
 
 
 def _extract_range_pair(payload: dict) -> tuple[str, str]:
-    if "vec" in payload and isinstance(payload["vec"], list) and len(payload["vec"]) == 2:
+    if (
+        "vec" in payload
+        and isinstance(payload["vec"], list)
+        and len(payload["vec"]) == 2
+    ):
         return (
             _normalize_i128_like(payload["vec"][0]),
             _normalize_i128_like(payload["vec"][1]),
         )
-    if "tuple" in payload and isinstance(payload["tuple"], list) and len(payload["tuple"]) == 2:
+    if (
+        "tuple" in payload
+        and isinstance(payload["tuple"], list)
+        and len(payload["tuple"]) == 2
+    ):
         return (
             _normalize_i128_like(payload["tuple"][0]),
             _normalize_i128_like(payload["tuple"][1]),

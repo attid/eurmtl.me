@@ -120,7 +120,9 @@ async def test_read_contract_string_surfaces_clean_errors():
 async def test_read_token_contract_display_name_normalizes_and_caches_result():
     with patch(
         "other.stellar_soroban.read_contract_string",
-        new=AsyncMock(return_value="EURMTL:GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"),
+        new=AsyncMock(
+            return_value="EURMTL:GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+        ),
     ) as read_string_mock:
         first = await read_token_contract_display_name(
             rpc_url="https://soroban-rpc.mainnet.stellar.gateway.fm",

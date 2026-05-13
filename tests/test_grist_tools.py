@@ -141,8 +141,12 @@ def test_extract_record_ids_from_grist_webhook():
 
 def test_should_send_notify_message_record():
     assert should_send_notify_message_record({"messsage": "Hi"}) is True
-    assert should_send_notify_message_record({"messsage": "", "send_date": None}) is False
-    assert should_send_notify_message_record({"messsage": "Hi", "send_date": 1}) is False
+    assert (
+        should_send_notify_message_record({"messsage": "", "send_date": None}) is False
+    )
+    assert (
+        should_send_notify_message_record({"messsage": "Hi", "send_date": 1}) is False
+    )
     assert (
         should_send_notify_message_record({"messsage": "Hi", "error_message": "boom"})
         is False
@@ -162,8 +166,12 @@ async def test_send_notify_message_record_success_skips_zero_reply_and_topic():
     }
 
     with (
-        patch("other.grist_tools.skynet_bot.send_message", new=AsyncMock()) as send_mock,
-        patch("other.grist_tools.patch_notify_message_record", new=AsyncMock()) as patch_mock,
+        patch(
+            "other.grist_tools.skynet_bot.send_message", new=AsyncMock()
+        ) as send_mock,
+        patch(
+            "other.grist_tools.patch_notify_message_record", new=AsyncMock()
+        ) as patch_mock,
     ):
         result = await send_notify_message_record(record)
 
@@ -191,8 +199,12 @@ async def test_send_notify_message_record_success_uses_reply_and_topic():
     }
 
     with (
-        patch("other.grist_tools.skynet_bot.send_message", new=AsyncMock()) as send_mock,
-        patch("other.grist_tools.patch_notify_message_record", new=AsyncMock()) as patch_mock,
+        patch(
+            "other.grist_tools.skynet_bot.send_message", new=AsyncMock()
+        ) as send_mock,
+        patch(
+            "other.grist_tools.patch_notify_message_record", new=AsyncMock()
+        ) as patch_mock,
     ):
         result = await send_notify_message_record(record)
 
@@ -220,7 +232,9 @@ async def test_send_notify_message_record_failure_writes_error():
             "other.grist_tools.skynet_bot.send_message",
             new=AsyncMock(side_effect=RuntimeError("telegram failed")),
         ),
-        patch("other.grist_tools.patch_notify_message_record", new=AsyncMock()) as patch_mock,
+        patch(
+            "other.grist_tools.patch_notify_message_record", new=AsyncMock()
+        ) as patch_mock,
     ):
         result = await send_notify_message_record(record)
 
@@ -241,8 +255,12 @@ async def test_send_notify_message_record_skips_already_processed_record():
     }
 
     with (
-        patch("other.grist_tools.skynet_bot.send_message", new=AsyncMock()) as send_mock,
-        patch("other.grist_tools.patch_notify_message_record", new=AsyncMock()) as patch_mock,
+        patch(
+            "other.grist_tools.skynet_bot.send_message", new=AsyncMock()
+        ) as send_mock,
+        patch(
+            "other.grist_tools.patch_notify_message_record", new=AsyncMock()
+        ) as patch_mock,
     ):
         result = await send_notify_message_record(record)
 
