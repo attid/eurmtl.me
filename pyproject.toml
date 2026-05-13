@@ -47,7 +47,7 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "ruff>=0.15.0",
-    "pyright>=1.1.408",
+    "pyright>=1.1.409",
     "pytest-cov>=7.0.0",
     "aiosqlite>=0.22.1",
 ]
