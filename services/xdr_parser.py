@@ -571,7 +571,9 @@ async def decode_invoke_host_function(operation):
             ic = hf.invoke_contract
             contract_id_str = _decode_contract_address_to_string(ic.contract_address)
             fn = _decode_sc_symbol(ic.function_name)
-            args_rendered = ", ".join(_render_call_argument(arg) for arg in ic.args or [])
+            args_rendered = ", ".join(
+                _render_call_argument(arg) for arg in ic.args or []
+            )
             result.append(
                 f"      Contract call: {contract_id_to_link(contract_id_str)}.{fn}({args_rendered})"
             )
@@ -623,7 +625,9 @@ def _render_call_argument(val) -> str:
         addr = val.address
         if addr and addr.type.value == 0 and addr.account_id:
             account_id_bytes = addr.account_id.account_id.ed25519.uint256
-            return address_id_to_link(StrKey.encode_ed25519_public_key(account_id_bytes))
+            return address_id_to_link(
+                StrKey.encode_ed25519_public_key(account_id_bytes)
+            )
         if addr and addr.type.value == 1 and addr.contract_id:
             return contract_id_to_link(StrKey.encode_contract(addr.contract_id.hash))
 
@@ -693,11 +697,12 @@ async def _render_sub_invocation_summary(invocation) -> str:
         amount_raw = decode_scval(contract_fn.args[1])
         amount_display = _format_sub_invocation_amount(amount_raw)
         return (
-            f"      Burn {amount_display} {token_name} ({amount_raw} raw) "
-            f"from {source}"
+            f"      Burn {amount_display} {token_name} ({amount_raw} raw) from {source}"
         )
 
-    args_rendered = ", ".join(_render_call_argument(arg) for arg in contract_fn.args or [])
+    args_rendered = ", ".join(
+        _render_call_argument(arg) for arg in contract_fn.args or []
+    )
     return (
         f"      Nested call: {contract_id_to_link(token_contract_id)}."
         f"{function_name}({args_rendered})"

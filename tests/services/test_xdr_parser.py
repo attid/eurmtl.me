@@ -90,9 +90,13 @@ async def _decode_fixture_xdr(
     repo = SimpleNamespace(get_by_sequence=AsyncMock(return_value=[]))
 
     if isinstance(token_display_name, dict):
+
         async def _resolve_token_name(*, rpc_url: str, contract_id: str) -> str:
-            return token_display_name.get(contract_id, contract_id[:4] + ".." + contract_id[-4:])
+            return token_display_name.get(
+                contract_id, contract_id[:4] + ".." + contract_id[-4:]
+            )
     else:
+
         async def _resolve_token_name(*, rpc_url: str, contract_id: str) -> str:
             return token_display_name
 
@@ -110,9 +114,11 @@ async def _decode_fixture_xdr(
         patch(
             "services.xdr_parser.get_account",
             AsyncMock(
-                side_effect=lambda account_id: source_account
-                if account_id == source_account_id
-                else {"id": account_id, "balances": []}
+                side_effect=lambda account_id: (
+                    source_account
+                    if account_id == source_account_id
+                    else {"id": account_id, "balances": []}
+                )
             ),
         ),
         patch(

@@ -150,7 +150,9 @@ async def test_load_last_mountain_notification_comment_uses_latest_matching_reco
 async def test_load_range_returns_normalized_raw_and_eurmtl_values():
     with patch(
         "services.contracts.handlers.mountain_contract.read_contract_value",
-        new=AsyncMock(return_value={"vec": [{"i128": "10000000"}, {"i128": "25000000"}]}),
+        new=AsyncMock(
+            return_value={"vec": [{"i128": "10000000"}, {"i128": "25000000"}]}
+        ),
     ) as read_mock:
         result = await load_range(MOUNTAIN_CONTRACT_ID)
 
