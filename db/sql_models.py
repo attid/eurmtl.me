@@ -40,8 +40,8 @@ class Addresses(Base):
 class Transactions(Base):
     __tablename__ = "t_transactions"
     hash = Column("hash", String(64), primary_key=True)
-    description = Column("description", Text(4000), nullable=False)
-    body = Column("body", Text(12000), nullable=False)
+    description = Column("description", Text(), nullable=False)
+    body = Column("body", Text(), nullable=False)
     add_dt = Column("add_dt", DateTime(), default=datetime.now)
     updated_dt = Column(
         "updated_dt", DateTime(), default=datetime.now, onupdate=datetime.now

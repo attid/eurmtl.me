@@ -3,6 +3,7 @@ import uuid
 
 from sqlalchemy import select
 from quart import Blueprint, request, jsonify, abort, current_app
+from loguru import logger
 
 from other.config_reader import config
 from db.sql_models import (
@@ -21,6 +22,10 @@ from services.transaction_service import TransactionService
 blueprint = Blueprint("remote", __name__)
 blueprint.register_blueprint(sep07_blueprint)
 blueprint.register_blueprint(sep07_blueprint_auth)
+
+ADD_TRANSACTION_SAVE_ERROR_MESSAGE = (
+    "Transaction could not be saved. Please try again later."
+)
 
 
 @blueprint.route("/remote/need_sign/<public_key>", methods=("GET",))
@@ -168,7 +173,12 @@ async def remote_add_transaction():
     if len(tx_description) < 5:
         return jsonify({"message": "Description too short"}), 400
 
-    success, result = await add_transaction(tx_body, tx_description)
+    try:
+        success, result = await add_transaction(tx_body, tx_description)
+    except Exception:
+        logger.exception("Failed to add transaction from remote API")
+        return jsonify({"message": ADD_TRANSACTION_SAVE_ERROR_MESSAGE}), 503
+
     if success:
         return jsonify(
             {"message": "Transaction added successfully", "hash": result}

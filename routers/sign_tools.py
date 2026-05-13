@@ -40,6 +40,10 @@ _IPFS_MANAGE_DATA_RE = re.compile(
 
 blueprint = Blueprint("sign_tools", __name__)
 
+ADD_TRANSACTION_SAVE_ERROR_MESSAGE = (
+    "Transaction could not be saved. Please try again later."
+)
+
 
 def _extract_ipfs_cid_from_manage_data_line(line: str) -> str | None:
     if "ManageData" not in line or "ipfshash" not in line:
@@ -240,7 +244,13 @@ async def start_add_transaction():
         elif len(description) < 3:
             error_message = "Description must be at least 3 characters long"
         else:
-            success, result = await add_transaction(xdr, description)
+            try:
+                success, result = await add_transaction(xdr, description)
+            except Exception:
+                logger.exception("Failed to add transaction from sign tools form")
+                success = False
+                result = ADD_TRANSACTION_SAVE_ERROR_MESSAGE
+
             if success:
                 await flash("Transaction added successfully", "good")
                 print(url_for("sign_tools.show_transaction", tr_hash=result))
