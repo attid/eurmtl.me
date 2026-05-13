@@ -33,6 +33,27 @@ async def test_sign_tools_add_post_fail(client):
 
 
 @pytest.mark.asyncio
+async def test_sign_tools_add_post_save_error_returns_form_without_details(client):
+    """POST /sign_tools should hide internal save errors from the user."""
+    with patch(
+        "routers.sign_tools.add_transaction",
+        new=AsyncMock(side_effect=RuntimeError("db exploded")),
+    ):
+        response = await client.post(
+            "/sign_tools",
+            form={"xdr": "AAAA...", "description": "Test Transaction", "memo": "Memo"},
+        )
+
+    body = await response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Transaction could not be saved. Please try again later." in body
+    assert "db exploded" not in body
+    assert "AAAA..." in body
+    assert "Test Transaction" in body
+    assert "Memo" in body
+
+
+@pytest.mark.asyncio
 async def test_sign_tools_show_transaction(client):
     """Test GET /sign_tools/<hash>"""
     mock_details = {

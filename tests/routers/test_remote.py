@@ -74,3 +74,26 @@ async def test_remote_get_xdr(client):
         assert response.status_code == 200
         data = await response.get_json()
         assert data["xdr"] == "AAAA..."
+
+
+@pytest.mark.asyncio
+async def test_remote_add_transaction_save_error_returns_generic_503(client):
+    """POST /remote/add_transaction should hide internal save errors."""
+    with (
+        patch("routers.remote.config.eurmtl_key.get_secret_value") as secret,
+        patch(
+            "routers.remote.add_transaction",
+            new=AsyncMock(side_effect=RuntimeError("db exploded")),
+        ),
+    ):
+        secret.return_value = "test-eurmtl-key"
+        response = await client.post(
+            "/remote/add_transaction",
+            headers={"Authorization": "Bearer test-eurmtl-key"},
+            json={"tx_body": "AAAA...", "tx_description": "Test Transaction"},
+        )
+
+    assert response.status_code == 503
+    assert await response.get_json() == {
+        "message": "Transaction could not be saved. Please try again later."
+    }
