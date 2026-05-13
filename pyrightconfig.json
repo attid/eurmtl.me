@@ -1,0 +1,20 @@
+{
+  "typeCheckingMode": "basic",
+  "reportArgumentType": false,
+  "reportAssignmentType": false,
+  "reportAttributeAccessIssue": false,
+  "reportCallIssue": false,
+  "reportFunctionMemberAccess": false,
+  "reportGeneralTypeIssues": false,
+  "reportOperatorIssue": false,
+  "reportOptionalIterable": false,
+  "reportOptionalMemberAccess": false,
+  "reportOptionalSubscript": false,
+  "reportPrivateImportUsage": false,
+  "reportReturnType": false,
+  "exclude": [
+    ".venv",
+    ".pytest_cache",
+    "htmlcov"
+  ]
+}
