@@ -92,13 +92,21 @@
       const xdrInput = document.getElementById('xdr');
       const memoInput = document.getElementById('memo');
       const memo = memoInput.value;
+      const memoBytes = new TextEncoder().encode(memo).length;
 
       if (memo.length < 3) {
         showToast('Memo должно содержать минимум 3 символа', 'warning');
         return;
       }
-      if (!/^[ -~]{1,28}$/.test(memo)) {
-        showToast('Memo может содержать только печатные ASCII символы и быть не длиннее 28 символов', 'warning');
+      if (memoBytes > 28) {
+        showToast('Memo должно быть не длиннее 28 байт', 'warning');
+        return;
+      }
+      if ([...memo].some((char) => {
+        const codePoint = char.codePointAt(0);
+        return codePoint < 32 || codePoint === 127;
+      })) {
+        showToast('Memo может содержать только печатные символы', 'warning');
         return;
       }
 
