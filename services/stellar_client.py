@@ -897,9 +897,10 @@ async def stellar_build_xdr(data):
 
         raise ValueError(f"Unknown claim predicate type: {predicate_type}")
 
-    if data["memo_type"] == "memo_text":
+    memo_type = data.get("memo_type", "")
+    if memo_type == "memo_text":
         transaction.add_text_memo(data["memo"])
-    if data["memo_type"] == "memo_hash":
+    if memo_type == "memo_hash":
         transaction.add_hash_memo(data["memo"])
     for operation in data["operations"]:
         source_account_raw = operation.get("sourceAccount") or ""
