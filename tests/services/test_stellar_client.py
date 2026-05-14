@@ -358,6 +358,36 @@ class TestBuildXdr:
         assert transaction.operations[2].high_threshold == 3
 
     @pytest.mark.asyncio
+    async def test_stellar_build_xdr_accepts_missing_memo_type(self):
+        root_key = Keypair.random().public_key
+        destination = Keypair.random().public_key
+
+        data = {
+            "publicKey": root_key,
+            "sequence": "42",
+            "operations": [
+                {
+                    "type": "payment",
+                    "destination": destination,
+                    "asset": "XLM",
+                    "amount": "10.0000000",
+                }
+            ],
+        }
+
+        with patch(
+            "stellar_sdk.Server.load_account", return_value=Account(root_key, 1)
+        ):
+            xdr = await stellar_build_xdr(data)
+
+        transaction = TransactionEnvelope.from_xdr(
+            xdr, Network.PUBLIC_NETWORK_PASSPHRASE
+        ).transaction
+
+        assert transaction.sequence == 42
+        assert len(transaction.operations) == 1
+
+    @pytest.mark.asyncio
     async def test_stellar_build_xdr_handles_claimable_balance_revoke_and_pool_ops(
         self,
     ):

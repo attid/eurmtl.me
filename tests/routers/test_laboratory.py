@@ -139,6 +139,21 @@ async def test_lab_build_xdr_returns_built_xdr(client):
 
 
 @pytest.mark.asyncio
+async def test_lab_build_xdr_accepts_missing_memo_type(client):
+    with patch(
+        "routers.laboratory.stellar_build_xdr",
+        new=AsyncMock(return_value="AAAA"),
+    ):
+        response = await client.post(
+            "/lab/build_xdr",
+            json={"publicKey": "GABC", "operations": []},
+        )
+
+    assert response.status_code == 200
+    assert await response.get_json() == {"xdr": "AAAA"}
+
+
+@pytest.mark.asyncio
 async def test_lab_xdr_to_json_returns_decoded_payload(client):
     with patch(
         "routers.laboratory.decode_xdr_to_base64",

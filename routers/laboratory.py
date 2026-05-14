@@ -128,8 +128,9 @@ async def cmd_mtl_pools():
 @blueprint.route("/lab/build_xdr", methods=["POST"])
 async def cmd_build_xdr():
     data = await request.json
-    if data["memo_type"] == "memo_hash":
-        if not is_valid_hash(data["memo"]):
+    memo_type = data.get("memo_type", "")
+    if memo_type == "memo_hash":
+        if not is_valid_hash(data.get("memo", "")):
             return jsonify({"error": "Bad memo hash. Must be 64 bytes hex string"})
 
     xdr = await stellar_build_xdr(data)
