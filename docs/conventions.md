@@ -34,6 +34,13 @@ For docs/process changes:
 2. Update source-of-truth docs.
 3. Run at least syntax/style checks relevant to changed files.
 
+Execution plan trigger:
+
+- If there is doubt whether an execution plan is required, ask the user before editing.
+- If a change touches 2+ source code, test, template, or script files and is not pure formatting, an execution plan is required.
+- Markdown-only changes do not require an execution plan by themselves.
+- Pure formatting means no behavior, contract, documentation, test, workflow, or architecture change.
+
 ## Touched-File Policy
 
 - Every touched file follows non-degradation: no new lint, formatting, or boundary violations.
