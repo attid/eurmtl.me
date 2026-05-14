@@ -419,13 +419,13 @@ async def lab_update_memo():
     if not xdr or not is_valid_base64(xdr):
         return jsonify({"error": "Invalid or missing XDR"}), 400
 
-    if not new_memo or len(new_memo) < 3 or len(new_memo) > 28:
+    if not new_memo or len(new_memo) < 3 or len(new_memo.encode("utf-8")) > 28:
         return jsonify(
-            {"error": "Invalid memo length. Must be between 3 and 28 characters"}
+            {"error": "Invalid memo length. Must be between 3 characters and 28 bytes"}
         ), 400
 
-    if not new_memo.isascii():
-        return jsonify({"error": "Memo must contain only ASCII characters"}), 400
+    if not new_memo.isprintable():
+        return jsonify({"error": "Memo must contain only printable characters"}), 400
 
     try:
         new_xdr = update_memo_in_xdr(xdr, new_memo)

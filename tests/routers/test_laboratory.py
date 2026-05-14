@@ -192,20 +192,33 @@ async def test_lab_update_memo_rejects_invalid_memo_length(client):
 
     assert response.status_code == 400
     assert await response.get_json() == {
-        "error": "Invalid memo length. Must be between 3 and 28 characters"
+        "error": "Invalid memo length. Must be between 3 characters and 28 bytes"
     }
 
 
 @pytest.mark.asyncio
-async def test_lab_update_memo_rejects_non_ascii_memo(client):
+async def test_lab_update_memo_rejects_memo_over_28_bytes(client):
     response = await client.post(
         "/lab/update_memo",
-        json={"xdr": "AAAA", "memo": "тест"},
+        json={"xdr": "AAAA", "memo": "абвгдежзийклмнопр"},
     )
 
     assert response.status_code == 400
     assert await response.get_json() == {
-        "error": "Memo must contain only ASCII characters"
+        "error": "Invalid memo length. Must be between 3 characters and 28 bytes"
+    }
+
+
+@pytest.mark.asyncio
+async def test_lab_update_memo_rejects_control_characters(client):
+    response = await client.post(
+        "/lab/update_memo",
+        json={"xdr": "AAAA", "memo": "bad\nmemo"},
+    )
+
+    assert response.status_code == 400
+    assert await response.get_json() == {
+        "error": "Memo must contain only printable characters"
     }
 
 
@@ -222,3 +235,18 @@ async def test_lab_update_memo_returns_updated_xdr(client):
     assert response.status_code == 200
     assert await response.get_json() == {"success": True, "xdr": "BBBB"}
     update_mock.assert_called_once_with("AAAA", "valid memo")
+
+
+@pytest.mark.asyncio
+async def test_lab_update_memo_accepts_cyrillic_spaces_and_punctuation(client):
+    with patch(
+        "routers.laboratory.update_memo_in_xdr", return_value="BBBB"
+    ) as update_mock:
+        response = await client.post(
+            "/lab/update_memo",
+            json={"xdr": "AAAA", "memo": "Привет, MTL!"},
+        )
+
+    assert response.status_code == 200
+    assert await response.get_json() == {"success": True, "xdr": "BBBB"}
+    update_mock.assert_called_once_with("AAAA", "Привет, MTL!")
