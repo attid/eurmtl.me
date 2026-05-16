@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from quart import (
     Blueprint,
     request,
@@ -6,17 +6,41 @@ from quart import (
     make_response,
     render_template,
     current_app,
+    session,
 )
 from stellar_sdk import Network
 from stellar_sdk.exceptions import BadRequestError
 from stellar_sdk.sep.stellar_web_authentication import build_challenge_transaction
 
 from other.config_reader import config
-from db.sql_models import Addresses
+from db.sql_models import Addresses, Signers
 from quart_cors import cors
 
 blueprint = Blueprint("federal", __name__)
 cors_enabled_blueprint = cors(blueprint, allow_origin="*")
+
+
+def _finalize_federation_response(resp):
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Cache-Control"] = "no-cache, no-store, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    session.permanent = False
+    session.modified = False
+    session.accessed = False
+    return resp
+
+
+def _normalize_signer_username(username: str) -> str:
+    return username.removeprefix("@").lower()
+
+
+def _signer_federation_result(signer: Signers, domain: str | None = None) -> dict:
+    federation_domain = (domain or config.domain).lower()
+    username = _normalize_signer_username(signer.username)
+    return {
+        "stellar_address": f"{username}*{federation_domain}",
+        "account_id": signer.public_key,
+    }
 
 
 @blueprint.route("/federation")
@@ -41,9 +65,23 @@ async def federation():
                     if address.memo:
                         result["memo_type"] = "text"
                         result["memo"] = address.memo
-                    resp = jsonify(result)
-                    resp.headers.add("Access-Control-Allow-Origin", "*")
-                    return resp
+                    return _finalize_federation_response(jsonify(result))
+
+                username, separator, domain = request.args.get("q").partition("*")
+                if separator and domain.lower() == config.domain.lower():
+                    normalized_username = username.removeprefix("@").lower()
+                    result = await db_session.execute(
+                        select(Signers).filter(
+                            func.lower(Signers.username).in_(
+                                [normalized_username, f"@{normalized_username}"]
+                            )
+                        )
+                    )
+                    signer = result.scalars().first()
+                    if signer:
+                        return _finalize_federation_response(
+                            jsonify(_signer_federation_result(signer, domain))
+                        )
 
         if request.args.get("type") == "id":
             async with current_app.db_pool() as db_session:
@@ -58,14 +96,20 @@ async def federation():
                         "stellar_address": address.stellar_address,
                         "account_id": address.account_id,
                     }
-                    resp = jsonify(result)
-                    resp.headers.add("Access-Control-Allow-Origin", "*")
-                    return resp
+                    return _finalize_federation_response(jsonify(result))
+
+                result = await db_session.execute(
+                    select(Signers).filter(Signers.public_key == request.args.get("q"))
+                )
+                signer = result.scalars().first()
+                if signer:
+                    return _finalize_federation_response(
+                        jsonify(_signer_federation_result(signer))
+                    )
 
     resp = jsonify({"error": "Not found."})
     resp.status_code = 404
-    resp.headers.add("Access-Control-Allow-Origin", "*")
-    return resp
+    return _finalize_federation_response(resp)
 
 
 @blueprint.route("/.well-known/stellar.toml")
