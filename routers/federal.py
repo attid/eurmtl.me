@@ -7,6 +7,10 @@ from quart import (
     render_template,
     current_app,
     session,
+    abort,
+    flash,
+    redirect,
+    url_for,
 )
 from stellar_sdk import Network
 from stellar_sdk.exceptions import BadRequestError
@@ -14,6 +18,7 @@ from stellar_sdk.sep.stellar_web_authentication import build_challenge_transacti
 
 from other.config_reader import config
 from db.sql_models import Addresses, Signers
+from services.stellar_client import check_user_weight
 from quart_cors import cors
 
 blueprint = Blueprint("federal", __name__)
@@ -41,6 +46,15 @@ def _signer_federation_result(signer: Signers, domain: str | None = None) -> dic
         "stellar_address": f"{username}*{federation_domain}",
         "account_id": signer.public_key,
     }
+
+
+def _clean_address_form_value(value: str | None) -> str:
+    return (value or "").strip()
+
+
+async def _require_federation_address_admin() -> None:
+    if await check_user_weight(False) <= 0:
+        abort(403)
 
 
 @blueprint.route("/federation")
@@ -110,6 +124,69 @@ async def federation():
     resp = jsonify({"error": "Not found."})
     resp.status_code = 404
     return _finalize_federation_response(resp)
+
+
+@blueprint.route("/federation/addresses", methods=("GET", "POST"))
+async def federation_addresses_admin():
+    await _require_federation_address_admin()
+
+    async with current_app.db_pool() as db_session:
+        if request.method == "POST":
+            form_data = await request.form
+            action = form_data.get("action", "")
+            address_id = form_data.get("id", type=int)
+
+            if action == "delete" and address_id:
+                address = await db_session.get(Addresses, address_id)
+                if address:
+                    await db_session.delete(address)
+                    await db_session.commit()
+                    await flash("Federation address deleted", "good")
+                return redirect(url_for("federal.federation_addresses_admin"))
+
+            stellar_address = _clean_address_form_value(
+                form_data.get("stellar_address")
+            ).lower()
+            account_id = _clean_address_form_value(form_data.get("account_id"))
+            memo = _clean_address_form_value(form_data.get("memo")) or None
+
+            if not stellar_address or not account_id:
+                await flash("Stellar address and account ID are required")
+                return redirect(url_for("federal.federation_addresses_admin"))
+
+            if action == "create":
+                db_session.add(
+                    Addresses(
+                        stellar_address=stellar_address,
+                        account_id=account_id,
+                        memo=memo,
+                    )
+                )
+                await db_session.commit()
+                await flash("Federation address created", "good")
+                return redirect(url_for("federal.federation_addresses_admin"))
+
+            if action == "update" and address_id:
+                address = await db_session.get(Addresses, address_id)
+                if address:
+                    address.stellar_address = stellar_address
+                    address.account_id = account_id
+                    address.memo = memo
+                    await db_session.commit()
+                    await flash("Federation address updated", "good")
+                return redirect(url_for("federal.federation_addresses_admin"))
+
+            await flash("Unknown federation address action")
+            return redirect(url_for("federal.federation_addresses_admin"))
+
+        result = await db_session.execute(
+            select(Addresses).order_by(Addresses.stellar_address)
+        )
+        addresses = result.scalars().all()
+
+    return await render_template(
+        "tabler_federation_addresses.html", addresses=addresses
+    )
 
 
 @blueprint.route("/.well-known/stellar.toml")
