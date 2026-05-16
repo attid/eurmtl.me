@@ -62,7 +62,10 @@ async def federation():
                     resp.headers.add("Access-Control-Allow-Origin", "*")
                     return resp
 
-    return jsonify({"error": "Not found."})
+    resp = jsonify({"error": "Not found."})
+    resp.status_code = 404
+    resp.headers.add("Access-Control-Allow-Origin", "*")
+    return resp
 
 
 @blueprint.route("/.well-known/stellar.toml")

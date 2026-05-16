@@ -26,6 +26,15 @@ async def test_federal_federation_name(client, app, db_session):
 
 
 @pytest.mark.asyncio
+async def test_federal_federation_not_found_uses_sep2_status_and_cors(client):
+    response = await client.get("/federation?q=missing*eurmtl.me&type=name")
+
+    assert response.status_code == 404
+    assert response.headers["Access-Control-Allow-Origin"] == "*"
+    assert await response.get_json() == {"error": "Not found."}
+
+
+@pytest.mark.asyncio
 async def test_federal_stellar_toml(client):
     """Test /.well-known/stellar.toml"""
     response = await client.get("/.well-known/stellar.toml")
