@@ -6,12 +6,12 @@
 <form method="post" class="mb-4">
     <input type="hidden" name="action" value="create">
     <div class="row g-3 align-items-end">
-        <div class="col-md-4">
+        <div class="col-md-3">
             <label for="new-stellar-address" class="form-label required">Stellar address</label>
             <input id="new-stellar-address" name="stellar_address" class="form-control"
                    placeholder="alice*eurmtl.me" required>
         </div>
-        <div class="col-md-5">
+        <div class="col-md-6">
             <label for="new-account-id" class="form-label required">Account ID</label>
             <input id="new-account-id" name="account_id" class="form-control"
                    placeholder="G..." maxlength="56" required>
@@ -45,11 +45,11 @@
                 <form method="post">
                     <input type="hidden" name="id" value="{{ address.id }}">
                     <div class="row g-2 align-items-center">
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <input name="stellar_address" class="form-control"
                                    value="{{ address.stellar_address }}" required>
                         </div>
-                        <div class="col-md-5">
+                        <div class="col-md-6">
                             <input name="account_id" class="form-control"
                                    value="{{ address.account_id }}" maxlength="56" required>
                         </div>
