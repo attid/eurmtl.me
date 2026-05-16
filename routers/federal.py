@@ -39,6 +39,11 @@ def _normalize_signer_username(username: str) -> str:
     return username.removeprefix("@").lower()
 
 
+def _has_federation_signer_username(signer: Signers) -> bool:
+    username = _normalize_signer_username(signer.username or "")
+    return bool(username and username != "faceless")
+
+
 def _signer_federation_result(signer: Signers, domain: str | None = None) -> dict:
     federation_domain = (domain or config.domain).lower()
     username = _normalize_signer_username(signer.username)
@@ -92,7 +97,7 @@ async def federation():
                         )
                     )
                     signer = result.scalars().first()
-                    if signer:
+                    if signer and _has_federation_signer_username(signer):
                         return _finalize_federation_response(
                             jsonify(_signer_federation_result(signer, domain))
                         )
@@ -116,7 +121,7 @@ async def federation():
                     select(Signers).filter(Signers.public_key == request.args.get("q"))
                 )
                 signer = result.scalars().first()
-                if signer:
+                if signer and _has_federation_signer_username(signer):
                     return _finalize_federation_response(
                         jsonify(_signer_federation_result(signer))
                     )

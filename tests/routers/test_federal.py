@@ -110,6 +110,40 @@ async def test_federal_federation_id_falls_back_to_signer_public_key(
 
 
 @pytest.mark.asyncio
+async def test_federal_federation_id_ignores_faceless_signer(client, db_session):
+    signer = Signers(
+        username="FaceLess",
+        public_key="GFACELESS",
+        tg_id=None,
+        signature_hint="abcd1234",
+    )
+    db_session.add(signer)
+    await db_session.commit()
+
+    response = await client.get("/federation?q=GFACELESS&type=id")
+
+    assert response.status_code == 404
+    assert await response.get_json() == {"error": "Not found."}
+
+
+@pytest.mark.asyncio
+async def test_federal_federation_name_ignores_faceless_signer(client, db_session):
+    signer = Signers(
+        username="FaceLess",
+        public_key="GFACELESS",
+        tg_id=None,
+        signature_hint="abcd1234",
+    )
+    db_session.add(signer)
+    await db_session.commit()
+
+    response = await client.get("/federation?q=faceless*eurmtl.me&type=name")
+
+    assert response.status_code == 404
+    assert await response.get_json() == {"error": "Not found."}
+
+
+@pytest.mark.asyncio
 async def test_federal_federation_not_found_uses_sep2_status_and_cors(client, app):
     @app.before_request
     async def mark_session_permanent():
