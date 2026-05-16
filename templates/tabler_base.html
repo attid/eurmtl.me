@@ -140,6 +140,11 @@
                            data-bs-toggle="tooltip" data-bs-placement="bottom">
                             <i class="ti ti-sun"></i> Enable light mode
                         </a>
+                        {% if session.get('user_id')|int in [84131737, 3718221] %}
+                        <a href="{{ url_for('federal.federation_addresses_admin') }}" class="dropdown-item">
+                            <i class="ti ti-address-book me-2"></i>Federation addresses
+                        </a>
+                        {% endif %}
                         <a href="/logout" class="dropdown-item">Logout</a>
                     </div>
                 </div>
