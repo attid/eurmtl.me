@@ -112,7 +112,8 @@ def decode_xdr_to_base64(xdr, return_json=False):
     for op_idx, operation in enumerate(transaction.operations):
         op_name = type(operation).__name__
         op_name = op_name[0].lower() + op_name[1:]
-        op_json = {"id": op_idx, "attributes": {}, "name": op_name}
+        op_source_acc = operation.source.account_id if operation.source is not None else None
+        op_json = {"id": op_idx, "attributes": {"sourceAccount": op_source_acc}, "name": op_name}
 
         from stellar_sdk import (
             Payment,
@@ -129,17 +130,11 @@ def decode_xdr_to_base64(xdr, return_json=False):
                 "destination": operation.destination.account_id,
                 "asset": serialize_asset(operation.asset),
                 "amount": float2str(operation.amount),
-                "sourceAccount": operation.source.account_id
-                if operation.source is not None
-                else None,
             }
         elif isinstance(operation, ChangeTrust):
             op_json["attributes"] = {
                 "asset": serialize_asset(operation.asset),
                 "limit": operation.limit,
-                "sourceAccount": operation.source.account_id
-                if operation.source is not None
-                else None,
             }
         elif isinstance(operation, ManageData):
             op_json["attributes"] = {
@@ -151,17 +146,11 @@ def decode_xdr_to_base64(xdr, return_json=False):
                 "dataValue": operation.data_value.decode()
                 if operation.data_value is not None
                 else "",
-                "sourceAccount": operation.source.account_id
-                if operation.source is not None
-                else None,
             }
         elif isinstance(operation, CreateAccount):
             op_json["attributes"] = {
                 "destination": operation.destination,
                 "startingBalance": operation.starting_balance,
-                "sourceAccount": operation.source.account_id
-                if operation.source is not None
-                else None,
             }
         elif isinstance(operation, SetTrustLineFlags):
             op_json["attributes"] = {
@@ -171,16 +160,10 @@ def decode_xdr_to_base64(xdr, return_json=False):
                 "clearFlags": operation.clear_flags.value
                 if operation.clear_flags
                 else None,
-                "sourceAccount": operation.source.account_id
-                if operation.source
-                else None,
             }
         elif isinstance(operation, ClaimClaimableBalance):
             op_json["attributes"] = {
                 "balanceId": operation.balance_id,
-                "sourceAccount": operation.source.account_id
-                if operation.source is not None
-                else None,
             }
         elif isinstance(operation, CreateClaimableBalance):
             claimants_payload = []
@@ -233,9 +216,6 @@ def decode_xdr_to_base64(xdr, return_json=False):
                 "asset": serialize_asset(operation.asset),
                 "amount": float2str(operation.amount),
                 "claimants": claimants_payload,
-                "sourceAccount": operation.source.account_id
-                if operation.source is not None
-                else None,
             }
         elif isinstance(operation, ManageSellOffer) or isinstance(
             operation, ManageBuyOffer
@@ -246,9 +226,6 @@ def decode_xdr_to_base64(xdr, return_json=False):
                 "offerId": operation.offer_id,
                 "selling": serialize_asset(operation.selling),
                 "buying": serialize_asset(operation.buying),
-                "sourceAccount": operation.source.account_id
-                if operation.source is not None
-                else None,
             }
         elif isinstance(operation, CreatePassiveSellOffer):
             op_json["attributes"] = {
@@ -256,18 +233,12 @@ def decode_xdr_to_base64(xdr, return_json=False):
                 "price": operation.price.n / operation.price.d,
                 "selling": serialize_asset(operation.selling),
                 "buying": serialize_asset(operation.buying),
-                "sourceAccount": operation.source.account_id
-                if operation.source is not None
-                else None,
             }
         elif isinstance(operation, Clawback):
             op_json["attributes"] = {
                 "amount": operation.amount,
                 "asset": operation.asset.to_dict(),
                 "from": operation.from_.account_id,
-                "sourceAccount": operation.source.account_id
-                if operation.source is not None
-                else None,
             }
         elif isinstance(operation, SetOptions):
             if operation.signer:
@@ -293,9 +264,6 @@ def decode_xdr_to_base64(xdr, return_json=False):
                 else:
                     threshold = None
                 op_json["attributes"] = {
-                    "sourceAccount": operation.source.account_id
-                    if operation.source is not None
-                    else None,
                     "master": operation.master_weight,
                     "threshold": threshold,
                     "home": operation.home_domain,
@@ -313,9 +281,6 @@ def decode_xdr_to_base64(xdr, return_json=False):
                 "amount": operation.send_amount,
                 "destAsset": operation.dest_asset.to_dict(),
                 "buying": operation.dest_asset.to_dict(),
-                "sourceAccount": operation.source.account_id
-                if operation.source is not None
-                else None,
             }
         elif isinstance(operation, LiquidityPoolWithdraw):
             op_json["attributes"] = {
@@ -323,9 +288,6 @@ def decode_xdr_to_base64(xdr, return_json=False):
                 "amount": operation.amount,
                 "minAmountA": operation.min_amount_a,
                 "minAmountB": operation.min_amount_b,
-                "sourceAccount": operation.source.account_id
-                if operation.source is not None
-                else None,
             }
         elif isinstance(operation, LiquidityPoolDeposit):
             op_json["attributes"] = {
@@ -334,9 +296,6 @@ def decode_xdr_to_base64(xdr, return_json=False):
                 "maxAmountB": operation.max_amount_b,
                 "minPrice": operation.min_price.n / operation.min_price.d,
                 "maxPrice": operation.max_price.n / operation.max_price.d,
-                "sourceAccount": operation.source.account_id
-                if operation.source is not None
-                else None,
             }
         else:
             op_json["attributes"] = {"detail": "Unsupported operation type"}
