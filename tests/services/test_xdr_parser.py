@@ -15,6 +15,7 @@ from stellar_sdk import (
     Keypair,
     LiquidityPoolAsset,
     Network,
+    Signer,
     StrKey,
     TextMemo,
     TransactionBuilder,
@@ -491,6 +492,39 @@ class TestXDRConversion:
         assert operation["attributes"]["amount"] == "1000"
         assert operation["attributes"]["destination"] == "821.2420659"
         assert operation["attributes"]["path"] == []
+
+    def test_decode_xdr_to_base64_preserves_source_account_for_set_options_signer(
+        self,
+    ):
+        source_keypair = Keypair.random()
+        signer_keypair = Keypair.random()
+        source_account = Account(source_keypair.public_key, 123456)
+
+        transaction = (
+            TransactionBuilder(
+                source_account=source_account,
+                network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+                base_fee=100,
+            )
+            .append_set_options_op(
+                signer=Signer.ed25519_public_key(
+                    account_id=signer_keypair.public_key,
+                    weight=1,
+                ),
+                source=source_keypair.public_key,
+            )
+            .set_timeout(300)
+            .build()
+        )
+
+        result = decode_xdr_to_base64(transaction.to_xdr(), return_json=True)
+
+        operation = result["operations"][0]
+
+        assert operation["name"] == "setOptionsSigner"
+        assert operation["attributes"]["signerAccount"] == signer_keypair.public_key
+        assert operation["attributes"]["weight"] == "1"
+        assert operation["attributes"]["sourceAccount"] == source_keypair.public_key
 
     def test_decode_xdr_to_base64_raises_clear_error_for_truncated_xdr(self):
         with pytest.raises(ValueError, match="Invalid Stellar XDR"):
