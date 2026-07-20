@@ -103,7 +103,7 @@ class Decisions(Base):
     __tablename__ = "t_decisions"
     uuid = Column("uuid", String(64), primary_key=True)
     description = Column("description", String(4000), nullable=False)
-    full_text = Column("full_text", Text(12000), nullable=True)
+    full_text = Column("full_text", Text(), nullable=True)
     dt = Column("dt", DateTime(), default=datetime.now)
     num = Column("num", Integer, nullable=False)
     reading = Column("reading", Integer, nullable=False)
