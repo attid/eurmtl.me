@@ -1581,16 +1581,16 @@ wheels = [
 
 [[package]]
 name = "sqlalchemy-firebird-async"
-version = "0.2.2"
+version = "0.2.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "greenlet" },
     { name = "sqlalchemy" },
     { name = "sqlalchemy-firebird" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/40/04/e20715ffed7f8957a3ba4e754288f85e4b024319929da944b8ab1d78b70d/sqlalchemy_firebird_async-0.2.2.tar.gz", hash = "sha256:153c8d68f50d6c8c2497b0bef55624b044f167e424f3d69393b163e485601a53", size = 79748, upload-time = "2026-05-10T17:35:23.482Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/47/b283980f12f5ba64c8cf8e7a1de4c1bcff3105e0266fd5425fa6bcaeda10/sqlalchemy_firebird_async-0.2.3.tar.gz", hash = "sha256:9caae7ccb5020847ae003d65544c66c2276b3453756d64ded01e474aa9359535", size = 80412, upload-time = "2026-05-13T20:28:12.422Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ae/41/d377541f4e53bbeed288cd8f21401b535b981f5f81eec336aba1a0d15574/sqlalchemy_firebird_async-0.2.2-py2.py3-none-any.whl", hash = "sha256:655a8696a4a8da54e026894cea229d96b556d81532f976b78752f0e4efe0516c", size = 15287, upload-time = "2026-05-10T17:35:21.536Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/2d/76eef5f9551de907799f9a86305bc6af4ae6d0f699f6e931da47498765c7/sqlalchemy_firebird_async-0.2.3-py2.py3-none-any.whl", hash = "sha256:dfcee00059a52777bf0901c7353b41a6e7b650b7ba1a56143a52c8a9bca5e93b", size = 15348, upload-time = "2026-05-13T20:28:10.911Z" },
 ]
 
 [[package]]
