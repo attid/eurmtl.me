@@ -116,7 +116,7 @@ async def get_pool_data(pool_id: str) -> dict:
         "price": 1.0,
         "reserves": [{"amount": "0"}, {"amount": "0"}],
         "total_shares": 0,
-        "assets": LiquidityPoolAsset(asset_a=Asset("XLM"), asset_b=Asset("XLM")),
+        "LiquidityPoolAsset": None,
     }
 
 
