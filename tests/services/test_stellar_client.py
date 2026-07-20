@@ -31,10 +31,42 @@ from services.stellar_client import (
     decode_asset,
     decode_flags,
     float2str,
+    get_pool_data,
     process_xdr_transaction,
     stellar_build_xdr,
     xdr_to_uri,
 )
+
+
+@pytest.mark.asyncio
+async def test_get_pool_data_returns_safe_fallback_when_horizon_pool_missing():
+    class _MissingPoolRequest:
+        async def call(self):
+            raise Exception("pool missing")
+
+    class _LiquidityPoolsEndpoint:
+        def liquidity_pool(self, pool_id):
+            return _MissingPoolRequest()
+
+    class _Server:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def liquidity_pools(self):
+            return _LiquidityPoolsEndpoint()
+
+    with patch("services.stellar_client.ServerAsync", return_value=_Server()):
+        pool_data = await get_pool_data("7" * 64)
+
+    assert pool_data == {
+        "price": 1.0,
+        "reserves": [{"amount": "0"}, {"amount": "0"}],
+        "total_shares": 0,
+        "LiquidityPoolAsset": None,
+    }
 
 
 class TestFloatToString:
