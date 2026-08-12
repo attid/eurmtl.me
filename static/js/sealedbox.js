@@ -93,7 +93,40 @@
   }
 
   function bytesToText(bytes) {
-    return new TextDecoder().decode(toUint8Array(bytes));
+    return new TextDecoder("utf-8", { fatal: true }).decode(toUint8Array(bytes));
+  }
+
+  function isDisplayableText(text) {
+    if (text.length === 0) {
+      return true;
+    }
+    let controlCharacters = 0;
+    for (const character of text) {
+      const code = character.charCodeAt(0);
+      if (code < 32 && code !== 9 && code !== 10 && code !== 13) {
+        controlCharacters += 1;
+      }
+    }
+    return controlCharacters / text.length < 0.02;
+  }
+
+  function decodeDisplayText(bytes) {
+    try {
+      const text = bytesToText(bytes);
+      return isDisplayableText(text) ? text : null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function decryptedFilename(file) {
+    if (!file || !file.name) {
+      return "sealedbox-output.bin";
+    }
+    if (file.name.endsWith(".ssb")) {
+      return file.name.slice(0, -4) || "sealedbox-output.bin";
+    }
+    return `${file.name}.decrypted`;
   }
 
   async function readFileInput(input) {
@@ -127,6 +160,7 @@
       cipherText: rootDocument.getElementById("sealedbox-cipher-text"),
       cipherFile: rootDocument.getElementById("sealedbox-cipher-file"),
       result: rootDocument.getElementById("sealedbox-result"),
+      resultStatus: rootDocument.getElementById("sealedbox-result-status"),
       downloadButton: rootDocument.getElementById("sealedbox-download-result"),
       resultBytes: null,
       resultFilename: "sealedbox.bin",
@@ -156,7 +190,11 @@
         const ciphertext = encryptToStellarKey(sodium, StellarSdk, recipientKey, plaintext);
         const base64 = bytesToBase64(sodium, ciphertext);
         state.cipherText.value = base64;
-        setResult(state, base64, ciphertext, "sealedbox.ssb");
+        const filename = state.plainFile.files?.[0]?.name
+          ? `${state.plainFile.files[0].name}.ssb`
+          : "sealedbox.ssb";
+        setResult(state, base64, ciphertext, filename);
+        state.resultStatus.textContent = `Encrypted ${plaintext.length} bytes. Download saves raw sealed box bytes.`;
         notify("Encrypted", "success");
       } catch (error) {
         notify(error.message, "danger");
@@ -168,8 +206,22 @@
         const fileBytes = await readFileInput(state.cipherFile);
         const ciphertext = fileBytes || base64ToBytes(sodium, state.cipherText.value);
         const plaintext = decryptWithStellarSecret(sodium, StellarSdk, state.secretKey.value, ciphertext);
-        const text = bytesToText(plaintext);
-        setResult(state, text, plaintext, "sealedbox-output.bin");
+        const text = decodeDisplayText(plaintext);
+        const filename = decryptedFilename(state.cipherFile.files?.[0]);
+        if (text === null) {
+          setResult(
+            state,
+            `Decrypted ${plaintext.length} binary bytes. Use Download to save the file.`,
+            plaintext,
+            filename,
+          );
+        } else {
+          setResult(state, text, plaintext, filename);
+        }
+        state.resultStatus.textContent =
+          text === null
+            ? `Binary result ready: ${plaintext.length} bytes.`
+            : `Text result ready: ${plaintext.length} bytes.`;
         notify("Decrypted", "success");
       } catch (error) {
         notify(error.message, "danger");
@@ -222,9 +274,12 @@
   return {
     base64ToBytes,
     bytesToBase64,
+    decodeDisplayText,
     decryptWithStellarSecret,
+    decryptedFilename,
     encryptToStellarKey,
     generateStellarKeypair,
+    isDisplayableText,
     publicKeyFromSecret,
     publicKeyToCurve25519,
     resolveRecipientPublicKey,
