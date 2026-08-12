@@ -19,6 +19,8 @@ payloads decrypt correctly, but the UI renders arbitrary bytes as text.
 - For binary plaintext, keep the bytes for download and show a status message
   instead of corrupt text.
 - Preserve/download a reasonable output filename when possible.
+- Load `sealedbox.js` with an explicit query version so browsers do not keep the
+  old default `sealedbox.ssb` filename logic after deployment.
 
 ## Files
 
@@ -39,11 +41,16 @@ payloads decrypt correctly, but the UI renders arbitrary bytes as text.
 4. Done: Verify focused route tests.
 5. Done: Verify JS-to-Python and Python-to-JS compatibility still passes for binary
    payloads.
-6. Done: Commit and push.
+6. Done: Add explicit encrypted filename helper so `file.pdf` downloads as
+   `file.pdf.ssb`.
+7. Done: Add `sealedbox.js?2` cache-buster to force browsers to load the filename
+   fix.
+8. Done: Commit and push.
 
 ## Verification
 
 - `uv run --extra dev pytest tests/routers/test_index.py::test_sealedbox_page_exposes_browser_only_crypto_tool -q --no-cov`
 - JS/Python compatibility smoke test with ZIP/PDF-like binary bytes.
+- Node filename helper smoke test for `sb.tar.gz -> sb.tar.gz.ssb`.
 - `uv run --extra dev pytest tests/routers/test_index.py -q --no-cov`
 - `just check-changed`

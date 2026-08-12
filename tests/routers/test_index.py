@@ -136,7 +136,7 @@ async def test_sealedbox_page_exposes_browser_only_crypto_tool(client):
     assert "/static/js/vendor/libsodium-sumo.js" in body
     assert "/static/js/vendor/libsodium-wrappers-sumo.js" in body
     assert "/static/js/stellar-sdk.min.js" in body
-    assert "/static/js/sealedbox.js" in body
+    assert "/static/js/sealedbox.js?2" in body
     assert "/static/docs/stellar_sealedbox.py" in body
 
 
