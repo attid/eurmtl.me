@@ -71,6 +71,7 @@ def _sitemap_paths() -> list[str]:
         "/federation",
         "/sep6/info",
         "/lab",
+        "/sealedbox",
         "/contracts",
     ]
 
@@ -544,6 +545,11 @@ async def login_telegram_callback():
 @blueprint.route("/addr")
 async def lab_addr():
     return await render_template("tabler_addr.html")
+
+
+@blueprint.route("/sealedbox")
+async def sealedbox():
+    return await render_template("tabler_sealedbox.html")
 
 
 @blueprint.route("/logout")

@@ -120,6 +120,23 @@ async def test_sitemap_xml_lists_canonical_public_urls(client):
     assert "/llms.txt</loc>" in body
     assert "/.well-known/api-catalog</loc>" in body
     assert "/.well-known/agent-skills/index.json</loc>" in body
+    assert "/sealedbox</loc>" in body
+
+
+@pytest.mark.asyncio
+async def test_sealedbox_page_exposes_browser_only_crypto_tool(client):
+    """Test /sealedbox serves the browser-only Stellar sealed box tool."""
+    response = await client.get("/sealedbox")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "Stellar SealedBox" in body
+    assert 'id="sealedbox-app"' in body
+    assert "/static/js/vendor/libsodium-sumo.js" in body
+    assert "/static/js/vendor/libsodium-wrappers-sumo.js" in body
+    assert "/static/js/stellar-sdk.min.js" in body
+    assert "/static/js/sealedbox.js" in body
+    assert "/static/docs/stellar_sealedbox.py" in body
 
 
 @pytest.mark.asyncio

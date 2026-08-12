@@ -1,0 +1,126 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}Stellar SealedBox{% endblock %}
+
+{% block content %}
+<div id="sealedbox-app" class="row g-4">
+    <div class="col-12">
+        <div class="alert alert-info" role="alert">
+            <div class="d-flex">
+                <div><i class="ti ti-shield-lock icon alert-icon"></i></div>
+                <div>
+                    Files, text, and secret keys stay in this browser tab. The server only serves this page and static scripts.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-xl-5">
+        <section class="border rounded p-3 h-100">
+            <h3 class="h3 mb-3">Keys</h3>
+            <div class="mb-3">
+                <label class="form-label" for="sealedbox-public-key">Recipient public key</label>
+                <input class="form-control font-monospace" id="sealedbox-public-key" autocomplete="off" spellcheck="false" placeholder="G...">
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="sealedbox-secret-key">Secret seed</label>
+                <input class="form-control font-monospace" id="sealedbox-secret-key" autocomplete="off" spellcheck="false" placeholder="S...">
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-outline-primary" id="sealedbox-generate-key" type="button">
+                    <i class="ti ti-key me-1"></i>Generate keypair
+                </button>
+                <button class="btn btn-outline-secondary" id="sealedbox-public-from-secret" type="button">
+                    <i class="ti ti-arrow-up-right me-1"></i>Public from secret
+                </button>
+            </div>
+        </section>
+    </div>
+
+    <div class="col-12 col-xl-7">
+        <section class="border rounded p-3 h-100">
+            <ul class="nav nav-tabs mb-3" data-bs-toggle="tabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <a href="#sealedbox-encrypt" class="nav-link active" data-bs-toggle="tab" aria-selected="true" role="tab">
+                        <i class="ti ti-lock me-1"></i>Encrypt
+                    </a>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <a href="#sealedbox-decrypt" class="nav-link" data-bs-toggle="tab" aria-selected="false" role="tab">
+                        <i class="ti ti-lock-open me-1"></i>Decrypt
+                    </a>
+                </li>
+            </ul>
+            <div class="tab-content">
+                <div class="tab-pane active show" id="sealedbox-encrypt" role="tabpanel">
+                    <div class="mb-3">
+                        <label class="form-label" for="sealedbox-plain-text">Text</label>
+                        <textarea class="form-control font-monospace" id="sealedbox-plain-text" rows="7" spellcheck="false"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="sealedbox-plain-file">File</label>
+                        <input class="form-control" id="sealedbox-plain-file" type="file">
+                    </div>
+                    <button class="btn btn-primary" id="sealedbox-encrypt-button" type="button">
+                        <i class="ti ti-lock me-1"></i>Encrypt
+                    </button>
+                </div>
+                <div class="tab-pane" id="sealedbox-decrypt" role="tabpanel">
+                    <div class="mb-3">
+                        <label class="form-label" for="sealedbox-cipher-text">Ciphertext base64</label>
+                        <textarea class="form-control font-monospace" id="sealedbox-cipher-text" rows="7" spellcheck="false"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="sealedbox-cipher-file">Ciphertext file</label>
+                        <input class="form-control" id="sealedbox-cipher-file" type="file">
+                    </div>
+                    <button class="btn btn-primary" id="sealedbox-decrypt-button" type="button">
+                        <i class="ti ti-lock-open me-1"></i>Decrypt
+                    </button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div class="col-12">
+        <section class="border rounded p-3">
+            <h3 class="h3 mb-3">Result</h3>
+            <div class="mb-3">
+                <label class="form-label" for="sealedbox-result">Base64 / text</label>
+                <textarea class="form-control font-monospace" id="sealedbox-result" rows="8" spellcheck="false"></textarea>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <button class="btn btn-outline-secondary" id="sealedbox-copy-result" type="button">
+                    <i class="ti ti-copy me-1"></i>Copy
+                </button>
+                <button class="btn btn-outline-secondary" id="sealedbox-download-result" type="button" disabled>
+                    <i class="ti ti-download me-1"></i>Download
+                </button>
+            </div>
+        </section>
+    </div>
+
+    <div class="col-12">
+        <section class="border rounded p-3">
+            <p class="mb-2">
+                Agents and scripts can use the same algorithm without this page:
+            </p>
+            <div class="d-flex flex-wrap gap-2">
+                <a class="btn btn-outline-primary" href="/static/docs/stellar_sealedbox.py" download>
+                    <i class="ti ti-brand-python me-1"></i>Python CLI
+                </a>
+                <a class="btn btn-outline-secondary" href="/static/js/sealedbox.js">
+                    <i class="ti ti-brand-javascript me-1"></i>Browser JS
+                </a>
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}
+
+{% block bottom_scripts %}
+<script src="/static/js/vendor/libsodium-sumo.js"></script>
+<script src="/static/js/vendor/libsodium-wrappers-sumo.js"></script>
+<script src="/static/js/stellar-sdk.min.js"></script>
+<script src="/static/js/sealedbox.js"></script>
+{% endblock %}
