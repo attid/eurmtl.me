@@ -132,6 +132,7 @@ async def test_sealedbox_page_exposes_browser_only_crypto_tool(client):
     body = await response.get_data(as_text=True)
     assert "Stellar SealedBox" in body
     assert 'id="sealedbox-app"' in body
+    assert 'id="sealedbox-result-status"' in body
     assert "/static/js/vendor/libsodium-sumo.js" in body
     assert "/static/js/vendor/libsodium-wrappers-sumo.js" in body
     assert "/static/js/stellar-sdk.min.js" in body
