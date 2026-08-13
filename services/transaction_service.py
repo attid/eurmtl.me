@@ -13,12 +13,11 @@ from stellar_sdk.sep import stellar_uri
 
 from db.sql_models import Transactions, Signers, Signatures, Alerts
 from infrastructure.repositories.transaction_repository import TransactionRepository
-from other.grist_tools import load_users_from_grist
+from other.grist_tools import get_secretaries, load_users_from_grist
 from other.config_reader import config
 from other.telegram_tools import skynet_bot
 from other.cache_tools import async_cache_with_ttl
 from services.stellar_client import (
-    check_user_in_sign,
     update_transaction_sources,
     check_publish_state,
 )
@@ -49,7 +48,7 @@ class TransactionService:
 
         # Check privileges (moved from router)
         # Assuming admin_weight logic is simple enough to keep here or move to a helper
-        in_sign = await check_user_in_sign(tr_hash)
+        in_sign = await self.check_user_in_sign(tr_hash, user_id, transaction)
         admin_weight = 2 if in_sign else 0
 
         # Alert status
@@ -72,13 +71,29 @@ class TransactionService:
             transaction.body, network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE
         )
 
-        # Preload users
+        # Preload users and database signer/signature data in bulk.
         all_public_keys = [
             signer[0]
             for address in json_transaction
             for signer in json_transaction[address]["signers"]
         ]
+        source_accounts = list(json_transaction.keys())
         user_map = await load_users_from_grist(all_public_keys)
+        db_signers = await self.repo.get_signers_by_public_keys(all_public_keys)
+        signer_map_by_public_key = {signer.public_key: signer for signer in db_signers}
+        signature_map_by_public_key = (
+            await self.repo.get_visible_signatures_by_public_key(
+                transaction.hash, all_public_keys
+            )
+        )
+        latest_signature_dates = (
+            await self.repo.get_latest_signature_dates_by_public_key(all_public_keys)
+        )
+        latest_source_signature_dates = (
+            await self.repo.get_latest_source_signature_dates_by_public_key(
+                all_public_keys, source_accounts
+            )
+        )
 
         signers_table = []
         bad_signers = []
@@ -98,16 +113,12 @@ class TransactionService:
                 public_key = signer[0]
                 weight = signer[1]
 
-                signature = await self.repo.get_signature_by_signer_public_key(
-                    public_key, transaction.hash
-                )
-                db_signer = await self.repo.get_signer_by_public_key(public_key)
+                signature = signature_map_by_public_key.get(public_key)
+                db_signer = signer_map_by_public_key.get(public_key)
 
-                signature_dt = await self.repo.get_latest_signature_by_signer(
-                    public_key
-                )
-                signature_source_dt = await self.repo.get_latest_signature_for_source(
-                    public_key, address
+                signature_dt = latest_signature_dates.get(public_key)
+                signature_source_dt = latest_source_signature_dates.get(
+                    (public_key, address)
                 )
 
                 user = user_map.get(public_key)
@@ -122,12 +133,10 @@ class TransactionService:
                 )
 
                 signature_days_any = (
-                    (datetime.now() - signature_dt.add_dt).days
-                    if signature_dt
-                    else None
+                    (datetime.now() - signature_dt).days if signature_dt else None
                 )
                 signature_days_source = (
-                    (datetime.now() - signature_source_dt.add_dt).days
+                    (datetime.now() - signature_source_dt).days
                     if signature_source_dt
                     else None
                 )
@@ -226,6 +235,39 @@ class TransactionService:
             "publish_state": publish_state,
             "transaction_env": transaction_env,  # Returning object in case we need to modify it further
         }
+
+    async def check_user_in_sign(
+        self,
+        tr_hash: str,
+        user_id: int,
+        transaction: Transactions | None = None,
+    ) -> bool:
+        if not user_id:
+            return False
+
+        if int(user_id) in (84131737, 3718221):
+            return True
+
+        transaction = transaction or await self.get_transaction_by_hash(tr_hash)
+        if (
+            transaction
+            and transaction.owner_id
+            and int(transaction.owner_id) == int(user_id)
+        ):
+            return True
+
+        secretaries = await get_secretaries()
+        if transaction and transaction.source_account in secretaries:
+            secretary_users = secretaries[transaction.source_account]
+            if any(int(user_id) == int(user) for user in secretary_users):
+                return True
+
+        address = await self.repo.get_signer_by_tg_id(user_id)
+        if address is None:
+            return False
+
+        signature = await self.repo.get_signature(tr_hash, address.id)
+        return bool(signature)
 
     async def update_signature_visibility(self, signature_id: int, hide: bool):
         result = await self.session.execute(
@@ -406,7 +448,7 @@ class TransactionService:
         if not transaction:
             return False, "Transaction not exist"
 
-        in_sign = await check_user_in_sign(tr_hash)
+        in_sign = await self.check_user_in_sign(tr_hash, user_id, transaction)
         admin_weight = 2 if in_sign else 0
         is_owner = (
             transaction.owner_id and int(transaction.owner_id) == int(user_id)
