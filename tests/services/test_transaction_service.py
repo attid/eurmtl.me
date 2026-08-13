@@ -173,6 +173,114 @@ def _signature_mock(hint="hint1", xdr_value="sig-xdr", signature_bytes=b"sig"):
 
 
 @pytest.mark.asyncio
+async def test_get_transaction_details_uses_bulk_signer_queries(
+    transaction_service, mock_session
+):
+    transaction = Transactions(
+        hash="a" * 64,
+        body="AAAA",
+        json=(
+            '{"GA1":{"threshold":2,"signers":[["GA1",1,"hint1"],["GA2",1,"hint2"]]}}'
+        ),
+        description="Decision text",
+        uuid="u" * 32,
+    )
+    db_signer_1 = Signers(id=1, public_key="GA1", tg_id=100)
+    db_signer_2 = Signers(id=2, public_key="GA2", tg_id=200)
+    db_signature = Signatures(
+        id=1,
+        signer_id=1,
+        signature_xdr="sig-xdr",
+        transaction_hash=transaction.hash,
+    )
+    db_signature.add_dt = MagicMock()
+
+    transaction_service.get_transaction_by_hash = AsyncMock(return_value=transaction)
+    transaction_service.repo.get_signers_by_public_keys = AsyncMock(
+        return_value=[db_signer_1, db_signer_2]
+    )
+    transaction_service.repo.get_visible_signatures_by_public_key = AsyncMock(
+        return_value={"GA1": db_signature}
+    )
+    transaction_service.repo.get_latest_signature_dates_by_public_key = AsyncMock(
+        return_value={"GA1": db_signature.add_dt}
+    )
+    transaction_service.repo.get_latest_source_signature_dates_by_public_key = (
+        AsyncMock(return_value={("GA1", "GA1"): db_signature.add_dt})
+    )
+    transaction_service.repo.get_all_signatures_for_transaction = AsyncMock(
+        return_value=[db_signature]
+    )
+    transaction_service.repo.get_by_hash = AsyncMock(return_value=transaction)
+    transaction_service.repo.get_signer_by_tg_id = AsyncMock(return_value=db_signer_1)
+    transaction_service.repo.get_signature = AsyncMock(return_value=db_signature)
+    transaction_service.repo.get_signature_by_signer_public_key = AsyncMock()
+    transaction_service.repo.get_signer_by_public_key = AsyncMock()
+    transaction_service.repo.get_latest_signature_by_signer = AsyncMock()
+    transaction_service.repo.get_latest_signature_for_source = AsyncMock()
+    mock_session.execute.side_effect = [
+        _result_with(first=Alerts(id=1, tg_id=100, transaction_hash=transaction.hash)),
+        _result_with(all_items=[db_signer_1]),
+    ]
+
+    with (
+        patch(
+            "services.transaction_service.get_secretaries",
+            AsyncMock(return_value={}),
+        ),
+        patch(
+            "services.transaction_service.check_publish_state",
+            AsyncMock(return_value=(1, "date")),
+        ),
+        patch(
+            "services.transaction_service.load_users_from_grist",
+            AsyncMock(
+                side_effect=[
+                    {
+                        "GA1": MagicMock(username="alice", telegram_id=100),
+                        "GA2": MagicMock(username="bob", telegram_id=200),
+                    },
+                    {"GA1": MagicMock(username="alice", telegram_id=100)},
+                ]
+            ),
+        ),
+        patch("services.transaction_service.DecoratedSignature") as decorated_signature,
+        patch("services.transaction_service.DecoratedSignatureXdr") as decorated_xdr,
+        patch("services.transaction_service.TransactionEnvelope.from_xdr") as from_xdr,
+    ):
+        envelope = MagicMock()
+        envelope.signatures = []
+        envelope.to_xdr.return_value = "full-xdr"
+        decorated_signature.from_xdr_object.return_value = MagicMock()
+        decorated_xdr.from_xdr.return_value = MagicMock()
+        from_xdr.return_value = envelope
+
+        result = await transaction_service.get_transaction_details(
+            transaction.hash, 100
+        )
+
+    assert result["admin_weight"] == 2
+    assert result["signers_table"][0]["has_votes"] == 1
+    assert result["signers_table"][0]["signers"][0][1] == "alice"
+    transaction_service.repo.get_signers_by_public_keys.assert_awaited_once_with(
+        ["GA1", "GA2"]
+    )
+    transaction_service.repo.get_visible_signatures_by_public_key.assert_awaited_once_with(
+        transaction.hash, ["GA1", "GA2"]
+    )
+    transaction_service.repo.get_latest_signature_dates_by_public_key.assert_awaited_once_with(
+        ["GA1", "GA2"]
+    )
+    transaction_service.repo.get_latest_source_signature_dates_by_public_key.assert_awaited_once_with(
+        ["GA1", "GA2"], ["GA1"]
+    )
+    transaction_service.repo.get_signature_by_signer_public_key.assert_not_awaited()
+    transaction_service.repo.get_signer_by_public_key.assert_not_awaited()
+    transaction_service.repo.get_latest_signature_by_signer.assert_not_awaited()
+    transaction_service.repo.get_latest_signature_for_source.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_get_transaction_details_happy_path(transaction_service, mock_session):
     transaction = Transactions(
         hash="a" * 64,
@@ -191,17 +299,18 @@ async def test_get_transaction_details_happy_path(transaction_service, mock_sess
     db_signature.add_dt = MagicMock()
 
     transaction_service.get_transaction_by_hash = AsyncMock(return_value=transaction)
-    transaction_service.repo.get_signature_by_signer_public_key = AsyncMock(
-        return_value=None
+    transaction_service.check_user_in_sign = AsyncMock(return_value=True)
+    transaction_service.repo.get_signers_by_public_keys = AsyncMock(
+        return_value=[db_signer]
     )
-    transaction_service.repo.get_signer_by_public_key = AsyncMock(
-        return_value=db_signer
+    transaction_service.repo.get_visible_signatures_by_public_key = AsyncMock(
+        return_value={}
     )
-    transaction_service.repo.get_latest_signature_by_signer = AsyncMock(
-        return_value=None
+    transaction_service.repo.get_latest_signature_dates_by_public_key = AsyncMock(
+        return_value={}
     )
-    transaction_service.repo.get_latest_signature_for_source = AsyncMock(
-        return_value=None
+    transaction_service.repo.get_latest_source_signature_dates_by_public_key = (
+        AsyncMock(return_value={})
     )
     transaction_service.repo.get_all_signatures_for_transaction = AsyncMock(
         return_value=[db_signature]
@@ -212,10 +321,6 @@ async def test_get_transaction_details_happy_path(transaction_service, mock_sess
     ]
 
     with (
-        patch(
-            "services.transaction_service.check_user_in_sign",
-            AsyncMock(return_value=True),
-        ),
         patch(
             "services.transaction_service.check_publish_state",
             AsyncMock(return_value=(1, "date")),
@@ -257,11 +362,9 @@ async def test_get_transaction_details_returns_bad_xdr_on_invalid_json(
         hash="a" * 64, body="AAAA", json="{bad", description="Broken"
     )
     transaction_service.get_transaction_by_hash = AsyncMock(return_value=transaction)
+    transaction_service.check_user_in_sign = AsyncMock(return_value=False)
 
-    with patch(
-        "services.transaction_service.check_user_in_sign", AsyncMock(return_value=False)
-    ):
-        result = await transaction_service.get_transaction_details(transaction.hash, 0)
+    result = await transaction_service.get_transaction_details(transaction.hash, 0)
 
     assert result["error"] == "BAD xdr. Can`t load"
 
@@ -437,16 +540,11 @@ async def test_refresh_transaction_authorizes_owner_and_reports_result(
 ):
     transaction = Transactions(hash="a" * 64, owner_id=123)
     transaction_service.get_transaction_by_hash = AsyncMock(return_value=transaction)
+    transaction_service.check_user_in_sign = AsyncMock(return_value=False)
 
-    with (
-        patch(
-            "services.transaction_service.check_user_in_sign",
-            AsyncMock(return_value=False),
-        ),
-        patch(
-            "services.transaction_service.update_transaction_sources",
-            AsyncMock(return_value=True),
-        ),
+    with patch(
+        "services.transaction_service.update_transaction_sources",
+        AsyncMock(return_value=True),
     ):
         ok, message = await transaction_service.refresh_transaction(
             transaction.hash, 123
@@ -460,13 +558,9 @@ async def test_refresh_transaction_authorizes_owner_and_reports_result(
 async def test_refresh_transaction_rejects_without_permissions(transaction_service):
     transaction = Transactions(hash="a" * 64, owner_id=999)
     transaction_service.get_transaction_by_hash = AsyncMock(return_value=transaction)
+    transaction_service.check_user_in_sign = AsyncMock(return_value=False)
 
-    with patch(
-        "services.transaction_service.check_user_in_sign", AsyncMock(return_value=False)
-    ):
-        ok, message = await transaction_service.refresh_transaction(
-            transaction.hash, 123
-        )
+    ok, message = await transaction_service.refresh_transaction(transaction.hash, 123)
 
     assert ok is False
     assert "нет прав" in message
@@ -565,6 +659,69 @@ class TestSearchTransactions:
             assert len(results_page1) == 1
             assert len(results_page2) == 1
             assert results_page1[0].hash != results_page2[0].hash
+
+
+class TestTransactionRepositoryBulkLookups:
+    """Tests for bulk signer/signature repository lookups with real database."""
+
+    @pytest.mark.asyncio
+    async def test_get_signers_by_public_keys(self, app, db_session, seed_signers):
+        async with app.app_context():
+            service = TransactionService(db_session)
+            alice_pk = seed_signers[1].public_key
+            bob_pk = seed_signers[2].public_key
+
+            signers = await service.repo.get_signers_by_public_keys([alice_pk, bob_pk])
+
+            assert {signer.public_key for signer in signers} == {alice_pk, bob_pk}
+
+    @pytest.mark.asyncio
+    async def test_get_visible_signatures_by_public_key_ignores_hidden(
+        self, app, db_session, seed_signatures, seed_signers
+    ):
+        async with app.app_context():
+            service = TransactionService(db_session)
+            alice_pk = seed_signers[1].public_key
+            bob_pk = seed_signers[2].public_key
+
+            signatures = await service.repo.get_visible_signatures_by_public_key(
+                "a" * 64, [alice_pk, bob_pk]
+            )
+
+            assert signatures[alice_pk].id == 1
+            assert bob_pk not in signatures
+
+    @pytest.mark.asyncio
+    async def test_get_latest_signature_dates_by_public_key(
+        self, app, db_session, seed_signatures, seed_signers
+    ):
+        async with app.app_context():
+            service = TransactionService(db_session)
+            alice_pk = seed_signers[1].public_key
+            bob_pk = seed_signers[2].public_key
+
+            dates = await service.repo.get_latest_signature_dates_by_public_key(
+                [alice_pk, bob_pk]
+            )
+
+            assert dates[alice_pk].isoformat() == "2024-01-11T16:10:00"
+            assert dates[bob_pk].isoformat() == "2024-01-11T16:20:00"
+
+    @pytest.mark.asyncio
+    async def test_get_latest_source_signature_dates_by_public_key(
+        self, app, db_session, seed_signatures, seed_signers
+    ):
+        async with app.app_context():
+            service = TransactionService(db_session)
+            alice_pk = seed_signers[1].public_key
+            bob_pk = seed_signers[2].public_key
+
+            dates = await service.repo.get_latest_source_signature_dates_by_public_key(
+                [alice_pk, bob_pk], [alice_pk, bob_pk]
+            )
+
+            assert dates[(alice_pk, alice_pk)].isoformat() == "2024-01-10T15:10:00"
+            assert dates[(bob_pk, bob_pk)].isoformat() == "2024-01-11T16:20:00"
 
 
 class TestAddOrRemoveAlert:
@@ -670,7 +827,7 @@ class TestRefreshTransaction:
     """Tests for refresh_transaction() with real database."""
 
     @pytest.mark.asyncio
-    @patch("services.transaction_service.check_user_in_sign")
+    @patch("services.transaction_service.TransactionService.check_user_in_sign")
     @patch("services.transaction_service.update_transaction_sources")
     async def test_refresh_as_admin(
         self, mock_update_sources, mock_check_user, app, db_session, seed_transactions
@@ -697,7 +854,7 @@ class TestRefreshTransaction:
             mock_update_sources.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch("services.transaction_service.check_user_in_sign")
+    @patch("services.transaction_service.TransactionService.check_user_in_sign")
     @patch("services.transaction_service.update_transaction_sources")
     async def test_refresh_as_owner(
         self, mock_update_sources, mock_check_user, app, db_session, seed_transactions
@@ -721,7 +878,7 @@ class TestRefreshTransaction:
             assert "успешно обновлена" in message.lower()
 
     @pytest.mark.asyncio
-    @patch("services.transaction_service.check_user_in_sign")
+    @patch("services.transaction_service.TransactionService.check_user_in_sign")
     async def test_refresh_without_permissions(
         self, mock_check_user, app, db_session, seed_transactions
     ):

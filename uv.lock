@@ -566,15 +566,15 @@ wheels = [
 
 [[package]]
 name = "firebird-driver"
-version = "2.0.2"
+version = "2.0.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "firebird-base" },
     { name = "python-dateutil" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7a/38/ace1a5aef17398f60cac4c8fb7f8c5b7e52ab8af278d5a6bdf7d0fdb5d2a/firebird_driver-2.0.2.tar.gz", hash = "sha256:09db37329a127350b6fd072e0323ed80db10594ca62ea9f58a80174b26330629", size = 104715, upload-time = "2025-05-21T17:01:59.348Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/97/da/48da8f865f17bc7d0184717f8e92d1b7c52418ae77af315c0239cf7f3739/firebird_driver-2.0.3.tar.gz", hash = "sha256:3c78c63a1d69252880b02126c539d4a712d28563f45e896247c397cd2ada75ad", size = 105031, upload-time = "2026-04-20T12:01:55.13Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e9/c3/9b09a8ddfb562bb23d599fe2a3634e9d2a79cd9d0a6a90e0aeeeb2d5789b/firebird_driver-2.0.2-py3-none-any.whl", hash = "sha256:e9548a93847ddd35748d1e70dab66ae833b85896e29764f558d827f9d5cbf2a9", size = 109536, upload-time = "2025-05-21T17:02:01.727Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/bf/c396b8725f5d7d0df1c54ea5fecc8d4a99d515a8b116b7915e7813ad2994/firebird_driver-2.0.3-py3-none-any.whl", hash = "sha256:0c4dbea53c8ff003cd1c6fd254524f72757fa921f13a6ae23d846c7071d4f337", size = 109811, upload-time = "2026-04-20T12:01:56.855Z" },
 ]
 
 [[package]]
@@ -1567,30 +1567,30 @@ wheels = [
 
 [[package]]
 name = "sqlalchemy-firebird"
-version = "2.1"
+version = "2.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "firebird-driver" },
     { name = "packaging" },
     { name = "sqlalchemy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/90/6d/0f5d5ec6d7e4516f37df01ba01b5b7c46db250ec5a700b9847359c765624/sqlalchemy-firebird-2.1.tar.gz", hash = "sha256:ddb50ab02bbd6c7140947930dd0d4df07520b608881dee8ad022bc994cc8a95d", size = 54291, upload-time = "2024-01-09T21:21:30.178Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f7/d4/19b11ce74102bff7508d873affc8a94af6b5e41245151a924729b5231267/sqlalchemy_firebird-2.2.0.tar.gz", hash = "sha256:61149039975557497b80a8aeb9e3fb58c7a2f62fe4776337827e7ce51b4c7781", size = 71281, upload-time = "2026-05-21T12:14:54.592Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/70/e4/0e738f19fa5040b890f2fef7d43c15e169042c1991e31ba7a0a9569a740d/sqlalchemy_firebird-2.1-py3-none-any.whl", hash = "sha256:cd2010ac3c0f2bd425d4d68f259dc4e17c5fa5b32539a7e95196865d95e54317", size = 39785, upload-time = "2024-01-09T21:21:28.239Z" },
+    { url = "https://files.pythonhosted.org/packages/15/cf/c0b3c0c6736f92eb301a7b3234b7447f5f6caa12829c5bf09e187e0fddc7/sqlalchemy_firebird-2.2.0-py3-none-any.whl", hash = "sha256:dd1e63b502f6864466cb4c26789c696ac9bec3ab9b86e2a44d2340b126b0058a", size = 34431, upload-time = "2026-05-21T12:14:53.316Z" },
 ]
 
 [[package]]
 name = "sqlalchemy-firebird-async"
-version = "0.2.3"
+version = "0.2.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "greenlet" },
     { name = "sqlalchemy" },
     { name = "sqlalchemy-firebird" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ed/47/b283980f12f5ba64c8cf8e7a1de4c1bcff3105e0266fd5425fa6bcaeda10/sqlalchemy_firebird_async-0.2.3.tar.gz", hash = "sha256:9caae7ccb5020847ae003d65544c66c2276b3453756d64ded01e474aa9359535", size = 80412, upload-time = "2026-05-13T20:28:12.422Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e7/5d/c8bd506c3fee1a0b46bc78d9ee4b85d207b389825e7aea1f217a586673bd/sqlalchemy_firebird_async-0.2.5.tar.gz", hash = "sha256:bfac1352e69b921866b465858d714ba76312650493eb37865a913486890e01d1", size = 21303, upload-time = "2026-07-20T13:37:07.057Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0e/2d/76eef5f9551de907799f9a86305bc6af4ae6d0f699f6e931da47498765c7/sqlalchemy_firebird_async-0.2.3-py2.py3-none-any.whl", hash = "sha256:dfcee00059a52777bf0901c7353b41a6e7b650b7ba1a56143a52c8a9bca5e93b", size = 15348, upload-time = "2026-05-13T20:28:10.911Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/b9/3fa1da10a2ccbb8c11f1f1021e688d6a6d39ae1ba40e7fa565c674c6d81d/sqlalchemy_firebird_async-0.2.5-py2.py3-none-any.whl", hash = "sha256:bc1d79e4c7e7c94e5c62443e6adc61d41a4d7448e5b0767f71ebe380ea28d09f", size = 15563, upload-time = "2026-07-20T13:37:08.095Z" },
 ]
 
 [[package]]

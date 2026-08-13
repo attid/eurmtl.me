@@ -26,6 +26,15 @@ class TransactionRepository:
         )
         return result.scalars().first()
 
+    async def get_signers_by_public_keys(self, public_keys: list[str]) -> list[Signers]:
+        if not public_keys:
+            return []
+
+        result = await self.session.execute(
+            select(Signers).filter(Signers.public_key.in_(public_keys))
+        )
+        return list(result.scalars().all())
+
     async def get_by_sequence(
         self, sequence: int, exclude_hash: Optional[str] = None
     ) -> List[Transactions]:
@@ -155,6 +164,29 @@ class TransactionRepository:
         result = await self.session.execute(query)
         return result.scalars().first()
 
+    async def get_visible_signatures_by_public_key(
+        self, tx_hash: str, public_keys: list[str]
+    ) -> dict[str, Signatures]:
+        if not public_keys:
+            return {}
+
+        query = (
+            select(Signers.public_key, Signatures)
+            .join(Signers, Signatures.signer_id == Signers.id)
+            .filter(
+                Signatures.transaction_hash == tx_hash,
+                Signers.public_key.in_(public_keys),
+                Signatures.hidden != 1,
+            )
+            .order_by(Signatures.id)
+        )
+        result = await self.session.execute(query)
+
+        signatures_by_public_key = {}
+        for public_key, signature in result.all():
+            signatures_by_public_key.setdefault(public_key, signature)
+        return signatures_by_public_key
+
     async def get_latest_signature_by_signer(
         self, public_key: str
     ) -> Optional[Signatures]:
@@ -166,6 +198,21 @@ class TransactionRepository:
         )
         result = await self.session.execute(query)
         return result.scalars().first()
+
+    async def get_latest_signature_dates_by_public_key(
+        self, public_keys: list[str]
+    ) -> dict[str, Any]:
+        if not public_keys:
+            return {}
+
+        query = (
+            select(Signers.public_key, func.max(Signatures.add_dt))
+            .join(Signers, Signatures.signer_id == Signers.id)
+            .filter(Signers.public_key.in_(public_keys))
+            .group_by(Signers.public_key)
+        )
+        result = await self.session.execute(query)
+        return {public_key: add_dt for public_key, add_dt in result.all()}
 
     async def get_latest_signature_for_source(
         self, public_key: str, source_account: str
@@ -182,6 +229,32 @@ class TransactionRepository:
         )
         result = await self.session.execute(query)
         return result.scalars().first()
+
+    async def get_latest_source_signature_dates_by_public_key(
+        self, public_keys: list[str], source_accounts: list[str]
+    ) -> dict[tuple[str, str], Any]:
+        if not public_keys or not source_accounts:
+            return {}
+
+        query = (
+            select(
+                Signers.public_key,
+                Transactions.source_account,
+                func.max(Signatures.add_dt),
+            )
+            .join(Signers, Signatures.signer_id == Signers.id)
+            .join(Transactions, Signatures.transaction_hash == Transactions.hash)
+            .filter(
+                Signers.public_key.in_(public_keys),
+                Transactions.source_account.in_(source_accounts),
+            )
+            .group_by(Signers.public_key, Transactions.source_account)
+        )
+        result = await self.session.execute(query)
+        return {
+            (public_key, source_account): add_dt
+            for public_key, source_account, add_dt in result.all()
+        }
 
     async def get_all_signatures_for_transaction(
         self, tx_hash: str
