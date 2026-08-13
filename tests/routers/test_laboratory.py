@@ -1,12 +1,26 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
+YANDEX_METRICA_JS = "https://mc.yandex.ru/metrika/tag.js"
+YANDEX_METRICA_PIXEL = "https://mc.yandex.ru/watch/95900394"
+
 
 @pytest.mark.asyncio
 async def test_lab_root(client):
     """Test /lab"""
     response = await client.get("/lab")
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_lab_root_disables_third_party_analytics(client):
+    """Test /lab does not run analytics JS next to local signing keys."""
+    response = await client.get("/lab")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert YANDEX_METRICA_JS not in body
+    assert YANDEX_METRICA_PIXEL in body
 
 
 @pytest.mark.asyncio

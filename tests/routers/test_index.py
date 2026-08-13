@@ -4,6 +4,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+YANDEX_METRICA_JS = "https://mc.yandex.ru/metrika/tag.js"
+YANDEX_METRICA_PIXEL = "https://mc.yandex.ru/watch/95900394"
+
 
 @pytest.mark.asyncio
 async def test_index_root(client):
@@ -144,6 +147,28 @@ async def test_sealedbox_page_exposes_browser_only_crypto_tool(client):
     assert "/static/js/stellar-sdk.min.js" in body
     assert "/static/js/sealedbox.js?3" in body
     assert "/static/docs/stellar_sealedbox.py" in body
+
+
+@pytest.mark.asyncio
+async def test_sealedbox_page_disables_third_party_analytics(client):
+    """Test /sealedbox does not run analytics JS next to secret seeds."""
+    response = await client.get("/sealedbox")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert YANDEX_METRICA_JS not in body
+    assert YANDEX_METRICA_PIXEL in body
+
+
+@pytest.mark.asyncio
+async def test_address_generator_disables_third_party_analytics(client):
+    """Test /addr does not run analytics JS next to generated secret keys."""
+    response = await client.get("/addr")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert YANDEX_METRICA_JS not in body
+    assert YANDEX_METRICA_PIXEL in body
 
 
 @pytest.mark.asyncio

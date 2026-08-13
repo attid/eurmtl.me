@@ -1,12 +1,17 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
+YANDEX_METRICA_JS = "https://mc.yandex.ru/metrika/tag.js"
+YANDEX_METRICA_PIXEL = "https://mc.yandex.ru/watch/95900394"
+
 
 @pytest.mark.asyncio
 async def test_sign_tools_add_get(client):
     """Test GET /sign_tools"""
     response = await client.get("/sign_tools")
     assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert YANDEX_METRICA_JS in body
 
 
 @pytest.mark.asyncio
@@ -76,6 +81,10 @@ async def test_sign_tools_show_transaction(client):
             "/sign_tools/0000000000000000000000000000000000000000000000000000000000000000"
         )
         assert response.status_code == 200
+
+        body = await response.get_data(as_text=True)
+        assert YANDEX_METRICA_JS not in body
+        assert YANDEX_METRICA_PIXEL in body
 
 
 @pytest.mark.asyncio
