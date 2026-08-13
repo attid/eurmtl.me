@@ -151,21 +151,137 @@
     console.log(`${type || "info"}: ${message}`);
   }
 
+  function formatBytes(size) {
+    if (size < 1024) {
+      return `${size} B`;
+    }
+    if (size < 1024 * 1024) {
+      return `${(size / 1024).toFixed(1)} KB`;
+    }
+    return `${(size / 1024 / 1024).toFixed(2)} MB`;
+  }
+
+  function setActiveInputMode(textButton, fileButton, textPanel, filePanel, mode) {
+    const textMode = mode === "text";
+    textButton.classList.toggle("btn-primary", textMode);
+    textButton.classList.toggle("btn-outline-primary", !textMode);
+    fileButton.classList.toggle("btn-primary", !textMode);
+    fileButton.classList.toggle("btn-outline-primary", textMode);
+    textPanel.classList.toggle("d-none", !textMode);
+    filePanel.classList.toggle("d-none", textMode);
+  }
+
+  function setButtonBusy(button, isBusy) {
+    button.disabled = isBusy;
+    const spinner = button.querySelector(".spinner-border");
+    if (spinner) {
+      spinner.classList.toggle("d-none", !isBusy);
+    }
+  }
+
+  function setKeyValidation(input, hint, validator, emptyText) {
+    const value = trimKey(input.value);
+    input.classList.remove("is-valid", "is-invalid");
+    hint.classList.remove("text-success", "text-danger");
+    if (!value) {
+      hint.textContent = emptyText;
+      return false;
+    }
+    if (validator(value)) {
+      input.classList.add("is-valid");
+      hint.classList.add("text-success");
+      hint.textContent = "Key looks valid.";
+      return true;
+    }
+    input.classList.add("is-invalid");
+    hint.classList.add("text-danger");
+    hint.textContent = value.length < 56 ? "Expected 56 Stellar StrKey characters." : "Stellar key checksum is invalid.";
+    return false;
+  }
+
+  function setFileChip(state, prefix, file) {
+    const chip = state[`${prefix}FileChip`];
+    const input = state[`${prefix}File`];
+    if (!file) {
+      input.value = "";
+      chip.classList.remove("is-visible");
+      state[`${prefix}FileName`].textContent = "";
+      state[`${prefix}FileSize`].textContent = "";
+      return;
+    }
+    state[`${prefix}FileName`].textContent = file.name;
+    state[`${prefix}FileSize`].textContent = formatBytes(file.size);
+    chip.classList.add("is-visible");
+  }
+
+  function attachDropzone(rootDocument, state, prefix) {
+    const dropzone = state[`${prefix}FileDropzone`];
+    const input = state[`${prefix}File`];
+    const clear = state[`${prefix}FileClear`];
+    const setFile = (file) => {
+      if (!file) {
+        return;
+      }
+      if (typeof DataTransfer !== "undefined") {
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        input.files = transfer.files;
+      }
+      setFileChip(state, prefix, file);
+    };
+
+    input.addEventListener("change", () => setFileChip(state, prefix, input.files?.[0] || null));
+    clear.addEventListener("click", () => setFileChip(state, prefix, null));
+    dropzone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      dropzone.classList.add("is-over");
+    });
+    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("is-over"));
+    dropzone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dropzone.classList.remove("is-over");
+      setFile(event.dataTransfer?.files?.[0]);
+    });
+    rootDocument.addEventListener("sealedbox:clear", () => setFileChip(state, prefix, null));
+  }
+
   function setResult(state, text, bytes, filename) {
     state.resultBytes = bytes ? toUint8Array(bytes) : null;
     state.resultFilename = filename || "sealedbox.bin";
     state.result.value = text;
+    state.resultPanel.classList.remove("d-none");
     state.downloadButton.disabled = !state.resultBytes;
   }
 
   function wireUi(rootDocument, sodium, StellarSdk) {
     const state = {
       publicKey: rootDocument.getElementById("sealedbox-public-key"),
+      publicKeyHint: rootDocument.getElementById("sealedbox-public-key-hint"),
       secretKey: rootDocument.getElementById("sealedbox-secret-key"),
+      secretKeyHint: rootDocument.getElementById("sealedbox-secret-key-hint"),
       plainText: rootDocument.getElementById("sealedbox-plain-text"),
+      plainTextButton: rootDocument.getElementById("sealedbox-plain-text-mode"),
+      plainFileButton: rootDocument.getElementById("sealedbox-plain-file-mode"),
+      plainTextPanel: rootDocument.getElementById("sealedbox-plain-text-panel"),
+      plainFilePanel: rootDocument.getElementById("sealedbox-plain-file-panel"),
       plainFile: rootDocument.getElementById("sealedbox-plain-file"),
+      plainFileDropzone: rootDocument.getElementById("sealedbox-plain-file-dropzone"),
+      plainFileChip: rootDocument.getElementById("sealedbox-plain-file-chip"),
+      plainFileName: rootDocument.getElementById("sealedbox-plain-file-name"),
+      plainFileSize: rootDocument.getElementById("sealedbox-plain-file-size"),
+      plainFileClear: rootDocument.getElementById("sealedbox-plain-file-clear"),
       cipherText: rootDocument.getElementById("sealedbox-cipher-text"),
+      cipherTextButton: rootDocument.getElementById("sealedbox-cipher-text-mode"),
+      cipherFileButton: rootDocument.getElementById("sealedbox-cipher-file-mode"),
+      cipherTextPanel: rootDocument.getElementById("sealedbox-cipher-text-panel"),
+      cipherFilePanel: rootDocument.getElementById("sealedbox-cipher-file-panel"),
       cipherFile: rootDocument.getElementById("sealedbox-cipher-file"),
+      cipherFileDropzone: rootDocument.getElementById("sealedbox-cipher-file-dropzone"),
+      cipherFileChip: rootDocument.getElementById("sealedbox-cipher-file-chip"),
+      cipherFileName: rootDocument.getElementById("sealedbox-cipher-file-name"),
+      cipherFileSize: rootDocument.getElementById("sealedbox-cipher-file-size"),
+      cipherFileClear: rootDocument.getElementById("sealedbox-cipher-file-clear"),
+      resultPanel: rootDocument.getElementById("sealedbox-result-panel"),
       result: rootDocument.getElementById("sealedbox-result"),
       resultStatus: rootDocument.getElementById("sealedbox-result-status"),
       downloadButton: rootDocument.getElementById("sealedbox-download-result"),
@@ -173,10 +289,62 @@
       resultFilename: "sealedbox.bin",
     };
 
+    state.plainTextButton.addEventListener("click", () =>
+      setActiveInputMode(state.plainTextButton, state.plainFileButton, state.plainTextPanel, state.plainFilePanel, "text"),
+    );
+    state.plainFileButton.addEventListener("click", () =>
+      setActiveInputMode(state.plainTextButton, state.plainFileButton, state.plainTextPanel, state.plainFilePanel, "file"),
+    );
+    state.cipherTextButton.addEventListener("click", () =>
+      setActiveInputMode(
+        state.cipherTextButton,
+        state.cipherFileButton,
+        state.cipherTextPanel,
+        state.cipherFilePanel,
+        "text",
+      ),
+    );
+    state.cipherFileButton.addEventListener("click", () =>
+      setActiveInputMode(
+        state.cipherTextButton,
+        state.cipherFileButton,
+        state.cipherTextPanel,
+        state.cipherFilePanel,
+        "file",
+      ),
+    );
+    attachDropzone(rootDocument, state, "plain");
+    attachDropzone(rootDocument, state, "cipher");
+
+    state.publicKey.addEventListener("input", () =>
+      setKeyValidation(
+        state.publicKey,
+        state.publicKeyHint,
+        StellarSdk.StrKey.isValidEd25519PublicKey,
+        "Starts with G, 56 characters.",
+      ),
+    );
+    state.secretKey.addEventListener("input", () =>
+      setKeyValidation(
+        state.secretKey,
+        state.secretKeyHint,
+        StellarSdk.StrKey.isValidEd25519SecretSeed,
+        "Starts with S. It never leaves this tab.",
+      ),
+    );
+
+    rootDocument.getElementById("sealedbox-secret-toggle").addEventListener("click", (event) => {
+      const showSecret = state.secretKey.type === "password";
+      state.secretKey.type = showSecret ? "text" : "password";
+      event.currentTarget.innerHTML = showSecret ? '<i class="ti ti-eye-off"></i>' : '<i class="ti ti-eye"></i>';
+    });
+
     rootDocument.getElementById("sealedbox-generate-key").addEventListener("click", () => {
       const keypair = generateStellarKeypair(StellarSdk);
       state.publicKey.value = keypair.publicKey;
       state.secretKey.value = keypair.secretKey;
+      state.publicKey.dispatchEvent(new Event("input"));
+      state.secretKey.dispatchEvent(new Event("input"));
       notify("Keypair generated", "success");
     });
 
@@ -190,8 +358,11 @@
     });
 
     rootDocument.getElementById("sealedbox-encrypt-button").addEventListener("click", async () => {
+      const button = rootDocument.getElementById("sealedbox-encrypt-button");
       try {
-        const fileBytes = await readFileInput(state.plainFile);
+        setButtonBusy(button, true);
+        const fileMode = !state.plainFilePanel.classList.contains("d-none");
+        const fileBytes = fileMode ? await readFileInput(state.plainFile) : null;
         const plaintext = fileBytes || textToBytes(state.plainText.value);
         const recipientKey = state.publicKey.value || state.secretKey.value;
         const ciphertext = encryptToStellarKey(sodium, StellarSdk, recipientKey, plaintext);
@@ -202,12 +373,17 @@
         notify("Encrypted", "success");
       } catch (error) {
         notify(error.message, "danger");
+      } finally {
+        setButtonBusy(button, false);
       }
     });
 
     rootDocument.getElementById("sealedbox-decrypt-button").addEventListener("click", async () => {
+      const button = rootDocument.getElementById("sealedbox-decrypt-button");
       try {
-        const fileBytes = await readFileInput(state.cipherFile);
+        setButtonBusy(button, true);
+        const fileMode = !state.cipherFilePanel.classList.contains("d-none");
+        const fileBytes = fileMode ? await readFileInput(state.cipherFile) : null;
         const ciphertext = fileBytes || base64ToBytes(sodium, state.cipherText.value);
         const plaintext = decryptWithStellarSecret(sodium, StellarSdk, state.secretKey.value, ciphertext);
         const text = decodeDisplayText(plaintext);
@@ -229,7 +405,26 @@
         notify("Decrypted", "success");
       } catch (error) {
         notify(error.message, "danger");
+      } finally {
+        setButtonBusy(button, false);
       }
+    });
+
+    rootDocument.getElementById("sealedbox-clear-button").addEventListener("click", () => {
+      state.publicKey.value = "";
+      state.secretKey.value = "";
+      state.plainText.value = "";
+      state.cipherText.value = "";
+      state.result.value = "";
+      state.resultBytes = null;
+      state.resultFilename = "sealedbox.bin";
+      state.resultPanel.classList.add("d-none");
+      state.downloadButton.disabled = true;
+      state.resultStatus.textContent = "";
+      rootDocument.dispatchEvent(new Event("sealedbox:clear"));
+      state.publicKey.dispatchEvent(new Event("input"));
+      state.secretKey.dispatchEvent(new Event("input"));
+      notify("Cleared", "success");
     });
 
     rootDocument.getElementById("sealedbox-copy-result").addEventListener("click", async () => {

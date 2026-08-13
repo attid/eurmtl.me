@@ -2,120 +2,241 @@
 
 {% block page_title %}Stellar SealedBox{% endblock %}
 
+{% block head_scripts %}
+<style>
+    .sealedbox-shell {
+        max-width: 980px;
+        margin: 0 auto;
+    }
+
+    .sealedbox-mode .nav-link {
+        min-height: 74px;
+        border: 1px solid var(--tblr-border-color);
+        border-radius: 8px;
+        text-align: left;
+    }
+
+    .sealedbox-mode .nav-link.active {
+        border-color: var(--tblr-primary);
+        box-shadow: 0 0 0 1px var(--tblr-primary);
+    }
+
+    .sealedbox-mode-hint {
+        display: block;
+        margin-top: 2px;
+        color: var(--tblr-muted);
+        font-size: .8125rem;
+        font-weight: 400;
+    }
+
+    .sealedbox-dropzone {
+        display: block;
+        border: 1px dashed var(--tblr-border-color);
+        border-radius: 8px;
+        padding: 2rem 1rem;
+        cursor: pointer;
+        text-align: center;
+        transition: border-color .15s ease, background-color .15s ease;
+    }
+
+    .sealedbox-dropzone:hover,
+    .sealedbox-dropzone.is-over {
+        border-color: var(--tblr-primary);
+        background: rgba(var(--tblr-primary-rgb), .04);
+    }
+
+    .sealedbox-file-chip {
+        display: none;
+    }
+
+    .sealedbox-file-chip.is-visible {
+        display: flex;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div id="sealedbox-app" class="row g-4">
-    <div class="col-12">
-        <div class="alert alert-info" role="alert">
-            <div class="d-flex">
-                <div><i class="ti ti-shield-lock icon alert-icon"></i></div>
-                <div>
-                    Files, text, and secret keys stay in this browser tab. The server only serves this page and static scripts.
+<div id="sealedbox-app" class="sealedbox-shell">
+    <div class="alert alert-dark" role="alert">
+        <div class="d-flex gap-3">
+            <i class="ti ti-shield-lock icon alert-icon mt-1"></i>
+            <div>
+                <strong>Everything happens locally in your browser.</strong>
+                <div class="text-secondary">
+                    Files, text, and secret keys stay in this tab. The server only serves this page and static scripts, so the page can be saved and used offline.
                 </div>
             </div>
         </div>
     </div>
 
-    <div class="col-12 col-xl-5">
-        <section class="border rounded p-3 h-100">
-            <h3 class="h3 mb-3">Keys</h3>
-            <div class="mb-3">
-                <label class="form-label" for="sealedbox-public-key">Recipient public key</label>
-                <input class="form-control font-monospace" id="sealedbox-public-key" autocomplete="off" spellcheck="false" placeholder="G...">
-            </div>
-            <div class="mb-3">
-                <label class="form-label" for="sealedbox-secret-key">Secret seed</label>
-                <input class="form-control font-monospace" id="sealedbox-secret-key" autocomplete="off" spellcheck="false" placeholder="S...">
-            </div>
-            <div class="d-flex flex-wrap gap-2">
-                <button class="btn btn-outline-primary" id="sealedbox-generate-key" type="button">
-                    <i class="ti ti-key me-1"></i>Generate keypair
-                </button>
-                <button class="btn btn-outline-secondary" id="sealedbox-public-from-secret" type="button">
-                    <i class="ti ti-arrow-up-right me-1"></i>Public from secret
-                </button>
-            </div>
-        </section>
-    </div>
+    <ul class="nav nav-pills nav-fill sealedbox-mode mb-4" id="sealedbox-mode-tabs" data-bs-toggle="tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <a href="#sealedbox-encrypt" class="nav-link active" data-bs-toggle="tab" aria-selected="true" role="tab">
+                <span class="fw-semibold"><i class="ti ti-lock me-1"></i>Encrypt</span>
+                <span class="sealedbox-mode-hint">Recipient public key is enough</span>
+            </a>
+        </li>
+        <li class="nav-item" role="presentation">
+            <a href="#sealedbox-decrypt" class="nav-link" data-bs-toggle="tab" aria-selected="false" role="tab">
+                <span class="fw-semibold"><i class="ti ti-lock-open me-1"></i>Decrypt</span>
+                <span class="sealedbox-mode-hint">Your secret seed is required</span>
+            </a>
+        </li>
+    </ul>
 
-    <div class="col-12 col-xl-7">
-        <section class="border rounded p-3 h-100">
-            <ul class="nav nav-tabs mb-3" data-bs-toggle="tabs" role="tablist">
-                <li class="nav-item" role="presentation">
-                    <a href="#sealedbox-encrypt" class="nav-link active" data-bs-toggle="tab" aria-selected="true" role="tab">
-                        <i class="ti ti-lock me-1"></i>Encrypt
-                    </a>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <a href="#sealedbox-decrypt" class="nav-link" data-bs-toggle="tab" aria-selected="false" role="tab">
-                        <i class="ti ti-lock-open me-1"></i>Decrypt
-                    </a>
-                </li>
-            </ul>
-            <div class="tab-content">
-                <div class="tab-pane active show" id="sealedbox-encrypt" role="tabpanel">
-                    <div class="mb-3">
-                        <label class="form-label" for="sealedbox-plain-text">Text</label>
-                        <textarea class="form-control font-monospace" id="sealedbox-plain-text" rows="7" spellcheck="false"></textarea>
+    <div class="tab-content mb-4">
+        <div class="tab-pane active show" id="sealedbox-encrypt" role="tabpanel">
+            <section class="border rounded p-3 p-md-4">
+                <div class="mb-3">
+                    <label class="form-label" for="sealedbox-public-key">Recipient public key</label>
+                    <div class="input-icon">
+                        <input class="form-control font-monospace" id="sealedbox-public-key" autocomplete="off" spellcheck="false" placeholder="G...">
+                        <span class="input-icon-addon"><i class="ti ti-key"></i></span>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="sealedbox-plain-file">File</label>
-                        <input class="form-control" id="sealedbox-plain-file" type="file">
+                    <div class="form-hint" id="sealedbox-public-key-hint">Starts with G, 56 characters.</div>
+                </div>
+
+                <div class="btn-list mb-3" role="group" aria-label="Encrypt input type">
+                    <button class="btn btn-primary" id="sealedbox-plain-text-mode" type="button">
+                        <i class="ti ti-align-left me-1"></i>Text
+                    </button>
+                    <button class="btn btn-outline-primary" id="sealedbox-plain-file-mode" type="button">
+                        <i class="ti ti-file me-1"></i>File
+                    </button>
+                </div>
+
+                <div id="sealedbox-plain-text-panel">
+                    <label class="form-label" for="sealedbox-plain-text">Text to encrypt</label>
+                    <textarea class="form-control font-monospace" id="sealedbox-plain-text" rows="8" spellcheck="false" placeholder="Message only the recipient can read..."></textarea>
+                </div>
+
+                <div id="sealedbox-plain-file-panel" class="d-none">
+                    <label class="form-label" for="sealedbox-plain-file">File to encrypt</label>
+                    <label class="sealedbox-dropzone" id="sealedbox-plain-file-dropzone" for="sealedbox-plain-file">
+                        <i class="ti ti-upload fs-1 text-primary"></i>
+                        <span class="d-block fw-semibold mt-2">Drop a file here</span>
+                        <span class="d-block text-secondary">or click to choose one</span>
+                    </label>
+                    <input class="visually-hidden" id="sealedbox-plain-file" type="file">
+                    <div class="sealedbox-file-chip align-items-center gap-2 border rounded p-2 mt-2" id="sealedbox-plain-file-chip">
+                        <i class="ti ti-file text-primary"></i>
+                        <div class="text-truncate">
+                            <div class="fw-semibold text-truncate" id="sealedbox-plain-file-name"></div>
+                            <div class="text-secondary small" id="sealedbox-plain-file-size"></div>
+                        </div>
+                        <button class="btn btn-icon btn-sm ms-auto" id="sealedbox-plain-file-clear" type="button" aria-label="Remove file">
+                            <i class="ti ti-x"></i>
+                        </button>
                     </div>
+                </div>
+
+                <div class="btn-list mt-4">
                     <button class="btn btn-primary" id="sealedbox-encrypt-button" type="button">
+                        <span class="spinner-border spinner-border-sm me-2 d-none" aria-hidden="true"></span>
                         <i class="ti ti-lock me-1"></i>Encrypt
                     </button>
-                </div>
-                <div class="tab-pane" id="sealedbox-decrypt" role="tabpanel">
-                    <div class="mb-3">
-                        <label class="form-label" for="sealedbox-cipher-text">Ciphertext base64</label>
-                        <textarea class="form-control font-monospace" id="sealedbox-cipher-text" rows="7" spellcheck="false"></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label" for="sealedbox-cipher-file">Ciphertext file</label>
-                        <input class="form-control" id="sealedbox-cipher-file" type="file">
-                    </div>
-                    <button class="btn btn-primary" id="sealedbox-decrypt-button" type="button">
-                        <i class="ti ti-lock-open me-1"></i>Decrypt
+                    <button class="btn btn-outline-secondary" id="sealedbox-clear-button" type="button">
+                        <i class="ti ti-eraser me-1"></i>Clear
                     </button>
                 </div>
-            </div>
-        </section>
+            </section>
+        </div>
+
+        <div class="tab-pane" id="sealedbox-decrypt" role="tabpanel">
+            <section class="border rounded p-3 p-md-4">
+                <div class="mb-3">
+                    <label class="form-label" for="sealedbox-secret-key">Your secret seed</label>
+                    <div class="input-group">
+                        <input class="form-control font-monospace" id="sealedbox-secret-key" type="password" autocomplete="off" spellcheck="false" placeholder="S...">
+                        <button class="btn btn-icon" id="sealedbox-secret-toggle" type="button" aria-label="Show or hide secret seed">
+                            <i class="ti ti-eye"></i>
+                        </button>
+                    </div>
+                    <div class="form-hint" id="sealedbox-secret-key-hint">Starts with S. It never leaves this tab.</div>
+                </div>
+
+                <button class="btn btn-outline-secondary mb-3" id="sealedbox-public-from-secret" type="button">
+                    <i class="ti ti-arrow-up-right me-1"></i>Fill recipient public key from this seed
+                </button>
+
+                <div class="btn-list mb-3" role="group" aria-label="Decrypt input type">
+                    <button class="btn btn-primary" id="sealedbox-cipher-text-mode" type="button">
+                        <i class="ti ti-align-left me-1"></i>Text
+                    </button>
+                    <button class="btn btn-outline-primary" id="sealedbox-cipher-file-mode" type="button">
+                        <i class="ti ti-file me-1"></i>File
+                    </button>
+                </div>
+
+                <div id="sealedbox-cipher-text-panel">
+                    <label class="form-label" for="sealedbox-cipher-text">Ciphertext base64</label>
+                    <textarea class="form-control font-monospace" id="sealedbox-cipher-text" rows="8" spellcheck="false" placeholder="Paste base64 sealed box..."></textarea>
+                </div>
+
+                <div id="sealedbox-cipher-file-panel" class="d-none">
+                    <label class="form-label" for="sealedbox-cipher-file">Ciphertext file</label>
+                    <label class="sealedbox-dropzone" id="sealedbox-cipher-file-dropzone" for="sealedbox-cipher-file">
+                        <i class="ti ti-upload fs-1 text-primary"></i>
+                        <span class="d-block fw-semibold mt-2">Drop a .ssb file here</span>
+                        <span class="d-block text-secondary">or click to choose one</span>
+                    </label>
+                    <input class="visually-hidden" id="sealedbox-cipher-file" type="file">
+                    <div class="sealedbox-file-chip align-items-center gap-2 border rounded p-2 mt-2" id="sealedbox-cipher-file-chip">
+                        <i class="ti ti-file-text text-primary"></i>
+                        <div class="text-truncate">
+                            <div class="fw-semibold text-truncate" id="sealedbox-cipher-file-name"></div>
+                            <div class="text-secondary small" id="sealedbox-cipher-file-size"></div>
+                        </div>
+                        <button class="btn btn-icon btn-sm ms-auto" id="sealedbox-cipher-file-clear" type="button" aria-label="Remove file">
+                            <i class="ti ti-x"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="btn-list mt-4">
+                    <button class="btn btn-primary" id="sealedbox-decrypt-button" type="button">
+                        <span class="spinner-border spinner-border-sm me-2 d-none" aria-hidden="true"></span>
+                        <i class="ti ti-lock-open me-1"></i>Decrypt
+                    </button>
+                    <button class="btn btn-outline-secondary" id="sealedbox-generate-key" type="button">
+                        <i class="ti ti-key me-1"></i>Generate test keypair
+                    </button>
+                </div>
+            </section>
+        </div>
     </div>
 
-    <div class="col-12">
-        <section class="border rounded p-3">
-            <h3 class="h3 mb-3">Result</h3>
-            <div class="mb-3">
-                <label class="form-label" for="sealedbox-result">Base64 / text</label>
-                <textarea class="form-control font-monospace" id="sealedbox-result" rows="8" spellcheck="false"></textarea>
-                <div class="form-hint" id="sealedbox-result-status"></div>
-            </div>
-            <div class="d-flex flex-wrap gap-2">
-                <button class="btn btn-outline-secondary" id="sealedbox-copy-result" type="button">
-                    <i class="ti ti-copy me-1"></i>Copy
-                </button>
-                <button class="btn btn-outline-secondary" id="sealedbox-download-result" type="button" disabled>
-                    <i class="ti ti-download me-1"></i>Download
-                </button>
-            </div>
-        </section>
-    </div>
+    <section class="border rounded p-3 p-md-4 d-none mb-4" id="sealedbox-result-panel" aria-live="polite">
+        <div class="d-flex align-items-center gap-2 mb-3">
+            <span class="status-dot status-dot-animated bg-green"></span>
+            <h3 class="h3 mb-0">Result</h3>
+        </div>
+        <label class="form-label" for="sealedbox-result">Base64 / text</label>
+        <textarea class="form-control font-monospace" id="sealedbox-result" rows="8" spellcheck="false" readonly></textarea>
+        <div class="form-hint" id="sealedbox-result-status"></div>
+        <div class="btn-list mt-3">
+            <button class="btn btn-outline-secondary" id="sealedbox-copy-result" type="button">
+                <i class="ti ti-copy me-1"></i>Copy
+            </button>
+            <button class="btn btn-outline-secondary" id="sealedbox-download-result" type="button" disabled>
+                <i class="ti ti-download me-1"></i>Download
+            </button>
+        </div>
+    </section>
 
-    <div class="col-12">
-        <section class="border rounded p-3">
-            <p class="mb-2">
-                Agents and scripts can use the same algorithm without this page:
-            </p>
-            <div class="d-flex flex-wrap gap-2">
-                <a class="btn btn-outline-primary" href="/static/docs/stellar_sealedbox.py" download>
-                    <i class="ti ti-brand-python me-1"></i>Python CLI
-                </a>
-                <a class="btn btn-outline-secondary" href="/static/js/sealedbox.js">
-                    <i class="ti ti-brand-javascript me-1"></i>Browser JS
-                </a>
-            </div>
-        </section>
-    </div>
+    <section class="border rounded p-3 p-md-4">
+        <p class="mb-2">
+            Agents and scripts can use the same algorithm without this page:
+        </p>
+        <div class="btn-list">
+            <a class="btn btn-outline-primary" href="/static/docs/stellar_sealedbox.py" download>
+                <i class="ti ti-brand-python me-1"></i>Python CLI
+            </a>
+            <a class="btn btn-outline-secondary" href="/static/js/sealedbox.js?3">
+                <i class="ti ti-brand-javascript me-1"></i>Browser JS
+            </a>
+        </div>
+    </section>
 </div>
 {% endblock %}
 
@@ -123,5 +244,5 @@
 <script src="/static/js/vendor/libsodium-sumo.js"></script>
 <script src="/static/js/vendor/libsodium-wrappers-sumo.js"></script>
 <script src="/static/js/stellar-sdk.min.js"></script>
-<script src="/static/js/sealedbox.js?2"></script>
+<script src="/static/js/sealedbox.js?3"></script>
 {% endblock %}
