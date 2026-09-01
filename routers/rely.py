@@ -23,7 +23,7 @@ from stellar_sdk.client.aiohttp_client import AiohttpClient
 from stellar_sdk.exceptions import SdkError
 
 from other.config_reader import config
-from other.grist_tools import grist_manager, GristTableConfig, GristAPI
+from other.grist_tools import GristTableConfig, GristAPI
 from services.stellar_client import stellar_build_xdr, add_transaction
 from other.telegram_tools import skynet_bot
 
@@ -31,8 +31,8 @@ from other.telegram_tools import skynet_bot
 RELY_DEAL_CHAT_ID = -1003363491610  # rely
 # RELY_DEAL_CHAT_ID = -1001767165598 #test group
 
-GRIST_ACCESS_ID = "kceNjvoEEihSsc8dQ5vZVB"
-GRIST_BASE_URL = "https://mtl-rely.getgrist.com/api/docs"
+RELY_GRIST_DOCUMENT_ID = "kceNjvoEEihSsc8dQ5vZVB"
+RELY_GRIST_BASE_URL = "https://mtl-rely.getgrist.com/api/docs"
 
 DEAL_ACCOUNT = "GCWCVYBHVDBZP7U4DDJBPEMWKYMUQDR6PKWS6EHYM2OB4YSZGBU3DEAL"
 DEAL_ASSET = "RELY-GC5WBT3D5GPZ3FU7MTUMVWTLAS3IUU7EPCTFJSLHI5RYMPTLEIX2RELY"
@@ -248,9 +248,9 @@ class GristDealParticipantRepository:
         """
         self._grist_api = grist_api
         self._table_config = GristTableConfig(
-            access_id=GRIST_ACCESS_ID,
+            access_id=RELY_GRIST_DOCUMENT_ID,
             table_name="Conditions",
-            base_url=GRIST_BASE_URL,
+            base_url=RELY_GRIST_BASE_URL,
         )
 
     async def get_participants_by_deal_id(
@@ -309,9 +309,9 @@ class GristHolderRepository:
         """
         self._grist_api = grist_api
         self._table_config = GristTableConfig(
-            access_id=GRIST_ACCESS_ID,
+            access_id=RELY_GRIST_DOCUMENT_ID,
             table_name="Holders",
-            base_url=GRIST_BASE_URL,
+            base_url=RELY_GRIST_BASE_URL,
         )
 
     async def get_holders_by_ids(self, holder_ids: list[int]) -> dict[int, HolderEntry]:
@@ -366,9 +366,9 @@ class GristDealRepository:
         """
         self._grist_api = grist_api
         self._table_config = GristTableConfig(
-            access_id=GRIST_ACCESS_ID,
+            access_id=RELY_GRIST_DOCUMENT_ID,
             table_name="Deals",
-            base_url=GRIST_BASE_URL,
+            base_url=RELY_GRIST_BASE_URL,
         )
 
     async def update_fields(self, deal_id: int, fields: dict[str, Any]) -> bool:
@@ -397,9 +397,12 @@ class GristDealRepository:
 
 
 # --- Module-level Repository Instantiation ---
-participant_repo = GristDealParticipantRepository(grist_manager)
-holder_repo = GristHolderRepository(grist_manager)
-deal_repo = GristDealRepository(grist_manager)
+# RELY intentionally uses its own host and credential. Do not replace this
+# client with the shared Montelibero client above.
+rely_grist_manager = GristAPI(token=config.rely_grist_token)
+participant_repo = GristDealParticipantRepository(rely_grist_manager)
+holder_repo = GristHolderRepository(rely_grist_manager)
+deal_repo = GristDealRepository(rely_grist_manager)
 
 
 class Deal:

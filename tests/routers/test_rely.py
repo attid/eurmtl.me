@@ -1,6 +1,33 @@
 import pytest
 from unittest.mock import patch
 
+from routers.rely import (
+    RELY_GRIST_BASE_URL,
+    RELY_GRIST_DOCUMENT_ID,
+    GristDealRepository,
+    GristDealParticipantRepository,
+    GristHolderRepository,
+)
+
+
+def test_rely_repositories_keep_the_separate_grist_binding():
+    fake_api = object()
+
+    repositories = [
+        GristDealParticipantRepository(fake_api),
+        GristHolderRepository(fake_api),
+        GristDealRepository(fake_api),
+    ]
+
+    assert RELY_GRIST_BASE_URL == "https://mtl-rely.getgrist.com/api/docs"
+    assert RELY_GRIST_DOCUMENT_ID == "kceNjvoEEihSsc8dQ5vZVB"
+    assert {repository._table_config.base_url for repository in repositories} == {
+        RELY_GRIST_BASE_URL
+    }
+    assert {repository._table_config.access_id for repository in repositories} == {
+        RELY_GRIST_DOCUMENT_ID
+    }
+
 
 @pytest.mark.asyncio
 async def test_rely_webhook_unauthorized(client):
