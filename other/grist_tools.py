@@ -6,6 +6,7 @@ from typing import List, Dict, Any, Optional
 from loguru import logger
 from stellar_sdk import StrKey, ServerAsync
 from stellar_sdk.client.aiohttp_client import AiohttpClient
+from pydantic import SecretStr
 
 from other.cache_tools import AsyncTTLCache
 from other.telegram_tools import skynet_bot
@@ -18,48 +19,57 @@ from other.web_tools import HTTPSessionManager
 class GristTableConfig:
     access_id: str
     table_name: str
-    base_url: str = "https://montelibero.getgrist.com/api/docs"
+    base_url: str = "https://grist.eurmtl.me/api/docs"
 
 
 # Enum для таблиц
 @dataclass
 class MTLGrist:
-    NOTIFY_ACCOUNTS = GristTableConfig("oNYTdHkEstf9X7dkh7yH11", "Accounts")
-    NOTIFY_ASSETS = GristTableConfig("oNYTdHkEstf9X7dkh7yH11", "Assets")
-    NOTIFY_TREASURY = GristTableConfig("oNYTdHkEstf9X7dkh7yH11", "Treasury")
-    NOTIFY_MESSAGES = GristTableConfig("oNYTdHkEstf9X7dkh7yH11", "Messages")
+    NOTIFY_ACCOUNTS = GristTableConfig("f3ETcoWEkzvkcUnQJtv5tm", "Accounts")
+    NOTIFY_ASSETS = GristTableConfig("f3ETcoWEkzvkcUnQJtv5tm", "Assets")
+    NOTIFY_TREASURY = GristTableConfig("f3ETcoWEkzvkcUnQJtv5tm", "Treasury")
+    NOTIFY_MESSAGES = GristTableConfig("f3ETcoWEkzvkcUnQJtv5tm", "Messages")
 
-    MTLA_CHATS = GristTableConfig("aYk6cpKAp9CDPJe51sP3AT", "MTLA_CHATS")
-    MTLA_COUNCILS = GristTableConfig("aYk6cpKAp9CDPJe51sP3AT", "MTLA_COUNCILS")
+    MTLA_CHATS = GristTableConfig("x4r7WiFKsJREzXS4vowwqj", "MTLA_CHATS")
+    MTLA_COUNCILS = GristTableConfig("x4r7WiFKsJREzXS4vowwqj", "MTLA_COUNCILS")
 
-    SP_USERS = GristTableConfig("3sFtdPU7Dcfw2XwTioLcJD", "SP_USERS")
-    SP_CHATS = GristTableConfig("3sFtdPU7Dcfw2XwTioLcJD", "SP_CHATS")
-    QUESTIONS = GristTableConfig("3sFtdPU7Dcfw2XwTioLcJD", "QUESTIONS")
-    QUESTION_DATA = GristTableConfig("3sFtdPU7Dcfw2XwTioLcJD", "QUESTION_DATA")
+    SP_USERS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "SP_USERS")
+    SP_CHATS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "SP_CHATS")
+    QUESTIONS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "QUESTIONS")
+    QUESTION_DATA = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "QUESTION_DATA")
     QUESTION_TEMPLATES = GristTableConfig(
-        "3sFtdPU7Dcfw2XwTioLcJD", "QUESTION_TEMPLATES"
+        "hpZWKq729vw2D5AkG7oYYz", "QUESTION_TEMPLATES"
     )
 
-    MAIN_CHAT_INCOME = GristTableConfig("gnXfashifjtdExQoeQeij6", "Main_chat_income")
-    MAIN_CHAT_OUTCOME = GristTableConfig("gnXfashifjtdExQoeQeij6", "Main_chat_outcome")
+    MAIN_CHAT_INCOME = GristTableConfig("khWn5KMRbfUQQoaPydjhGt", "Main_chat_income")
+    MAIN_CHAT_OUTCOME = GristTableConfig("khWn5KMRbfUQQoaPydjhGt", "Main_chat_outcome")
 
-    GRIST_access = GristTableConfig("rGD426DVBySAFMTLEqKp1d", "Access")
-    GRIST_use_log = GristTableConfig("rGD426DVBySAFMTLEqKp1d", "Use_log")
+    GRIST_access = GristTableConfig("1sd6z3cHUPVQSgvyy7iARy", "Access")
+    GRIST_use_log = GristTableConfig("1sd6z3cHUPVQSgvyy7iARy", "Use_log")
 
-    EURMTL_users = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Users")
-    EURMTL_accounts = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Accounts")
-    EURMTL_assets = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Assets")
-    EURMTL_pools = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Pools")
-    EURMTL_secretaries = GristTableConfig("gxZer88w3TotbWzkQCzvyw", "Secretaries")
+    EURMTL_users = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "Users")
+    EURMTL_accounts = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "Accounts")
+    EURMTL_assets = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "Assets")
+    EURMTL_pools = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "Pools")
+    EURMTL_secretaries = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "Secretaries")
 
-    MTL_shareholders = GristTableConfig("cqmjqbs4e97hbKHyRADQ9N", "ShareHolders")
-    MTL_admin_panel = GristTableConfig("cqmjqbs4e97hbKHyRADQ9N", "AdminPanel")
+    MTL_shareholders = GristTableConfig("eNajcBuG4bFPzDvZfGC3JQ", "ShareHolders")
+    MTL_admin_panel = GristTableConfig("eNajcBuG4bFPzDvZfGC3JQ", "AdminPanel")
 
 
 class GristAPI:
-    def __init__(self, session_manager: HTTPSessionManager = None):
+    def __init__(
+        self,
+        session_manager: HTTPSessionManager = None,
+        token: SecretStr | str | None = None,
+    ):
         self.session_manager = session_manager
-        self.token = config.grist_token
+        configured_token = config.grist_token if token is None else token
+        self.token = (
+            configured_token.get_secret_value()
+            if isinstance(configured_token, SecretStr)
+            else configured_token
+        )
         if not self.session_manager:
             self.session_manager = HTTPSessionManager()
 

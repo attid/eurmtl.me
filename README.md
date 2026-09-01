@@ -115,7 +115,10 @@ Configuration is managed via `.env` file. See `.env_sample` for all available op
 - `MONGO_DSN` - MongoDB connection string
 - `SECRET_KEY` - Application secret key for sessions
 - `SENTRY_DSN` - Sentry error tracking DSN
-- `GRIST_*` - Grist spreadsheet integration settings
+- `GRIST_TOKEN` - token for Montelibero documents on `https://grist.eurmtl.me`
+- `RELY_GRIST_TOKEN` - separate token for the RELY document on
+  `https://mtl-rely.getgrist.com`
+- `GRIST_INCOME` - webhook authentication token
 - `ENVIRONMENT=production` - Enable production mode (disables test session)
 
 ### Test Mode

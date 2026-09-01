@@ -7,6 +7,7 @@ from db.sql_models import User
 from other.grist_tools import (
     GristAPI,
     GristTableConfig,
+    MTLGrist,
     extract_record_ids_from_grist_webhook,
     get_grist_asset_by_code,
     get_secretaries,
@@ -15,6 +16,54 @@ from other.grist_tools import (
     send_notify_message_record,
     should_send_notify_message_record,
 )
+
+
+def test_mtl_grist_bindings_use_audited_cutover_ids():
+    expected_document_ids = {
+        "NOTIFY_MESSAGES": "f3ETcoWEkzvkcUnQJtv5tm",
+        "MTLA_CHATS": "x4r7WiFKsJREzXS4vowwqj",
+        "MTLA_COUNCILS": "x4r7WiFKsJREzXS4vowwqj",
+        "SP_USERS": "hpZWKq729vw2D5AkG7oYYz",
+        "MAIN_CHAT_INCOME": "khWn5KMRbfUQQoaPydjhGt",
+        "GRIST_access": "1sd6z3cHUPVQSgvyy7iARy",
+        "EURMTL_users": "3Fk4hjCv847GBx8ZTCPN2Y",
+        "MTL_shareholders": "eNajcBuG4bFPzDvZfGC3JQ",
+    }
+
+    for table_name, document_id in expected_document_ids.items():
+        table = getattr(MTLGrist, table_name)
+        assert table.access_id == document_id
+        assert table.base_url == "https://grist.eurmtl.me/api/docs"
+
+
+@pytest.mark.asyncio
+async def test_grist_api_supports_independent_credentials():
+    session_manager = SimpleNamespace(
+        get_web_request=AsyncMock(
+            side_effect=[
+                SimpleNamespace(status=200, data={"records": []}),
+                SimpleNamespace(status=200, data={"records": []}),
+            ]
+        )
+    )
+
+    with patch("other.grist_tools.config.grist_token", "primary-token"):
+        primary_api = GristAPI(session_manager=session_manager)
+        rely_api = GristAPI(session_manager=session_manager, token="rely-token")
+        await primary_api.fetch_data(MTLGrist.NOTIFY_MESSAGES)
+        await rely_api.fetch_data(
+            GristTableConfig(
+                "kceNjvoEEihSsc8dQ5vZVB",
+                "Deals",
+                base_url="https://mtl-rely.getgrist.com/api/docs",
+            )
+        )
+
+    requests = session_manager.get_web_request.await_args_list
+    assert requests[0].kwargs["headers"]["Authorization"] == "Bearer primary-token"
+    assert requests[1].kwargs["headers"]["Authorization"] == "Bearer rely-token"
+    assert "grist.eurmtl.me" in requests[0].kwargs["url"]
+    assert "mtl-rely.getgrist.com" in requests[1].kwargs["url"]
 
 
 @pytest.mark.asyncio

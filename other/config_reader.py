@@ -41,7 +41,8 @@ class Settings(BaseSettings):
     test_user_id: int = 0
     port: int = 8000
     test_mode: bool = False
-    grist_token: str
+    grist_token: SecretStr
+    rely_grist_token: SecretStr = SecretStr("")
     grist_income: str
     telegram_api_url: str | None = None
     telegram_login_client_id: str = ""
