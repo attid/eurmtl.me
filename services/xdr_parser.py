@@ -300,7 +300,9 @@ def decode_xdr_to_base64(xdr, return_json=False):
             op_json["attributes"] = {"detail": "Unsupported operation type"}
             print("00000000___00000000", type(operation).__name__)
 
-        op_source_acc = operation.source.account_id if operation.source is not None else None
+        op_source_acc = (
+            operation.source.account_id if operation.source is not None else None
+        )
         op_json["attributes"]["sourceAccount"] = op_source_acc
         new_json["operations"].append(op_json)
     if return_json:
@@ -975,10 +977,11 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             if operation.source
             else transaction.transaction.source.account_id
         )
-        balance_str = await get_available_balance_str(op_source_id)
-        result.append(
-            f"*** для аккаунта {address_id_to_link(op_source_id)} {balance_str}"
-        )
+        if operation.source:
+            balance_str = await get_available_balance_str(op_source_id)
+            result.append(
+                f"*** для аккаунта {address_id_to_link(op_source_id)} {balance_str}"
+            )
 
         if type(operation).__name__ == "Payment":
             data_exist = True
