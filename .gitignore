@@ -135,4 +135,3 @@ dmypy.json
 /static/qr/*
 /static/tailscale*.deb
 /localdoc/
-templates/d2_*
