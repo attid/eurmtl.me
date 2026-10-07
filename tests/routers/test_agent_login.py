@@ -11,10 +11,6 @@ from stellar_sdk import Keypair
 from routers import agent_login
 
 
-def _fund_signers(address: str, weight: int = 5) -> dict:
-    return {"signers": [{"key": address, "weight": weight}]}
-
-
 def _grist_user(address: str) -> SimpleNamespace:
     return SimpleNamespace(account_id=address, telegram_id=424242, username="@AgentBot")
 
@@ -42,12 +38,9 @@ async def test_agent_login_happy_path_sets_session(client):
     kp = Keypair.random()
     nonce = await _get_nonce(client)
 
-    with (
-        patch_fund_signers(kp.public_key),
-        patch(
-            "routers.agent_login.load_user_from_grist",
-            new=AsyncMock(return_value=_grist_user(kp.public_key)),
-        ),
+    with patch(
+        "routers.agent_login.load_user_from_grist",
+        new=AsyncMock(return_value=_grist_user(kp.public_key)),
     ):
         response = await client.post(
             "/login/agent",
@@ -77,12 +70,9 @@ async def test_agent_login_nonce_single_use(client):
         "signature": base64.b64encode(kp.sign(nonce.encode())).decode(),
     }
 
-    with (
-        patch_fund_signers(kp.public_key),
-        patch(
-            "routers.agent_login.load_user_from_grist",
-            new=AsyncMock(return_value=_grist_user(kp.public_key)),
-        ),
+    with patch(
+        "routers.agent_login.load_user_from_grist",
+        new=AsyncMock(return_value=_grist_user(kp.public_key)),
     ):
         first = await client.post("/login/agent", json=body)
         second = await client.post("/login/agent", json=body)
@@ -157,34 +147,12 @@ async def test_agent_login_bad_address(client):
 
 
 @pytest.mark.asyncio
-async def test_agent_login_not_a_signer(client):
-    outsider = Keypair.random()
-    nonce = await _get_nonce(client)
-
-    with patch_fund_signers(Keypair.random().public_key):
-        response = await client.post(
-            "/login/agent",
-            json={
-                "address": outsider.public_key,
-                "nonce": nonce,
-                "signature": base64.b64encode(outsider.sign(nonce.encode())).decode(),
-            },
-        )
-
-    assert response.status_code == 403
-    assert (await response.get_json())["message"] == "not_a_signer"
-
-
-@pytest.mark.asyncio
 async def test_agent_login_no_grist_user(client):
     kp = Keypair.random()
     nonce = await _get_nonce(client)
 
-    with (
-        patch_fund_signers(kp.public_key),
-        patch(
-            "routers.agent_login.load_user_from_grist", new=AsyncMock(return_value=None)
-        ),
+    with patch(
+        "routers.agent_login.load_user_from_grist", new=AsyncMock(return_value=None)
     ):
         response = await client.post(
             "/login/agent",
@@ -204,12 +172,9 @@ async def test_agent_login_hex_signature_accepted(client):
     kp = Keypair.random()
     nonce = await _get_nonce(client)
 
-    with (
-        patch_fund_signers(kp.public_key),
-        patch(
-            "routers.agent_login.load_user_from_grist",
-            new=AsyncMock(return_value=_grist_user(kp.public_key)),
-        ),
+    with patch(
+        "routers.agent_login.load_user_from_grist",
+        new=AsyncMock(return_value=_grist_user(kp.public_key)),
     ):
         response = await client.post(
             "/login/agent",
@@ -229,12 +194,9 @@ async def test_agent_login_whitespace_padded_fields(client):
     kp = Keypair.random()
     nonce = await _get_nonce(client)
 
-    with (
-        patch_fund_signers(kp.public_key),
-        patch(
-            "routers.agent_login.load_user_from_grist",
-            new=AsyncMock(return_value=_grist_user(kp.public_key)),
-        ),
+    with patch(
+        "routers.agent_login.load_user_from_grist",
+        new=AsyncMock(return_value=_grist_user(kp.public_key)),
     ):
         response = await client.post(
             "/login/agent",
@@ -262,16 +224,15 @@ async def test_agent_login_non_json_body(client):
 
 
 @pytest.mark.asyncio
-async def test_agent_login_zero_weight_signer_rejected(client):
+async def test_agent_login_works_without_multisig_check(client):
+    # Login mirrors the Telegram flow: Grist row is the only identity gate;
+    # multisig weight is checked per action, not at login.
     kp = Keypair.random()
     nonce = await _get_nonce(client)
 
-    with (
-        patch_fund_signers_weight0(kp.public_key),
-        patch(
-            "routers.agent_login.load_user_from_grist",
-            new=AsyncMock(return_value=_grist_user(kp.public_key)),
-        ),
+    with patch(
+        "routers.agent_login.load_user_from_grist",
+        new=AsyncMock(return_value=_grist_user(kp.public_key)),
     ):
         response = await client.post(
             "/login/agent",
@@ -282,8 +243,8 @@ async def test_agent_login_zero_weight_signer_rejected(client):
             },
         )
 
-    assert response.status_code == 403
-    assert (await response.get_json())["message"] == "not_a_signer"
+    assert response.status_code == 200
+    assert await response.get_json() == {"status": "ok"}
 
 
 @pytest.mark.asyncio
@@ -294,11 +255,8 @@ async def test_agent_login_grist_user_without_telegram_id(client):
         account_id=kp.public_key, telegram_id=None, username="@AgentBot"
     )
 
-    with (
-        patch_fund_signers(kp.public_key),
-        patch(
-            "routers.agent_login.load_user_from_grist", new=AsyncMock(return_value=user)
-        ),
+    with patch(
+        "routers.agent_login.load_user_from_grist", new=AsyncMock(return_value=user)
     ):
         response = await client.post(
             "/login/agent",
@@ -349,7 +307,9 @@ async def test_agent_login_nonce_burned_after_bad_signature(client):
     kp = Keypair.random()
     nonce = await _get_nonce(client)
 
-    with patch_fund_signers(kp.public_key):
+    with patch(
+        "routers.agent_login.load_user_from_grist", new=AsyncMock(return_value=None)
+    ):
         first = await client.post(
             "/login/agent",
             json={
@@ -383,17 +343,3 @@ def test_blueprint_registered_once():
     app = Quart(__name__)
     app.register_blueprint(routers.index.blueprint)
     app.register_blueprint(routers.agent_login.blueprint)  # must not raise
-
-
-def patch_fund_signers(address: str):
-    return patch(
-        "routers.agent_login.get_fund_signers",
-        new=AsyncMock(return_value=_fund_signers(address)),
-    )
-
-
-def patch_fund_signers_weight0(address: str):
-    return patch(
-        "routers.agent_login.get_fund_signers",
-        new=AsyncMock(return_value={"signers": [{"key": address, "weight": 0}]}),
-    )
