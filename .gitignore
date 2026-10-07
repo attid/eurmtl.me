@@ -136,3 +136,9 @@ dmypy.json
 /static/tailscale*.deb
 /localdoc/
 templates/d2_*
+.claude/
+.belief_map.sexp
+.belief_map_cache.json
+.belief-map/
+.codespaces/
+.codespaces-cache/
