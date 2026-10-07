@@ -44,6 +44,15 @@ Utility routes:
 - GET /uuid : generate random request correlation id
 - GET /myip : return caller IP
 
+Agent login:
+- GET /login/agent : returns JSON {"nonce": "<64 hex chars>"}, single-use, valid for 60 seconds.
+- POST /login/agent : body {"address": "<signer public key G...>", "nonce": "<nonce from GET>", "signature": "<base64 or hex ed25519 signature of the ASCII nonce bytes>"}.
+- On success returns {"status": "ok"} and a session cookie; use that cookie for session-authenticated routes (for example POST /decision).
+- Eligibility: address must currently be a signer of the fund multisig (weight > 0 on Horizon) and have a row in the EURMTL_users table. Identity is key ownership: sign the nonce, never send any secret key.
+- Errors: 400 {"status": "error", "message": "nonce_expired" | "bad_address" | "bad_signature"}, 403 {"status": "error", "message": "not_a_signer" | "no_grist_user"}.
+- Revocation: removing the signer from the fund multisig closes access within the Horizon signers cache TTL (1 hour). A session already issued stays valid until it expires (7 days).
+- Example (Python): nonce = GET /login/agent; signature = Keypair.from_secret(s).sign(nonce.encode()); POST /login/agent with base64(signature).
+
 Auth notes:
 - Some /remote/* routes require Authorization: Bearer <token>.
 - Session-based HTML pages exist, but they are for browsers, not agents.
