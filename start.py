@@ -14,6 +14,7 @@ import routers.helpers
 import routers.index
 import routers.laboratory
 import routers.mmwb
+import routers.agent_login
 import routers.remote
 import routers.sign_tools
 import routers.web_editor
