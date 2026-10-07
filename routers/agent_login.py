@@ -17,12 +17,16 @@ from other.grist_tools import load_user_from_grist
 from other.web_tools import cors_jsonify
 from services.stellar_client import get_fund_signers
 
-from .index import blueprint
+from quart import Blueprint
+
+blueprint = Blueprint("agent_login", __name__)
 
 AGENT_NONCE_TTL_SECONDS = 60
-AGENT_NONCE_MAX_STORE = 1000
+AGENT_NONCE_MAX_STORE = 10000
 
-# In-process nonce store: {nonce_hex: created_at (monotonic)}
+# In-process nonce store: {nonce_hex: created_at (monotonic)}.
+# Single-process assumption (same pattern as routers/remote_sep07_auth.py):
+# behind multiple workers each would keep its own store.
 _agent_nonce_store: dict[str, float] = {}
 
 
@@ -44,21 +48,20 @@ def _agent_nonce_cleanup() -> None:
 
 
 def _decode_signature(signature: str) -> bytes | None:
-    if not signature:
+    """Accept ed25519 signature as hex (128 chars) or standard base64 (86/88 chars)."""
+    if not isinstance(signature, str) or not signature:
         return None
+    sig = signature.strip()
+    if len(sig) == 128:  # hex
+        try:
+            return bytes.fromhex(sig)
+        except ValueError:
+            return None
     try:
-        raw = base64.b64decode(signature, validate=True)
-        if len(raw) == 64:
-            return raw
-    except (binascii.Error, ValueError):
-        pass
-    try:
-        raw = bytes.fromhex(signature)
-        if len(raw) == 64:
-            return raw
-    except ValueError:
-        pass
-    return None
+        raw = base64.b64decode(sig, validate=True)
+    except (binascii.Error, ValueError, TypeError):
+        return None
+    return raw if len(raw) == 64 else None
 
 
 @blueprint.route("/login/agent", methods=("GET",))
@@ -71,16 +74,25 @@ async def agent_login_nonce():
 
 @blueprint.route("/login/agent", methods=("POST",))
 async def agent_login_verify():
-    data = await request.get_json(silent=True) or {}
-    address = data.get("address") or ""
-    nonce = data.get("nonce") or ""
-    signature = data.get("signature") or ""
+    data = await request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _agent_error("bad_signature", 400)
+    address = data.get("address")
+    nonce = data.get("nonce")
+    signature = data.get("signature")
+    if not (
+        isinstance(address, str)
+        and isinstance(nonce, str)
+        and isinstance(signature, str)
+    ):
+        return _agent_error("bad_signature", 400)
+    address = address.strip()
+    nonce = nonce.strip()
+    signature = signature.strip()
 
-    _agent_nonce_cleanup()
+    # Single-use: pop first; TTL checked on the popped value (no store sweep here).
     created_at = _agent_nonce_store.pop(nonce, None)
-    if created_at is None:
-        return _agent_error("nonce_expired", 400)
-    if time.monotonic() - created_at > AGENT_NONCE_TTL_SECONDS:
+    if created_at is None or time.monotonic() - created_at > AGENT_NONCE_TTL_SECONDS:
         return _agent_error("nonce_expired", 400)
 
     try:
@@ -99,15 +111,20 @@ async def agent_login_verify():
 
     fund_data = await get_fund_signers()
     signers = (fund_data or {}).get("signers", [])
-    signer = next((s for s in signers if s.get("key") == address), None)
+    signer = next(
+        (s for s in signers if s.get("key") == address and s.get("weight", 0) > 0),
+        None,
+    )
     if signer is None:
         return _agent_error("not_a_signer", 403)
 
     user = await load_user_from_grist(account_id=address)
-    if user is None:
+    if user is None or not user.telegram_id:
         return _agent_error("no_grist_user", 403)
 
-    username = (user.username or "").lstrip("@")
+    username = (user.username or "").lstrip("@") or f"bot_{address[:8]}"
+    session.clear()
+    session.permanent = True
     session["userdata"] = {
         "id": str(user.telegram_id),
         "username": username,

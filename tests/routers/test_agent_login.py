@@ -199,8 +199,201 @@ async def test_agent_login_no_grist_user(client):
     assert (await response.get_json())["message"] == "no_grist_user"
 
 
+@pytest.mark.asyncio
+async def test_agent_login_hex_signature_accepted(client):
+    kp = Keypair.random()
+    nonce = await _get_nonce(client)
+
+    with (
+        patch_fund_signers(kp.public_key),
+        patch(
+            "routers.agent_login.load_user_from_grist",
+            new=AsyncMock(return_value=_grist_user(kp.public_key)),
+        ),
+    ):
+        response = await client.post(
+            "/login/agent",
+            json={
+                "address": kp.public_key,
+                "nonce": nonce,
+                "signature": kp.sign(nonce.encode()).hex(),
+            },
+        )
+
+    assert response.status_code == 200
+    assert await response.get_json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_agent_login_whitespace_padded_fields(client):
+    kp = Keypair.random()
+    nonce = await _get_nonce(client)
+
+    with (
+        patch_fund_signers(kp.public_key),
+        patch(
+            "routers.agent_login.load_user_from_grist",
+            new=AsyncMock(return_value=_grist_user(kp.public_key)),
+        ),
+    ):
+        response = await client.post(
+            "/login/agent",
+            json={
+                "address": kp.public_key + "\n",
+                "nonce": nonce + " ",
+                "signature": "\n"
+                + base64.b64encode(kp.sign(nonce.encode())).decode()
+                + "\n",
+            },
+        )
+
+    assert response.status_code == 200
+    assert await response.get_json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_agent_login_non_json_body(client):
+    response = await client.post(
+        "/login/agent", data="not json", headers={"Content-Type": "text/plain"}
+    )
+
+    assert response.status_code == 400
+    assert (await response.get_json())["message"] == "bad_signature"
+
+
+@pytest.mark.asyncio
+async def test_agent_login_zero_weight_signer_rejected(client):
+    kp = Keypair.random()
+    nonce = await _get_nonce(client)
+
+    with (
+        patch_fund_signers_weight0(kp.public_key),
+        patch(
+            "routers.agent_login.load_user_from_grist",
+            new=AsyncMock(return_value=_grist_user(kp.public_key)),
+        ),
+    ):
+        response = await client.post(
+            "/login/agent",
+            json={
+                "address": kp.public_key,
+                "nonce": nonce,
+                "signature": base64.b64encode(kp.sign(nonce.encode())).decode(),
+            },
+        )
+
+    assert response.status_code == 403
+    assert (await response.get_json())["message"] == "not_a_signer"
+
+
+@pytest.mark.asyncio
+async def test_agent_login_grist_user_without_telegram_id(client):
+    kp = Keypair.random()
+    nonce = await _get_nonce(client)
+    user = SimpleNamespace(
+        account_id=kp.public_key, telegram_id=None, username="@AgentBot"
+    )
+
+    with (
+        patch_fund_signers(kp.public_key),
+        patch(
+            "routers.agent_login.load_user_from_grist", new=AsyncMock(return_value=user)
+        ),
+    ):
+        response = await client.post(
+            "/login/agent",
+            json={
+                "address": kp.public_key,
+                "nonce": nonce,
+                "signature": base64.b64encode(kp.sign(nonce.encode())).decode(),
+            },
+        )
+
+    assert response.status_code == 403
+    assert (await response.get_json())["message"] == "no_grist_user"
+
+
+@pytest.mark.asyncio
+async def test_agent_login_json_array_body(client):
+    await _get_nonce(client)
+
+    response = await client.post("/login/agent", json=[1, 2, 3])
+
+    assert response.status_code == 400
+    assert (await response.get_json())["message"] == "bad_signature"
+
+
+@pytest.mark.asyncio
+async def test_agent_login_wrong_field_types(client):
+    await _get_nonce(client)
+
+    response = await client.post(
+        "/login/agent",
+        json={"address": 123, "nonce": ["foo"], "signature": {"a": 1}},
+    )
+
+    assert response.status_code == 400
+    assert (await response.get_json())["message"] == "bad_signature"
+
+
+@pytest.mark.asyncio
+async def test_agent_login_empty_object(client):
+    response = await client.post("/login/agent", json={})
+
+    assert response.status_code == 400
+    assert (await response.get_json())["message"] == "bad_signature"
+
+
+@pytest.mark.asyncio
+async def test_agent_login_nonce_burned_after_bad_signature(client):
+    kp = Keypair.random()
+    nonce = await _get_nonce(client)
+
+    with patch_fund_signers(kp.public_key):
+        first = await client.post(
+            "/login/agent",
+            json={
+                "address": kp.public_key,
+                "nonce": nonce,
+                "signature": base64.b64encode(kp.sign(b"wrong")).decode(),
+            },
+        )
+        second = await client.post(
+            "/login/agent",
+            json={
+                "address": kp.public_key,
+                "nonce": nonce,
+                "signature": base64.b64encode(kp.sign(nonce.encode())).decode(),
+            },
+        )
+
+    assert first.status_code == 400
+    assert (await first.get_json())["message"] == "bad_signature"
+    assert second.status_code == 400
+    assert (await second.get_json())["message"] == "nonce_expired"
+
+
+def test_blueprint_registered_once():
+    from quart import Quart
+
+    import routers.agent_login
+    import routers.index
+
+    assert routers.agent_login.blueprint is not routers.index.blueprint
+    app = Quart(__name__)
+    app.register_blueprint(routers.index.blueprint)
+    app.register_blueprint(routers.agent_login.blueprint)  # must not raise
+
+
 def patch_fund_signers(address: str):
     return patch(
         "routers.agent_login.get_fund_signers",
         new=AsyncMock(return_value=_fund_signers(address)),
+    )
+
+
+def patch_fund_signers_weight0(address: str):
+    return patch(
+        "routers.agent_login.get_fund_signers",
+        new=AsyncMock(return_value={"signers": [{"key": address, "weight": 0}]}),
     )

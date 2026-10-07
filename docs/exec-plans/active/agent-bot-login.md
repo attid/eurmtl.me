@@ -10,7 +10,7 @@
 - `userdata` агента: `{"id": telegram_id, "username": из_grist, "first_name": username}`.
 
 ## План изменений
-1. [x] `routers/agent_login.py` (новый модуль, blueprint реюзнут из `routers/index.py`): `GET/POST /login/agent` — nonce store (TTL 60 с, max 1000 + cleanup), verify ed25519 подписи ASCII nonce, проверка адреса в `get_fund_signers()`, загрузка Grist-строки, запись `session["userdata"]`/`session["user_id"]`.
+1. [x] `routers/agent_login.py` (новый модуль, собственный blueprint `agent_login`, зарегистрирован в `start.py` и `tests/fixtures/app.py`): `GET/POST /login/agent` — nonce store (TTL 60 с, max 10000 + cleanup), verify ed25519 подписи ASCII nonce, проверка адреса в `get_fund_signers()` (вес > 0), загрузка Grist-строки (с непустым telegram_id), запись `session["userdata"]`/`session["user_id"]`.
 2. [x] `start.py`: регистрация `routers.agent_login.blueprint`; `routers/index.py`: `/login/agent` в `openapi.json` paths.
 3. [x] `templates/llm.txt`: раздел «Agent login» — nonce → подпись → POST → cookie, формат ошибок, отзыв, пример на Python.
 4. [x] `tests/routers/test_agent_login.py`: happy path (сессия + userdata), повтор/просрочка nonce, bad signature, bad address, не-подписант, нет Grist-строки, упоминание в openapi/llms.
