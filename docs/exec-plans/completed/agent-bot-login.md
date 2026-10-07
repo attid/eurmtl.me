@@ -23,8 +23,15 @@
 - `stellar_sdk.Keypair.from_public_key(address).verify()` кидает `BadSignatureError` — ловить явно. (Обработано: + `bad_address` на невалидном G-адресе.)
 
 ## Верификация
-- `uv run --extra dev pytest tests/routers/test_agent_login.py -q` → 9 passed.
-- `uv run --extra dev pytest tests -q` → 450 passed, 2 failed — пре-существующие фейлы `tests/routers/test_decision.py` (шаблоны `d2_frag_edit.html`/`d2_frag_new.html` отсутствуют в репо, `routers/decision.py:204` → 500), воспроизводятся на чистом HEAD, к задаче не относятся.
+- `uv run --extra dev pytest tests/routers/test_agent_login.py -q` → 18 passed.
+- `uv run --extra dev pytest tests -q` → 459 passed, 2 failed — пре-существующие фейлы `tests/routers/test_decision.py` (шаблоны `d2_frag_*.html` отсутствуют в репо), воспроизводятся на чистом HEAD, к задаче не относятся.
 - `ruff check` + `ruff format --check` на изменённых файлах — чисто.
-- Дым (вне репо): GET nonce → ed25519 подпись (base64 и hex) → POST → сессия (`user_id`/`userdata`) на защищённом роуте → повторный POST с тем же nonce → 400 `nonce_expired`. PASS.
-- Commit: `e735029 feat: add machine login for multisig signer agents` (ветка `attid/feat-agent-bot-login`, не запушен).
+- CI «Build Docker image» на PR #14 — pass.
+- Прод-проверка 2026-10-08 (после деплоя): crash-loop починен (`80575e7`), логин тест-ключа из Grist → `{"status": "ok"}`, `/sign_all` агентской сессии содержит пункты меню «Add decision»/«All transaction»/«Logout», анониму «Add decision» в меню отсутствует. Негатив: replay → 400 `nonce_expired`, garbage → 400 `bad_signature`, чужой ключ без Grist-строки → 403 `no_grist_user`.
+
+## Коммиты
+- `e735029` feat: add machine login for multisig signer agents
+- `b42da1c` fix: harden agent login after agy review (2 rounds)
+- `80575e7` fix: import routers.agent_login in start.py (crash-loop на проде)
+- `8b319a4` fix: gate agent login by Grist row only, like Telegram login
+- `57d7964` merge origin/master; PR #14 смержен в master, прод обновлён владельцем.
