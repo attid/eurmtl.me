@@ -15,7 +15,6 @@ from stellar_sdk.exceptions import BadSignatureError
 
 from other.grist_tools import load_user_from_grist
 from other.web_tools import cors_jsonify
-from services.stellar_client import get_fund_signers
 
 from quart import Blueprint
 
@@ -108,15 +107,6 @@ async def agent_login_verify():
         public_key.verify(nonce.encode("ascii"), signature_bytes)
     except BadSignatureError:
         return _agent_error("bad_signature", 400)
-
-    fund_data = await get_fund_signers()
-    signers = (fund_data or {}).get("signers", [])
-    signer = next(
-        (s for s in signers if s.get("key") == address and s.get("weight", 0) > 0),
-        None,
-    )
-    if signer is None:
-        return _agent_error("not_a_signer", 403)
 
     user = await load_user_from_grist(account_id=address)
     if user is None or not user.telegram_id:
