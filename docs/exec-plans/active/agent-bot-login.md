@@ -19,6 +19,8 @@
 - `stellar_sdk.Keypair.from_public_key(address).verify()` кидает `BadSignatureError` — ловить явно. (Обработано: + `bad_address` на невалидном G-адресе.)
 
 ## Верификация
-- `UV_CACHE_DIR=/tmp/uv-cache just check-changed`
-- `uv run --extra dev pytest tests/routers/test_agent_login.py tests/routers/test_index.py -q`
-- Дым: скрипт с генерацией ed25519 ключа, полный флоу GET→POST, потом проверка сессии на защищённом роуте.
+- `uv run --extra dev pytest tests/routers/test_agent_login.py -q` → 9 passed.
+- `uv run --extra dev pytest tests -q` → 450 passed, 2 failed — пре-существующие фейлы `tests/routers/test_decision.py` (шаблоны `d2_frag_edit.html`/`d2_frag_new.html` отсутствуют в репо, `routers/decision.py:204` → 500), воспроизводятся на чистом HEAD, к задаче не относятся.
+- `ruff check` + `ruff format --check` на изменённых файлах — чисто.
+- Дым (вне репо): GET nonce → ed25519 подпись (base64 и hex) → POST → сессия (`user_id`/`userdata`) на защищённом роуте → повторный POST с тем же nonce → 400 `nonce_expired`. PASS.
+- Commit: `e735029 feat: add machine login for multisig signer agents` (ветка `attid/feat-agent-bot-login`, не запушен).
