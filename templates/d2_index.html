@@ -1,0 +1,56 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}D2{% endblock %}
+
+{% block head_scripts %}
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <h2 class="page-title">D2: Конструктор вопросов</h2>
+                <div class="text-secondary">Выберите действие.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="page-body">
+    <div class="container-xl">
+        <div class="row g-3">
+            <div class="col-12 col-md-6">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h3 class="card-title">Новый вопрос</h3>
+                        <p class="text-secondary">Создать вопрос из шаблона или с нуля.</p>
+                        <button class="btn btn-primary" hx-get="/d2/fragment/new" hx-target="#d2-panel" hx-swap="innerHTML">
+                            Создать
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-md-6">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h3 class="card-title">Редактирование / перенос</h3>
+                        <p class="text-secondary">Найти существующий вопрос и перейти к чтениям.</p>
+                        <button class="btn btn-outline-primary" hx-get="/d2/fragment/edit" hx-target="#d2-panel"
+                                hx-swap="innerHTML">
+                            Открыть список
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="d2-panel" class="mt-4"></div>
+    </div>
+</div>
+
+{% if question_uuid %}
+<div hx-get="/d2/fragment/edit?uuid={{ question_uuid }}" hx-target="#d2-panel" hx-trigger="load"></div>
+{% endif %}
+{% endblock %}

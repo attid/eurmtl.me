@@ -1,0 +1,32 @@
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+                <thead>
+                    <tr>
+                        <th>Шаблон</th>
+                        <th>Текст</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in templates %}
+                    <tr>
+                        <td>{{ row.title }}</td>
+                        <td class="text-secondary">{{ row.body | striptags }}</td>
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-primary"
+                                    hx-get="/d2/fragment/form?template_id={{ row.id }}"
+                                    hx-target="#d2-panel" hx-swap="innerHTML">Выбрать</button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="3" class="text-secondary">Шаблонов нет.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

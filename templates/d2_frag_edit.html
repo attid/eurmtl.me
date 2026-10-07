@@ -1,0 +1,32 @@
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-vcenter card-table">
+                <thead>
+                    <tr>
+                        <th>Номер</th>
+                        <th>Тема</th>
+                        <th>Чтение</th>
+                        <th>Статус</th>
+                        <th>Чтений</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in items %}
+                    <tr>
+                        <td>{{ row.number }}</td>
+                        <td>{{ row.title }}</td>
+                        <td>{{ row.reading }}</td>
+                        <td>{{ row.status }}</td>
+                        <td>{{ row.readings_count }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-secondary">Нет данных.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
