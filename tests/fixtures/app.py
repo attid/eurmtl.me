@@ -35,6 +35,7 @@ async def app(db_pool):
     from routers.helpers import blueprint as helpers_bp
     from routers.remote import blueprint as remote_bp
     from routers.contracts import blueprint as contracts_bp
+    from routers.agent_login import blueprint as agent_login_bp
 
     # Calculate root path
     root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -59,6 +60,7 @@ async def app(db_pool):
     app.register_blueprint(helpers_bp)
     app.register_blueprint(remote_bp)
     app.register_blueprint(contracts_bp)
+    app.register_blueprint(agent_login_bp)
 
     # Use REAL db_pool (SQLite in-memory) instead of mock
     app.db_pool = db_pool
