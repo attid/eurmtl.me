@@ -233,6 +233,22 @@ async def openapi_json():
                     },
                 }
             },
+            "/login/agent": {
+                "get": {
+                    "summary": "Get single-use login nonce for multisig signer agent",
+                    "responses": {
+                        "200": {"description": "Nonce for ed25519 signature"},
+                    },
+                },
+                "post": {
+                    "summary": "Agent login by signing the nonce with a fund signer key",
+                    "responses": {
+                        "200": {"description": "Session cookie established"},
+                        "400": {"description": "Invalid signature, address or expired nonce"},
+                        "403": {"description": "Not a fund signer or no Grist user row"},
+                    },
+                },
+            },
             "/lab/build_xdr": {
                 "post": {
                     "summary": "Build Stellar transaction XDR from structured JSON",

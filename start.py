@@ -44,6 +44,7 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 
 app.register_blueprint(routers.index.blueprint)
+app.register_blueprint(routers.agent_login.blueprint)
 app.register_blueprint(routers.laboratory.blueprint)
 # app.register_blueprint(routers.federal.blueprint)
 app.register_blueprint(routers.federal.cors_enabled_blueprint)
