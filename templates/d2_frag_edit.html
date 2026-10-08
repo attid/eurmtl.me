@@ -1,3 +1,25 @@
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" action="/d2/fragment/edit" id="d2-filter-form" class="row g-2 align-items-center">
+            {% if current_uuid %}
+            <input type="hidden" name="uuid" value="{{ current_uuid }}">
+            {% endif %}
+            <div class="col-auto">
+                <input type="text" class="form-control" name="q" value="{{ query }}" placeholder="Поиск по номеру или теме">
+            </div>
+            <div class="col-auto">
+                <select name="status" class="form-select" onchange="this.form.submit()">
+                    <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Активные</option>
+                    <option value="all" {% if status_filter == 'all' %}selected{% endif %}>Все</option>
+                    {% for st in statuses %}
+                    <option value="{{ st }}" {% if status_filter == st %}selected{% endif %}>{{ st }}</option>
+                    {% endfor %}
+                </select>
+                <noscript><button type="submit" class="btn btn-outline-secondary ms-1">Фильтр</button></noscript>
+            </div>
+        </form>
+    </div>
+</div>
 <div class="card">
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -30,3 +52,20 @@
         </div>
     </div>
 </div>
+{% if total_pages > 1 %}
+<nav aria-label="Страницы">
+    <ul class="pagination">
+        <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+            <a class="page-link" href="{{ pager_url(page - 1) }}">Назад</a>
+        </li>
+        {% for p in pager_pages(page, total_pages) %}
+        <li class="page-item {% if p == page %}active{% endif %}">
+            <a class="page-link" href="{{ pager_url(p) }}">{{ p }}</a>
+        </li>
+        {% endfor %}
+        <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+            <a class="page-link" href="{{ pager_url(page + 1) }}">Вперед</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
