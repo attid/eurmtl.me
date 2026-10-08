@@ -662,16 +662,16 @@ async def cmd_d2_edit():
     items.sort(key=lambda row: (row["number"] is None, row["number"]), reverse=True)
 
     status_param = request.args.get("status")
-    if status_param in (None, "", "active"):
+    query = (request.args.get("q") or "").strip().lower()
+    if status_param in (None, "", "active") and not query:
         filtered = [row for row in items if row["status"] in D2_ACTIVE_STATUSES]
-    elif status_param == "all":
+    elif status_param in (None, "", "active") or status_param == "all":
         filtered = items
     elif status_param in statuses:
         filtered = [row for row in items if row["status"] == status_param]
     else:
         filtered = items
 
-    query = (request.args.get("q") or "").strip().lower()
     if query:
         filtered = [
             row
@@ -693,6 +693,11 @@ async def cmd_d2_edit():
     page = min(page, total_pages)
     page_items = filtered[(page - 1) * per_page : page * per_page]
 
+    if status_param in (None, "", "active"):
+        status_filter = "all" if query else "active"
+    else:
+        status_filter = status_param
+
     return await render_template(
         "d2_frag_edit.html",
         fragment_mode=request.headers.get("HX-Request") == "true",
@@ -701,7 +706,7 @@ async def cmd_d2_edit():
         page=page,
         total_pages=total_pages,
         total_items=len(filtered),
-        status_filter=status_param or "active",
+        status_filter=status_filter,
         query=query,
         statuses=statuses,
     )
