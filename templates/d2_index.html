@@ -17,9 +17,6 @@
                 <h2 class="page-title">D2: Конструктор вопросов</h2>
                 <div class="text-secondary">Выберите действие.</div>
             </div>
-            <div class="col-auto">
-                {% include 'd2_header_buttons.html' %}
-            </div>
         </div>
     </div>
 </div>
@@ -36,6 +33,9 @@
                             <button class="btn btn-primary" hx-get="/d2/fragment/form" hx-target="#d2-panel" hx-swap="innerHTML">
                                 Простой вопрос
                             </button>
+                            <button class="btn btn-outline-primary" hx-get="/d2/fragment/new" hx-target="#d2-panel" hx-swap="innerHTML">
+                                Из шаблона…
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -45,6 +45,10 @@
                     <div class="card-body">
                         <h3 class="card-title">Редактирование / перенос</h3>
                         <p class="text-secondary">Найти существующий вопрос и перейти к чтениям.</p>
+                        <button class="btn btn-outline-primary" hx-get="/d2/fragment/edit" hx-target="#d2-panel"
+                                hx-swap="innerHTML">
+                            Открыть список
+                        </button>
                     </div>
                 </div>
             </div>

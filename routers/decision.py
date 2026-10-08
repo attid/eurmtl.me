@@ -709,6 +709,7 @@ async def cmd_d2_edit():
         status_filter=status_filter,
         query=query,
         statuses=statuses,
+        d2_hide_list_link=True,
     )
 
 
