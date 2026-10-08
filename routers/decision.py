@@ -695,6 +695,7 @@ async def cmd_d2_edit():
 
     return await render_template(
         "d2_frag_edit.html",
+        fragment_mode=request.headers.get("HX-Request") == "true",
         items=page_items,
         current_uuid=request.args.get("uuid"),
         page=page,
