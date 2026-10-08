@@ -17,6 +17,8 @@ from quart import (
 )
 from sulguk import SULGUK_PARSE_MODE
 
+import urllib.parse
+
 from other.config_reader import config
 from db.sql_models import Decisions
 from other.gspread_tools import gs_update_decision, gs_get_last_id, gs_save_new_decision
@@ -24,6 +26,24 @@ from services.stellar_client import check_user_weight
 from other.telegram_tools import skynet_bot
 
 blueprint = Blueprint("decision", __name__)
+
+D2_PAGE_SIZE = 20
+D2_PAGER_WINDOW = 5
+D2_ACTIVE_STATUSES = ("❗️ #active", "☑️ #next", "‼️ #control")
+
+
+@blueprint.app_template_global()
+def d2_pager_url(page):
+    args = request.args.to_dict(flat=False)
+    args["page"] = [str(page)]
+    return f"{request.path}?{urllib.parse.urlencode(args, doseq=True)}"
+
+
+@blueprint.app_template_global()
+def d2_pager_pages(page, total_pages):
+    window = D2_PAGER_WINDOW
+    start = max(1, min(page - window // 2, total_pages - window + 1))
+    return range(start, min(start + window - 1, total_pages) + 1)
 
 statuses = (
     "❗️ #active",
@@ -531,6 +551,63 @@ async def cmd_d2_add():
     return redirect(f"/d2/{d_uuid}")
 
 
+@blueprint.route("/d2/copy", methods=("GET",))
+async def cmd_d2_copy():
+    data_row, question = await _find_question_row(request.args.get("uuid", ""))
+    if data_row is None or question is None:
+        return "Decision not exist =("
+
+    user_weight = await check_user_weight(False)
+    statuses_list = [(status_, "") for status_ in statuses]
+
+    from other.grist_tools import grist_manager, MTLGrist
+
+    questions = await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
+    numbers = [q.get("NUMBER") for q in questions if q.get("NUMBER") is not None]
+    next_number = max(numbers, default=0) + 1
+
+    return await render_template(
+        "d2_form.html",
+        question_number=next_number,
+        short_subject=(question.get("TITLE") or "") + " (копия)",
+        inquiry=data_row.get("BODY") or "",
+        template_title=f"Копия вопроса №{question.get('NUMBER')}",
+        reading=1,
+        statuses=statuses_list,
+        user_weight=user_weight,
+        fragment_mode=request.headers.get("HX-Request") == "true",
+    )
+
+
+@blueprint.route("/d2/template/from", methods=("POST",))
+async def cmd_d2_template_from():
+    form_data = await request.form
+    template_uuid = form_data.get("uuid", "")
+    title = (form_data.get("title") or "").strip()
+
+    data_row, question = await _find_question_row(template_uuid)
+    if data_row is None or question is None:
+        return "Decision not exist =("
+
+    from other.grist_tools import grist_manager, MTLGrist
+
+    await grist_manager.post_data(
+        MTLGrist.QUESTION_TEMPLATES,
+        {
+            "records": [
+                {
+                    "fields": {
+                        "TITLE": title or (question.get("TITLE") or ""),
+                        "BODY": data_row.get("BODY") or "",
+                    }
+                }
+            ]
+        },
+    )
+    await flash("Шаблон сохранён.", "good")
+    return redirect(f"/d2/{template_uuid}")
+
+
 @blueprint.route("/d2/fragment/edit", methods=("GET",))
 async def cmd_d2_edit():
     from other.grist_tools import grist_manager, MTLGrist
@@ -583,8 +660,49 @@ async def cmd_d2_edit():
         )
 
     items.sort(key=lambda row: (row["number"] is None, row["number"]), reverse=True)
+
+    status_param = request.args.get("status")
+    if status_param in (None, "", "active"):
+        filtered = [row for row in items if row["status"] in D2_ACTIVE_STATUSES]
+    elif status_param == "all":
+        filtered = items
+    elif status_param in statuses:
+        filtered = [row for row in items if row["status"] == status_param]
+    else:
+        filtered = items
+
+    query = (request.args.get("q") or "").strip().lower()
+    if query:
+        filtered = [
+            row
+            for row in filtered
+            if query in str(row["title"]).lower()
+            or query in str(row["number"]).lower()
+        ]
+
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        per_page = int(request.args.get("per_page", D2_PAGE_SIZE))
+    except (TypeError, ValueError):
+        per_page = D2_PAGE_SIZE
+    per_page = min(max(per_page, 1), 500)
+    total_pages = max((len(filtered) + per_page - 1) // per_page, 1)
+    page = min(page, total_pages)
+    page_items = filtered[(page - 1) * per_page : page * per_page]
+
     return await render_template(
-        "d2_frag_edit.html", items=items, current_uuid=request.args.get("uuid")
+        "d2_frag_edit.html",
+        items=page_items,
+        current_uuid=request.args.get("uuid"),
+        page=page,
+        total_pages=total_pages,
+        total_items=len(filtered),
+        status_filter=status_param or "active",
+        query=query,
+        statuses=statuses,
     )
 
 

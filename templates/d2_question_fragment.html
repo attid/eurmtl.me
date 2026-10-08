@@ -22,6 +22,33 @@
     </div>
     {% endif %}
 
+    <div class="mb-3">
+        <a href="/d2/copy?uuid={{ row_uuid }}" class="btn btn-outline-secondary btn-sm">Копировать в новый вопрос</a>
+        <a href="/d2/template/from?uuid={{ row_uuid }}" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#saveTemplateModal">Сохранить как шаблон</a>
+    </div>
+
+    <div class="modal modal-blur fade" id="saveTemplateModal" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog modal-sm modal-dialog-centered" role="document">
+            <div class="modal-content">
+                <form action="/d2/template/from" method="post">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Сохранить как шаблон</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+                    </div>
+                    <div class="modal-body">
+                        <label class="form-label">Название шаблона</label>
+                        <input type="text" name="title" class="form-control" value="{{ short_subject }}">
+                        <input type="hidden" name="uuid" value="{{ row_uuid }}">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Отмена</button>
+                        <button type="submit" class="btn btn-primary">Сохранить</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <form action="" method="post">
         <div class="row">
             <div class="col-12 mb-3">
