@@ -40,6 +40,7 @@ class MTLGrist:
     QUESTION_TEMPLATES = GristTableConfig(
         "hpZWKq729vw2D5AkG7oYYz", "QUESTION_TEMPLATES"
     )
+    ORGS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "ORGS")
 
     MAIN_CHAT_INCOME = GristTableConfig("khWn5KMRbfUQQoaPydjhGt", "Main_chat_income")
     MAIN_CHAT_OUTCOME = GristTableConfig("khWn5KMRbfUQQoaPydjhGt", "Main_chat_outcome")
@@ -380,6 +381,63 @@ async def update_mtl_shareholders_balance():
 # Конфигурация
 grist_session_manager = HTTPSessionManager()
 grist_manager = GristAPI(grist_session_manager)
+
+# Канал фонда по умолчанию (fallback, если ORGS пуста или организация не найдена).
+# Прод: (0, 1863399780, 1652080456, 1649743884); тест: (0, 1837984392, ...).
+DEFAULT_FUND_CHAT_IDS = (0, 1863399780, 1652080456, 1649743884)
+DEFAULT_FUND_TEST_CHAT_IDS = (0, 1837984392, 1837984392, 1837984392)
+DEFAULT_ORG_NAME = "Фонд"
+
+
+async def load_orgs() -> list[dict]:
+    """Строки ORGS; при ошибке/отсутствии таблицы — пустой список (fallback)."""
+    return await grist_manager.load_table_data(MTLGrist.ORGS) or []
+
+
+def _fallback_fund_channel(reading: int) -> str | None:
+    from other.config_reader import config
+
+    chat_ids = DEFAULT_FUND_TEST_CHAT_IDS if config.test_mode else DEFAULT_FUND_CHAT_IDS
+    if reading <= 0 or reading >= len(chat_ids):
+        return None
+    return str(chat_ids[reading])
+
+
+def resolve_org_channel(
+    orgs: list[dict], org_name: str | None, reading: int
+) -> str | None:
+    """Канал публикации: чтение N организации из ORGS.
+
+    READINGS>0: чтение N идёт в CHANNELS[min(N, len)-1] (нумерация чтений с 1).
+    READINGS=0: у организации один канал — любой запрос уходит в CHANNELS[0].
+    Нет организации/таблицы: fallback на хардкод фонда; вне 1..3 — None.
+    Возвращает числовой chat_id строкой (без префикса -100) или None.
+    """
+    if org_name:
+        org = next(
+            (o for o in orgs if (o.get("NAME") or "") == org_name),
+            None,
+        )
+    else:
+        org = None
+    if org is None:
+        return _fallback_fund_channel(reading)
+
+    channels_raw = str(org.get("CHANNELS") or "")
+    channels = [c.strip() for c in channels_raw.split(",") if c.strip()]
+    if not channels:
+        return None
+    try:
+        readings = int(org.get("READINGS"))
+    except (TypeError, ValueError):
+        readings = 0
+    if readings <= 0:
+        return channels[0]
+    if reading <= 0:
+        return None
+    return channels[min(reading, len(channels)) - 1]
+
+
 grist_cash = AsyncTTLCache(
     ttl_seconds=86400
 )  # Кеш для найденных пользователей на 24 часа

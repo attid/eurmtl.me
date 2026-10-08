@@ -169,6 +169,12 @@ def activate_stand() -> None:
     for bot in (telegram_tools.skynet_bot, telegram_tools.mmwb_bot):
         bot.session = AiohttpSession(api=TelegramAPIServer.from_base(local_tg))
 
+    # Тест-юзер = itolstov (сид: Users[0].telegram_id) — чтобы гейты
+    # подписантов/секретарей проходили без реального Telegram-логина.
+    from other.config_reader import config
+
+    config.test_user_id = 1837984392
+
     # Stellar: вес подписчика не должен зависеть от реального хорайзона.
     import services.stellar_client as stellar_client
 
@@ -178,7 +184,7 @@ def activate_stand() -> None:
                 {
                     "key": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
                     "weight": 1,
-                    "telegram_id": 84131737,
+                    "telegram_id": 1837984392,
                 }
             ]
         }
