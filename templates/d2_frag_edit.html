@@ -1,8 +1,5 @@
-{% if fragment_mode %}{% include 'd2_edit_fragment.html' %}{% else %}{% extends 'tabler_base.html' %}{% block page_title %}D2: Список вопросов{% endblock %}
-{% block head_scripts %}<script src="https://unpkg.com/htmx.org@1.9.12"></script>{% endblock %}
+{% extends 'tabler_base.html' %}{% block page_title %}D2: Список вопросов{% endblock %}
 {% block content %}
 {% include 'd2_header_buttons.html' %}
-<div id="d2-panel"></div>
 {% include 'd2_edit_fragment.html' %}
 {% endblock %}
-{% endif %}
