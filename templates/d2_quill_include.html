@@ -1,0 +1,42 @@
+{# Инициализация quill-редактора #editor-container.
+   Подключать после CDN-скриптов quill. Безопасно вызывать повторно:
+   после htmx-свапа контейнер новый, старый quill уходит вместе с DOM. #}
+<script src="/static/js/quill-emoji.js"></script>
+<script>
+    function d2InitQuill() {
+        var editorContainer = document.getElementById('editor-container');
+        if (!editorContainer || typeof Quill === 'undefined') {
+            return;
+        }
+        var toolbarOptions = {
+            container: [
+                ['bold', 'italic', 'underline', 'strike', 'code'],
+                ['link'],
+                ['clean'],
+                ['emoji']
+            ],
+            handlers: {
+                'emoji': function () {}
+            }
+        };
+        var quill = new Quill(editorContainer, {
+            modules: {
+                "toolbar": toolbarOptions,
+                "emoji-toolbar": true,
+                "emoji-shortname": true
+            },
+            theme: 'snow',
+        });
+        window.d2Quill = quill;
+
+        var form = editorContainer.closest('form');
+        if (form && !form.dataset.quillBound) {
+            form.dataset.quillBound = "1";
+            form.onsubmit = function() {
+                document.getElementById('inquiry').value = quill.root.innerHTML;
+            };
+        }
+    }
+    d2InitQuill();
+    document.body.addEventListener('htmx:afterSwap', d2InitQuill);
+</script>
