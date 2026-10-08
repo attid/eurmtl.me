@@ -8,6 +8,15 @@
                 <input type="text" class="form-control" name="q" value="{{ query }}" placeholder="Поиск по номеру или теме">
             </div>
             <div class="col-auto">
+                <select name="org" class="form-select" onchange="this.form.submit()">
+                    <option value="" {% if not org_filter %}selected{% endif %}>Все организации</option>
+                    {% for name in org_names %}
+                    <option value="{{ name }}" {% if org_filter == name %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+                <noscript><button type="submit" class="btn btn-outline-secondary ms-1">Фильтр</button></noscript>
+            </div>
+            <div class="col-auto">
                 <select name="status" class="form-select" onchange="this.form.submit()">
                     <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Активные</option>
                     <option value="all" {% if status_filter == 'all' %}selected{% endif %}>Все</option>
@@ -28,6 +37,7 @@
                     <tr>
                         <th>Номер</th>
                         <th>Тема</th>
+                        <th>Орг</th>
                         <th>Чтение</th>
                         <th>Статус</th>
                         <th>Чтений</th>
@@ -37,14 +47,15 @@
                     {% for row in items %}
                     <tr {% if current_uuid and row.uuids %}class="{{ 'table-primary' if current_uuid in row.uuids else '' }}"{% endif %}>
                         <td>{% if current_uuid and current_uuid in row.uuids %}<span class="badge bg-primary-lt">редактируемое</span> {% endif %}{{ row.number }}</td>
-                        <td><a href="/d2/{{ row.first_uuid }}">{{ row.title }}</a></td>
+                        <td><a href="/d2/{{ row.first_uuid }}">{{ row.title }}</a>{% if row.is_draft %} <span class="badge bg-warning-lt">черновик</span>{% endif %}</td>
+                        <td>{{ row.org }}</td>
                         <td>{{ row.reading }}</td>
                         <td>{{ row.status }}</td>
                         <td>{{ row.readings_count }}</td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="5" class="text-secondary">Нет данных.</td>
+                        <td colspan="6" class="text-secondary">Нет данных.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

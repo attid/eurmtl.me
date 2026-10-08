@@ -1,9 +1,56 @@
 {
     "hpZWKq729vw2D5AkG7oYYz": {
+        "ORGS": [
+            {
+                "NAME": "Фонд",
+                "MAIN_ADDRESS": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+                "CHANNELS": "1837984392,1837984392,1837984392",
+                "READINGS": 3
+            },
+            {
+                "NAME": "Фонд3",
+                "MAIN_ADDRESS": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+                "CHANNELS": "1837984392",
+                "READINGS": 3
+            },
+            {
+                "NAME": "МТЛА",
+                "MAIN_ADDRESS": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+                "CHANNELS": "1837984392",
+                "READINGS": 3
+            },
+            {
+                "NAME": "ЛАБР",
+                "MAIN_ADDRESS": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+                "CHANNELS": "1837984392",
+                "READINGS": 3
+            },
+            {
+                "NAME": "ЮЗДМ",
+                "MAIN_ADDRESS": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+                "CHANNELS": "1837984392",
+                "READINGS": 0
+            }
+        ],
         "QUESTIONS": [
-            {"NUMBER": 1, "TITLE": "Принять отчёт казначея", "READING": 1},
-            {"NUMBER": 2, "TITLE": "Купить сервер для ноды", "READING": 2},
-            {"NUMBER": 3, "TITLE": "Спорный вопрос без чтений", "READING": 1}
+            {
+                "NUMBER": 1,
+                "TITLE": "Принять отчёт казначея",
+                "READING": 1,
+                "ORG": "Фонд"
+            },
+            {
+                "NUMBER": 2,
+                "TITLE": "Купить сервер для ноды",
+                "READING": 2,
+                "ORG": "МТЛА"
+            },
+            {
+                "NUMBER": 3,
+                "TITLE": "Спорный вопрос без чтений",
+                "READING": 1,
+                "ORG": "ЮЗДМ"
+            }
         ],
         "QUESTION_DATA": [
             {
@@ -15,8 +62,9 @@
                 "EXTRA": "",
                 "STATUS": "❗️ #active",
                 "CREATED_BY": "itolstov",
-                "CREATED_AT": "2026-10-07 22:00:00"
-},
+                "CREATED_AT": "2026-10-07 22:00:00",
+                "ORG": "Фонд"
+            },
             {
                 "QUESTION_ID": 1,
                 "READING": 2,
@@ -26,8 +74,9 @@
                 "EXTRA": "",
                 "STATUS": "☑️ #next",
                 "CREATED_BY": "itolstov",
-                "CREATED_AT": "2026-10-07 22:05:00"
-},
+                "CREATED_AT": "2026-10-07 22:05:00",
+                "ORG": "Фонд"
+            },
             {
                 "QUESTION_ID": 2,
                 "READING": 1,
@@ -37,8 +86,9 @@
                 "EXTRA": "",
                 "STATUS": "✅ #done",
                 "CREATED_BY": "attid",
-                "CREATED_AT": "2026-10-07 22:10:00"
-},
+                "CREATED_AT": "2026-10-07 22:10:00",
+                "ORG": "МТЛА"
+            },
             {
                 "QUESTION_ID": 3,
                 "READING": 1,
@@ -48,17 +98,43 @@
                 "EXTRA": "",
                 "STATUS": "❗️ #active",
                 "CREATED_BY": "itolstov",
-                "CREATED_AT": "2026-10-07 22:15:00"
-}
-],
+                "CREATED_AT": "2026-10-07 22:15:00",
+                "ORG": "ЮЗДМ"
+            }
+        ],
         "QUESTION_TEMPLATES": [
             {"TITLE": "Простой вопрос", "BODY": "<p>Текст простого вопроса</p>"},
             {"TITLE": "Отчёт", "BODY": "<p>Отчёт о проделанной работе</p>"},
             {"TITLE": "Заявка на расход", "BODY": "<p>Прошу выделить сумму</p>"}
-],
+        ],
         "SP_USERS": [
             {"USERNAME": "itolstov", "TGID": 1837984392},
             {"USERNAME": "attid", "TGID": 1863399780}
-]
-}
+        ]
+    },
+    "3Fk4hjCv847GBx8ZTCPN2Y": {
+        "Users": [
+            {
+                "id": 1,
+                "account_id": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+                "telegram_id": 1837984392
+            },
+            {
+                "id": 2,
+                "account_id": "GB6E7SNNIOUXKVTYELGSSLUW3EHCPYTQCUQJKQQKGEUQH4BIGAFFGV4C",
+                "telegram_id": 1863399780
+            }
+        ],
+        "Accounts": [
+            {
+                "id": 1,
+                "account": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+            },
+            {
+                "id": 2,
+                "account": "GB6E7SNNIOUXKVTYELGSSLUW3EHCPYTQCUQJKQQKGEUQH4BIGAFFGV4C"
+            }
+        ],
+        "Secretaries": [{"account": 1, "users": [1]}]
+    }
 }

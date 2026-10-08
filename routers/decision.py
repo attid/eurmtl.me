@@ -24,6 +24,7 @@ from db.sql_models import Decisions
 from other.gspread_tools import gs_update_decision, gs_get_last_id, gs_save_new_decision
 from services.stellar_client import check_user_weight
 from other.telegram_tools import skynet_bot
+from other.grist_tools import DEFAULT_ORG_NAME
 
 blueprint = Blueprint("decision", __name__)
 
@@ -45,6 +46,48 @@ def d2_pager_pages(page, total_pages):
     start = max(1, min(page - window // 2, total_pages - window + 1))
     return range(start, min(start + window - 1, total_pages) + 1)
 
+
+async def _load_secretary_telegram_ids() -> set[int]:
+    """Telegram_id всех секретарей.
+
+    В проде берём get_secretaries() (grist_cache), в тест-режиме кеш не
+    инициализируется — читаем таблицы EURMTL_secretaries/accounts/users
+    напрямую через grist_manager.
+    """
+    from other.grist_tools import get_secretaries, grist_manager, MTLGrist
+
+    if not config.test_mode:
+        secretaries = await get_secretaries()
+        return {int(tg) for ids in secretaries.values() for tg in ids}
+
+    secretary_rows = (
+        await grist_manager.load_table_data(MTLGrist.EURMTL_secretaries) or []
+    )
+    account_rows = await grist_manager.load_table_data(MTLGrist.EURMTL_accounts) or []
+    user_rows = await grist_manager.load_table_data(MTLGrist.EURMTL_users) or []
+
+    account_by_id = {a["id"]: a.get("account") for a in account_rows if a.get("id")}
+    user_tg_by_id = {u["id"]: u.get("telegram_id") for u in user_rows if u.get("id")}
+    telegram_ids: set[int] = set()
+    for record in secretary_rows:
+        account_id = account_by_id.get(record.get("account"))
+        if not account_id:
+            continue
+        for user_id in record.get("users") or []:
+            tg_id = user_tg_by_id.get(user_id)
+            if tg_id:
+                telegram_ids.add(int(tg_id))
+    return telegram_ids
+
+
+async def _is_secretary() -> bool:
+    """Текущий пользователь (по userdata.id) — секретарь."""
+    userdata = session.get("userdata") or {}
+    user_id = userdata.get("id")
+    if not user_id:
+        return False
+    secretary_ids = await _load_secretary_telegram_ids()
+    return int(user_id) in secretary_ids
 statuses = (
     "❗️ #active",
     "☑️ #next",
@@ -58,6 +101,19 @@ if config.test_mode:
     chat_ids = (0, 1837984392, 1837984392, 1837984392)  # -100 test
 else:
     chat_ids = (0, 1863399780, 1652080456, 1649743884)  # -100
+
+
+async def resolve_channel(org_name: str | None, reading: int) -> str | None:
+    """Канал публикации чтения N: из ORGS, fallback — хардкод фонда."""
+    from other.grist_tools import load_orgs, resolve_org_channel
+
+    orgs = await load_orgs()
+    channel = resolve_org_channel(orgs, org_name, reading)
+    if channel is not None:
+        return channel
+    if 1 <= reading <= 3:
+        return str(chat_ids[reading])
+    return None
 
 
 def get_full_text(status, start_text, links_url, uuid_url, username):
@@ -215,6 +271,17 @@ def _question_links(question_id: int, question_data: list) -> tuple:
     return tuple(links)
 
 
+async def _org_names() -> list[str]:
+    """Имена организаций для селекта; Фонд — всегда первый пункт."""
+    from other.grist_tools import load_orgs
+
+    orgs = await load_orgs()
+    names = [(o.get("NAME") or "") for o in orgs if o.get("NAME")]
+    if DEFAULT_ORG_NAME not in names:
+        names.insert(0, DEFAULT_ORG_NAME)
+    return names
+
+
 @blueprint.route("/d2/<question_uuid>", methods=("GET", "POST"))
 async def cmd_d2_show(question_uuid):
     session["return_to"] = request.url
@@ -232,6 +299,7 @@ async def cmd_d2_show(question_uuid):
     reading = _readings_int(data_row) or 1
     status = data_row.get("STATUS") or ""
     username = data_row.get("CREATED_BY") or ""
+    org = question.get("ORG") or DEFAULT_ORG_NAME
 
     user_weight = await check_user_weight(False)
     if request.method == "POST":
@@ -300,7 +368,7 @@ async def cmd_d2_show(question_uuid):
                 )
                 try:
                     await skynet_bot.edit_message_text(
-                        chat_id=int(f"-100{chat_ids[new_reading]}"),
+                        chat_id=int(f"-100{await resolve_channel(org, new_reading)}"),
                         text=text,
                         parse_mode=SULGUK_PARSE_MODE,
                         disable_web_page_preview=True,
@@ -315,9 +383,10 @@ async def cmd_d2_show(question_uuid):
                 # Смена чтения: новая строка QUESTION_DATA + новое сообщение.
                 new_uuid = uuid.uuid4().hex
                 text = get_full_text(status, inquiry, links_url, new_uuid, username)
+                channel = await resolve_channel(org, new_reading)
                 try:
                     msg = await skynet_bot.send_message(
-                        chat_id=int(f"-100{chat_ids[new_reading]}"),
+                        chat_id=int(f"-100{channel}"),
                         text=text,
                         parse_mode=SULGUK_PARSE_MODE,
                         disable_web_page_preview=True,
@@ -336,11 +405,10 @@ async def cmd_d2_show(question_uuid):
                     "STATUS": status,
                     "CREATED_BY": username,
                     "CREATED_AT": datetime.now().isoformat(),
+                    "ORG": org,
                 }
-                if message_id is not None:
-                    fields["TELEGRAM_LINK"] = (
-                        f"https://t.me/c/{chat_ids[new_reading]}/{message_id}"
-                    )
+                if message_id is not None and channel is not None:
+                    fields["TELEGRAM_LINK"] = f"https://t.me/c/{channel}/{message_id}"
                 await grist_manager.post_data(
                     MTLGrist.QUESTION_DATA, {"records": [{"fields": fields}]}
                 )
@@ -382,6 +450,8 @@ async def cmd_d2_show(question_uuid):
     readings_total = sum(
         1 for row in question_data if row.get("QUESTION_ID") == question["id"]
     )
+    is_draft = not (data_row.get("TELEGRAM_LINK") or "")
+    can_publish = is_draft and user_weight > 0 and await _is_secretary()
     return await render_template(
         "d2_question.html",
         question_number=question_number,
@@ -393,7 +463,91 @@ async def cmd_d2_show(question_uuid):
         reading=reading,
         readings_total=readings_total,
         links_url=links_url,
+        org=org,
+        can_publish=can_publish,
     )
+
+
+D2_EDIT_NOT_FOUND_MARKERS = (
+    "message to edit not found",
+    "message to republish not found",
+)
+
+
+@blueprint.route("/d2/<question_uuid>/publish", methods=("POST",))
+async def cmd_d2_publish(question_uuid):
+    session["return_to"] = request.url
+
+    user_weight = await check_user_weight()
+    if user_weight <= 0 or not await _is_secretary():
+        await flash("Публиковать могут только секретари.")
+        return redirect(f"/d2/{question_uuid}")
+
+    data_row, question = await _find_question_row(question_uuid)
+    if data_row is None or question is None:
+        return "Decision not exist =("
+
+    from other.grist_tools import grist_manager, MTLGrist
+
+    questions, question_data, _ = await _load_question_tables()
+    links_url = _question_links(question["id"], question_data)
+    status = data_row.get("STATUS") or ""
+    inquiry = data_row.get("BODY") or ""
+    reading = _readings_int(data_row) or 1
+    username = data_row.get("CREATED_BY") or ""
+    text = get_full_text(status, inquiry, links_url, question_uuid, username)
+
+    telegram_link = data_row.get("TELEGRAM_LINK") or ""
+    published = False
+    if telegram_link:
+        # Републикация: сначала пробуем поправить существующий пост.
+        try:
+            await skynet_bot.edit_message_text(
+                chat_id=int(f"-100{chat_ids[reading]}"),
+                text=text,
+                parse_mode=SULGUK_PARSE_MODE,
+                disable_web_page_preview=True,
+                message_id=telegram_link.split("/")[-1],
+            )
+            published = True
+            await flash("Пост в Telegram обновлён.", "good")
+        except Exception as e:
+            if not any(
+                marker in str(e).lower() for marker in D2_EDIT_NOT_FOUND_MARKERS
+            ):
+                logger.info(f"Error with telegram publishing: {e}")
+                await flash("Не удалось обновить пост в Telegram.")
+                return redirect(f"/d2/{question_uuid}")
+            # Пост мёртв — уходим на ветку send_message ниже.
+
+    if not published:
+        try:
+            msg = await skynet_bot.send_message(
+                chat_id=int(f"-100{chat_ids[reading]}"),
+                text=text,
+                parse_mode=SULGUK_PARSE_MODE,
+                disable_web_page_preview=True,
+            )
+        except Exception as e:
+            logger.info(f"Error with telegram publishing: {e}")
+            await flash("Публикация в Telegram не прошла.")
+            return redirect(f"/d2/{question_uuid}")
+        new_link = f"https://t.me/c/{chat_ids[reading]}/{msg.message_id}"
+        if new_link != telegram_link:
+            await grist_manager.patch_data(
+                MTLGrist.QUESTION_DATA,
+                {
+                    "records": [
+                        {"id": data_row["id"], "fields": {"TELEGRAM_LINK": new_link}}
+                    ]
+                },
+            )
+        if telegram_link:
+            await flash("Пост был удалён в Telegram — опубликован заново.", "good")
+        else:
+            await flash("Вопрос опубликован в Telegram.", "good")
+
+    return redirect(f"/d2/{question_uuid}")
 
 
 @blueprint.route("/d2/fragment/form", methods=("GET",))
@@ -426,6 +580,8 @@ async def cmd_d2_form():
     numbers = [q.get("NUMBER") for q in questions if q.get("NUMBER") is not None]
     next_number = max(numbers, default=0) + 1
 
+    org_names = await _org_names()
+
     return await render_template(
         "d2_form.html",
         question_number=next_number,
@@ -435,6 +591,8 @@ async def cmd_d2_form():
         reading=1,
         statuses=statuses_list,
         user_weight=user_weight,
+        org_names=org_names,
+        org=DEFAULT_ORG_NAME,
     )
 
 
@@ -458,6 +616,8 @@ async def cmd_d2_add():
     inquiry = form_data["inquiry"]
     status = form_data["status"]
     reading = int(form_data["reading"])
+    org = (form_data.get("org") or "").strip() or DEFAULT_ORG_NAME
+    as_draft = form_data.get("as_draft") == "on"
 
     user_weight = await check_user_weight()
     if user_weight <= 0:
@@ -501,6 +661,7 @@ async def cmd_d2_add():
                         "NUMBER": int(question_number),
                         "TITLE": short_subject,
                         "READING": reading,
+                        "ORG": org,
                     }
                 }
             ]
@@ -511,19 +672,23 @@ async def cmd_d2_add():
         q["id"] for q in questions if str(q.get("NUMBER")) == str(question_number)
     )
 
-    # 2. Сообщение в Telegram.
-    text = get_full_text(status, inquiry, [[], [], []], d_uuid, username)
-    try:
-        msg = await skynet_bot.send_message(
-            chat_id=int(f"-100{chat_ids[reading]}"),
-            text=text,
-            parse_mode=SULGUK_PARSE_MODE,
-            disable_web_page_preview=True,
-        )
-        message_id = msg.message_id
-    except Exception as e:
-        logger.info(f"Error with telegram publishing: {e}")
-        message_id = None
+    # 2. Сообщение в Telegram (кроме черновика).
+    message_id = None
+    channel = None
+    if not as_draft:
+        text = get_full_text(status, inquiry, [[], [], []], d_uuid, username)
+        channel = await resolve_channel(org, reading)
+        try:
+            msg = await skynet_bot.send_message(
+                chat_id=int(f"-100{channel}"),
+                text=text,
+                parse_mode=SULGUK_PARSE_MODE,
+                disable_web_page_preview=True,
+            )
+            message_id = msg.message_id
+        except Exception as e:
+            logger.info(f"Error with telegram publishing: {e}")
+            message_id = None
 
     fields = {
         "QUESTION_ID": question_id,
@@ -534,15 +699,18 @@ async def cmd_d2_add():
         "STATUS": status,
         "CREATED_BY": username,
         "CREATED_AT": datetime.now().isoformat(),
+        "ORG": org,
     }
-    if message_id is not None:
-        fields["TELEGRAM_LINK"] = f"https://t.me/c/{chat_ids[reading]}/{message_id}"
+    if message_id is not None and channel is not None:
+        fields["TELEGRAM_LINK"] = f"https://t.me/c/{channel}/{message_id}"
     # 3. Строка в QUESTION_DATA.
     await grist_manager.post_data(
         MTLGrist.QUESTION_DATA, {"records": [{"fields": fields}]}
     )
 
-    if message_id is None:
+    if as_draft:
+        await flash("Черновик сохранён без публикации в Telegram.", "good")
+    elif message_id is None:
         await flash("Error with telegram publishing")
     else:
         await flash("Вопрос успешно добавлен.", "good")
@@ -573,6 +741,8 @@ async def cmd_d2_copy():
         reading=1,
         statuses=statuses_list,
         user_weight=user_weight,
+        org_names=await _org_names(),
+        org=question.get("ORG") or DEFAULT_ORG_NAME,
     )
 
 
@@ -627,6 +797,7 @@ async def cmd_d2_edit():
                 "reading": reading_int,
                 "status": row.get("STATUS") or "",
                 "uuid": row.get("UUID") or "",
+                "telegram_link": row.get("TELEGRAM_LINK") or "",
             }
         )
 
@@ -635,6 +806,7 @@ async def cmd_d2_edit():
         number = question.get("NUMBER")
         title = question.get("TITLE") or ""
         question_id = question.get("id")
+        org = question.get("ORG") or DEFAULT_ORG_NAME
         readings = data_by_question.get(question_id, [])
         max_reading = max((r["reading"] for r in readings), default=0)
         status = ""
@@ -648,19 +820,23 @@ async def cmd_d2_edit():
                 "title": title,
                 "reading": max_reading,
                 "status": status,
+                "org": org,
                 "readings_count": len(readings),
                 "uuids": [r["uuid"] for r in data_by_question.get(question_id, [])],
                 "first_uuid": data_by_question.get(question_id, [{}])[0].get(
                     "uuid", ""
                 ),
+                "is_draft": bool(readings)
+                and all(not r["telegram_link"] for r in readings),
             }
         )
 
     items.sort(key=lambda row: (row["number"] is None, row["number"]), reverse=True)
 
     status_param = request.args.get("status")
+    org_param = (request.args.get("org") or "").strip()
     query = (request.args.get("q") or "").strip().lower()
-    if status_param in (None, "", "active") and not query:
+    if status_param in (None, "", "active") and not query and not org_param:
         filtered = [row for row in items if row["status"] in D2_ACTIVE_STATUSES]
     elif status_param in (None, "", "active") or status_param == "all":
         filtered = items
@@ -669,12 +845,14 @@ async def cmd_d2_edit():
     else:
         filtered = items
 
+    if org_param and org_param != "all":
+        filtered = [row for row in filtered if row["org"] == org_param]
+
     if query:
         filtered = [
             row
             for row in filtered
-            if query in str(row["title"]).lower()
-            or query in str(row["number"]).lower()
+            if query in str(row["title"]).lower() or query in str(row["number"]).lower()
         ]
 
     try:
@@ -695,6 +873,10 @@ async def cmd_d2_edit():
     else:
         status_filter = status_param
 
+    org_names = sorted({row["org"] for row in items})
+    if DEFAULT_ORG_NAME not in org_names:
+        org_names.insert(0, DEFAULT_ORG_NAME)
+
     return await render_template(
         "d2_frag_edit.html",
         items=page_items,
@@ -705,6 +887,8 @@ async def cmd_d2_edit():
         status_filter=status_filter,
         query=query,
         statuses=statuses,
+        org_names=org_names,
+        org_filter=org_param,
         d2_hide_list_link=True,
     )
 

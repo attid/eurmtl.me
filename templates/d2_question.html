@@ -9,7 +9,7 @@
 {% set disable_fields = user_weight < 1 %}
 <div>
     <div class="mb-1"><a href="/d2/fragment/edit?status=active">← К списку вопросов</a></div>
-    <h2 class="page-title">Вопрос №{{ question_number }}</h2>
+    <h2 class="page-title">Вопрос №{{ question_number }} <span class="badge bg-secondary-lt">{{ org }}</span></h2>
     <div class="text-secondary">
         Чтение {{ reading }} из {{ readings_total }} · UUID {{ row_uuid }}
     </div>
@@ -34,6 +34,12 @@
     <div class="mb-3">
         <a href="/d2/copy?uuid={{ row_uuid }}" class="btn btn-outline-secondary btn-sm">Копировать в новый вопрос</a>
         <a href="/d2/template/from?uuid={{ row_uuid }}" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#saveTemplateModal">Сохранить как шаблон</a>
+        {% if can_publish %}
+        <form action="/d2/{{ row_uuid }}/publish" method="post" class="d-inline">
+            <button type="submit" class="btn btn-primary btn-sm">Опубликовать<i class="ti ti-send ms-2"></i></button>
+        </form>
+        <span class="badge bg-warning-lt ms-1">черновик</span>
+        {% endif %}
     </div>
 
     <div class="modal modal-blur fade" id="saveTemplateModal" tabindex="-1" role="dialog" aria-hidden="true">
