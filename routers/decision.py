@@ -373,6 +373,7 @@ async def cmd_d2_show(question_uuid):
         reading=reading,
         readings_total=readings_total,
         links_url=links_url,
+        fragment_mode=request.headers.get("HX-Request") == "true",
     )
 
 
@@ -415,6 +416,7 @@ async def cmd_d2_form():
         reading=1,
         statuses=statuses_list,
         user_weight=user_weight,
+        fragment_mode=request.headers.get("HX-Request") == "true",
     )
 
 
