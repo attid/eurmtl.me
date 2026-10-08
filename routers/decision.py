@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from datetime import datetime
 
 from loguru import logger
 from sqlalchemy import select
@@ -149,9 +150,383 @@ async def cmd_add_decision():
 
 
 @blueprint.route("/d2", methods=("GET",))
-@blueprint.route("/d2/<question_uuid>", methods=("GET",))
-async def cmd_d2_index(question_uuid=None):
-    return await render_template("d2_index.html", question_uuid=question_uuid)
+async def cmd_d2_index():
+    return await render_template("d2_index.html")
+
+
+async def _load_question_tables():
+    """Возвращает (questions, question_data, templates) из Grist."""
+    from other.grist_tools import grist_manager, MTLGrist
+
+    questions = await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
+    question_data = await grist_manager.load_table_data(MTLGrist.QUESTION_DATA) or []
+    templates = await grist_manager.load_table_data(MTLGrist.QUESTION_TEMPLATES) or []
+    return questions, question_data, templates
+
+
+def _readings_int(row) -> int | None:
+    try:
+        return int(row.get("READING"))
+    except (TypeError, ValueError):
+        return None
+
+
+async def _find_question_row(question_uuid: str):
+    """Ищет строку QUESTION_DATA по UUID, возвращает (data_row, question)."""
+    questions, question_data, _ = await _load_question_tables()
+    row = next((r for r in question_data if r.get("UUID") == question_uuid), None)
+    if row is None:
+        return None, None
+    question = next(
+        (q for q in questions if q.get("id") == row.get("QUESTION_ID")), None
+    )
+    return row, question
+
+
+def _question_links(question_id: int, question_data: list) -> tuple:
+    """TELEGRAM_LINK'и всех чтений вопроса: (first, second, third)."""
+    links = [None, None, None]
+    for row in question_data:
+        if row.get("QUESTION_ID") != question_id:
+            continue
+        reading = _readings_int(row)
+        if reading and 1 <= reading <= 3 and row.get("TELEGRAM_LINK"):
+            links[reading - 1] = (row["TELEGRAM_LINK"],)
+    return tuple(links)
+
+
+@blueprint.route("/d2/<question_uuid>", methods=("GET", "POST"))
+async def cmd_d2_show(question_uuid):
+    session["return_to"] = request.url
+
+    data_row, question = await _find_question_row(question_uuid)
+    if data_row is None or question is None:
+        return "Decision not exist =("
+
+    questions, question_data, _ = await _load_question_tables()
+    links_url = _question_links(question["id"], question_data)
+
+    question_number = question.get("NUMBER")
+    short_subject = question.get("TITLE") or ""
+    inquiry = data_row.get("BODY") or ""
+    reading = _readings_int(data_row) or 1
+    status = data_row.get("STATUS") or ""
+    username = data_row.get("CREATED_BY") or ""
+
+    user_weight = await check_user_weight(False)
+    if request.method == "POST":
+        user_weight = await check_user_weight()
+        if user_weight > 0:
+            form_data = await request.form
+            short_subject = form_data["short_subject"]
+            inquiry = form_data["inquiry"]
+            status = form_data["status"]
+            new_reading = int(form_data["reading"])
+
+            from other.grist_tools import grist_manager, MTLGrist
+
+            same_reading = new_reading == reading
+            reading_exists = links_url[new_reading - 1] is not None
+
+            if not same_reading and reading_exists:
+                await flash(
+                    "Такое чтение уже существует, редактировать надо по ссылке из него"
+                )
+            elif same_reading:
+                # Обновление существующей строки + правка сообщения в TG.
+                await grist_manager.patch_data(
+                    MTLGrist.QUESTION_DATA,
+                    {
+                        "records": [
+                            {
+                                "id": data_row["id"],
+                                "fields": {
+                                    "BODY": inquiry,
+                                    "STATUS": status,
+                                },
+                            }
+                        ]
+                    },
+                )
+                if question.get("TITLE") != short_subject:
+                    await grist_manager.patch_data(
+                        MTLGrist.QUESTIONS,
+                        {
+                            "records": [
+                                {
+                                    "id": question["id"],
+                                    "fields": {
+                                        "TITLE": short_subject,
+                                    },
+                                }
+                            ]
+                        },
+                    )
+                await grist_manager.patch_data(
+                    MTLGrist.QUESTIONS,
+                    {
+                        "records": [
+                            {
+                                "id": question["id"],
+                                "fields": {
+                                    "READING": new_reading,
+                                },
+                            }
+                        ]
+                    },
+                )
+                text = get_full_text(
+                    status, inquiry, links_url, question_uuid, username
+                )
+                try:
+                    await skynet_bot.edit_message_text(
+                        chat_id=int(f"-100{chat_ids[new_reading]}"),
+                        text=text,
+                        parse_mode=SULGUK_PARSE_MODE,
+                        disable_web_page_preview=True,
+                        message_id=data_row["TELEGRAM_LINK"].split("/")[-1],
+                    )
+                except Exception as e:
+                    logger.info(f"Error with telegram publishing: {e}")
+                    await flash("Вопрос сохранён, но правка в Telegram не прошла.")
+                await flash("Вопрос успешно обновлён.", "good")
+                return redirect(f"/d2/{question_uuid}")
+            else:
+                # Смена чтения: новая строка QUESTION_DATA + новое сообщение.
+                new_uuid = uuid.uuid4().hex
+                text = get_full_text(status, inquiry, links_url, new_uuid, username)
+                try:
+                    msg = await skynet_bot.send_message(
+                        chat_id=int(f"-100{chat_ids[new_reading]}"),
+                        text=text,
+                        parse_mode=SULGUK_PARSE_MODE,
+                        disable_web_page_preview=True,
+                    )
+                    message_id = msg.message_id
+                except Exception as e:
+                    logger.info(f"Error with telegram publishing: {e}")
+                    message_id = None
+
+                fields = {
+                    "QUESTION_ID": question["id"],
+                    "READING": new_reading,
+                    "UUID": new_uuid,
+                    "BODY": inquiry,
+                    "EXTRA": "",
+                    "STATUS": status,
+                    "CREATED_BY": username,
+                    "CREATED_AT": datetime.now().isoformat(),
+                }
+                if message_id is not None:
+                    fields["TELEGRAM_LINK"] = (
+                        f"https://t.me/c/{chat_ids[new_reading]}/{message_id}"
+                    )
+                await grist_manager.post_data(
+                    MTLGrist.QUESTION_DATA, {"records": [{"fields": fields}]}
+                )
+                if question.get("TITLE") != short_subject:
+                    await grist_manager.patch_data(
+                        MTLGrist.QUESTIONS,
+                        {
+                            "records": [
+                                {
+                                    "id": question["id"],
+                                    "fields": {
+                                        "TITLE": short_subject,
+                                    },
+                                }
+                            ]
+                        },
+                    )
+                await grist_manager.patch_data(
+                    MTLGrist.QUESTIONS,
+                    {
+                        "records": [
+                            {
+                                "id": question["id"],
+                                "fields": {
+                                    "READING": new_reading,
+                                },
+                            }
+                        ]
+                    },
+                )
+                if message_id is None:
+                    await flash("Чтение создано, но публикация в Telegram не прошла.")
+                await flash("Вопрос успешно обновлён.", "good")
+                return redirect(f"/d2/{new_uuid}")
+
+    statuses_list = [
+        (status_, "selected" if status_ == status else "") for status_ in statuses
+    ]
+    readings_total = sum(
+        1 for row in question_data if row.get("QUESTION_ID") == question["id"]
+    )
+    return await render_template(
+        "d2_question.html",
+        question_number=question_number,
+        row_uuid=question_uuid,
+        statuses=statuses_list,
+        user_weight=user_weight,
+        short_subject=short_subject,
+        inquiry=inquiry,
+        reading=reading,
+        readings_total=readings_total,
+        links_url=links_url,
+    )
+
+
+@blueprint.route("/d2/fragment/form", methods=("GET",))
+async def cmd_d2_form():
+    template_id = request.args.get("template_id", type=int)
+
+    template_title, inquiry = (
+        "",
+        (
+            "<br>"
+            "<b>Предложение:</b> <br><br>"
+            "<b>Обоснование:</b> <br><br>"
+            "<b>Примечание:</b> <br><br>"
+            "<b>Имплементация:</b> <br><br>"
+        ),
+    )
+    if template_id is not None:
+        _, _, templates = await _load_question_tables()
+        template = next((t for t in templates if t.get("id") == template_id), None)
+        if template:
+            template_title = template.get("TITLE") or ""
+            inquiry = template.get("BODY") or ""
+
+    user_weight = await check_user_weight(False)
+    statuses_list = [(status_, "") for status_ in statuses]
+
+    from other.grist_tools import grist_manager, MTLGrist
+
+    questions = await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
+    numbers = [q.get("NUMBER") for q in questions if q.get("NUMBER") is not None]
+    next_number = max(numbers, default=0) + 1
+
+    return await render_template(
+        "d2_form.html",
+        question_number=next_number,
+        short_subject="",
+        inquiry=inquiry,
+        template_title=template_title,
+        reading=1,
+        statuses=statuses_list,
+        user_weight=user_weight,
+    )
+
+
+@blueprint.route("/d2/number", methods=("GET",))
+async def cmd_d2_get_number():
+    from other.grist_tools import grist_manager, MTLGrist
+
+    questions = await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
+    numbers = [q.get("NUMBER") for q in questions if q.get("NUMBER") is not None]
+    return jsonify({"number": str(max(numbers, default=0) + 1)})
+
+
+@blueprint.route("/d2/add", methods=("POST",))
+async def cmd_d2_add():
+    session["return_to"] = request.url
+
+    user_weight = await check_user_weight(False)
+    form_data = await request.form
+    question_number = form_data["question_number"]
+    short_subject = form_data["short_subject"]
+    inquiry = form_data["inquiry"]
+    status = form_data["status"]
+    reading = int(form_data["reading"])
+
+    user_weight = await check_user_weight()
+    if user_weight <= 0:
+        return redirect("/d2")
+
+    from other.grist_tools import grist_manager, MTLGrist
+
+    questions, question_data, _ = await _load_question_tables()
+    if any(str(q.get("NUMBER")) == str(question_number) for q in questions):
+        existing = next(
+            (
+                r
+                for r in question_data
+                if r.get("QUESTION_ID")
+                == next(
+                    q["id"]
+                    for q in questions
+                    if str(q.get("NUMBER")) == str(question_number)
+                )
+            ),
+            None,
+        )
+        link = f"/d2/{existing['UUID']}" if existing else "/d2"
+        await flash(
+            f"Вопрос с номером {question_number} уже существует. "
+            f'<a href="{link}">Редактировать существующий вопрос</a> '
+            f"или создайте новый с другим номером."
+        )
+        return redirect("/d2/fragment/form")
+
+    d_uuid = uuid.uuid4().hex
+    username = "@" + session["userdata"]["username"]
+
+    # 1. Строка в QUESTIONS.
+    await grist_manager.post_data(
+        MTLGrist.QUESTIONS,
+        {
+            "records": [
+                {
+                    "fields": {
+                        "NUMBER": int(question_number),
+                        "TITLE": short_subject,
+                        "READING": reading,
+                    }
+                }
+            ]
+        },
+    )
+    questions, _, _ = await _load_question_tables()
+    question_id = next(
+        q["id"] for q in questions if str(q.get("NUMBER")) == str(question_number)
+    )
+
+    # 2. Сообщение в Telegram.
+    text = get_full_text(status, inquiry, [[], [], []], d_uuid, username)
+    try:
+        msg = await skynet_bot.send_message(
+            chat_id=int(f"-100{chat_ids[reading]}"),
+            text=text,
+            parse_mode=SULGUK_PARSE_MODE,
+            disable_web_page_preview=True,
+        )
+        message_id = msg.message_id
+    except Exception as e:
+        logger.info(f"Error with telegram publishing: {e}")
+        message_id = None
+
+    fields = {
+        "QUESTION_ID": question_id,
+        "READING": reading,
+        "UUID": d_uuid,
+        "BODY": inquiry,
+        "EXTRA": "",
+        "STATUS": status,
+        "CREATED_BY": username,
+        "CREATED_AT": datetime.now().isoformat(),
+    }
+    if message_id is not None:
+        fields["TELEGRAM_LINK"] = f"https://t.me/c/{chat_ids[reading]}/{message_id}"
+    # 3. Строка в QUESTION_DATA.
+    await grist_manager.post_data(
+        MTLGrist.QUESTION_DATA, {"records": [{"fields": fields}]}
+    )
+
+    if message_id is None:
+        await flash("Error with telegram publishing")
+    else:
+        await flash("Вопрос успешно добавлен.", "good")
+    return redirect(f"/d2/{d_uuid}")
 
 
 @blueprint.route("/d2/fragment/edit", methods=("GET",))
@@ -175,6 +550,7 @@ async def cmd_d2_edit():
             {
                 "reading": reading_int,
                 "status": row.get("STATUS") or "",
+                "uuid": row.get("UUID") or "",
             }
         )
 
@@ -197,11 +573,17 @@ async def cmd_d2_edit():
                 "reading": max_reading,
                 "status": status,
                 "readings_count": len(readings),
+                "uuids": [r["uuid"] for r in data_by_question.get(question_id, [])],
+                "first_uuid": data_by_question.get(question_id, [{}])[0].get(
+                    "uuid", ""
+                ),
             }
         )
 
     items.sort(key=lambda row: (row["number"] is None, row["number"]), reverse=True)
-    return await render_template("d2_frag_edit.html", items=items)
+    return await render_template(
+        "d2_frag_edit.html", items=items, current_uuid=request.args.get("uuid")
+    )
 
 
 @blueprint.route("/d2/fragment/new", methods=("GET",))

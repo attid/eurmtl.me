@@ -49,8 +49,4 @@
         <div id="d2-panel" class="mt-4"></div>
     </div>
 </div>
-
-{% if question_uuid %}
-<div hx-get="/d2/fragment/edit?uuid={{ question_uuid }}" hx-target="#d2-panel" hx-trigger="load"></div>
-{% endif %}
 {% endblock %}

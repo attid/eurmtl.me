@@ -169,6 +169,22 @@ def activate_stand() -> None:
     for bot in (telegram_tools.skynet_bot, telegram_tools.mmwb_bot):
         bot.session = AiohttpSession(api=TelegramAPIServer.from_base(local_tg))
 
+    # Stellar: вес подписчика не должен зависеть от реального хорайзона.
+    import services.stellar_client as stellar_client
+
+    async def _stand_fund_signers():
+        return {
+            "signers": [
+                {
+                    "key": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
+                    "weight": 1,
+                    "telegram_id": 84131737,
+                }
+            ]
+        }
+
+    stellar_client.get_fund_signers = _stand_fund_signers
+
 
 def register_tg_mock(app) -> None:
     """Ловит вызовы aiogram-ботов и отвечает фиктивным Telegram-ответом."""
