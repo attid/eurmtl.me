@@ -122,6 +122,18 @@ async def initialize_grist_cache():
         await grist_cache.initialize_cache()
 
 
+if config.test_mode:
+    from other.dev_stand import blueprint as dev_stand_blueprint, register_tg_mock
+
+    app.register_blueprint(dev_stand_blueprint)
+    register_tg_mock(app)
+
+    from other.dev_stand import activate_stand, load_seed
+
+    activate_stand()
+    load_seed("tests/fixtures/d2_stand_seed.json")
+
+
 if __name__ == "__main__":
     if config.test_mode:
         app.run(host="0.0.0.0", port=config.port, debug=True)
