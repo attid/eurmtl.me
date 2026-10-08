@@ -1,0 +1,133 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}D2: Вопрос №{{ question_number }}{% endblock %}
+
+{% block head_scripts %}
+<script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+<link rel="stylesheet" href="https://cdn.quilljs.com/1.3.6/quill.snow.css">
+<link rel="stylesheet" href="/static/css/quill-emoji.css">
+{% endblock %}
+
+{% block content %}
+
+{% set disable_fields = user_weight < 1 %}
+
+<div class="page-header d-print-none">
+    <div class="container-xl">
+        <div class="row g-2 align-items-center">
+            <div class="col">
+                <div class="mb-1"><a href="/d2">← К списку вопросов</a></div>
+                <h2 class="page-title">Вопрос №{{ question_number }}</h2>
+                <div class="text-secondary">
+                    Чтение {{ reading }} из {{ readings_total }} · UUID {{ row_uuid }}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="page-body">
+    <div class="container-xl">
+
+        {% if links_url %}
+        <div class="list-group list-group-transparent mb-3">
+            {% if links_url[0] %}
+            <a href="{{ links_url[0][0] }}" class="list-group-item list-group-item-action">Первое чтение</a>
+            {% endif %}
+            {% if links_url[1] %}
+            <a href="{{ links_url[1][0] }}" class="list-group-item list-group-item-action">Второе чтение</a>
+            {% endif %}
+            {% if links_url[2] %}
+            <a href="{{ links_url[2][0] }}" class="list-group-item list-group-item-action">Третье чтение</a>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <form action="" method="post">
+            <div class="row">
+                <div class="col-12 mb-3">
+                    <label for="short_subject" class="form-label">Тема (В реестр)</label>
+                    <input type="text" id="short_subject" name="short_subject" class="form-control" required
+                           value="{{ short_subject }}" {% if disable_fields %}disabled{% endif %}>
+                </div>
+
+                <div class="col-12 mb-3">
+                    <label for="status" class="form-label">Статус вопроса</label>
+                    <select id="status" name="status" class="form-select" {% if disable_fields %}disabled{% endif %}>
+                        <option value="" disabled>Выберите статус</option>
+                        {% for value, selected in statuses %}
+                        <option value="{{ value }}" {{ selected }}>{{ value }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="card col-12 mb-3 h-auto overflow-hidden">
+                    <div class="card-body">
+                        <input type="hidden" name="inquiry" id="inquiry">
+                        <div>
+                            <h5 class="card-title">Вопрос (Идет в канал без темы как написано ниже)</h5>
+                        </div>
+                        <div id="editor-container" {% if disable_fields %}data-disabled="true"{% endif %}>
+                            {{ inquiry|safe }}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 mb-3">
+                    <label class="form-label">Чтение</label>
+                    {% for n in (1, 2, 3) %}
+                    <div class="form-check">
+                        <input type="radio" id="reading{{ n }}" name="reading" value="{{ n }}"
+                               class="form-check-input" {{ 'checked' if reading == n else '' }}
+                               {% if links_url[n - 1] %}disabled{% endif %}>
+                        <label for="reading{{ n }}" class="form-check-label">
+                            {{ 'Первое чтение' if n == 1 else ('Второе чтение' if n == 2 else 'Третье чтение') }}
+                            {% if links_url[n - 1] %}<span class="text-secondary">— уже есть</span>{% endif %}
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary w-100" {% if disable_fields %}disabled{% endif %}>
+                        Сохранить<i class="ti ti-send ms-2"></i>
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block bottom_scripts %}
+<script src="/static/js/quill-emoji.js"></script>
+
+<script>
+    var form = document.querySelector('form');
+    form.onsubmit = function() {
+        var html = quill.root.innerHTML;
+        document.getElementById('inquiry').value = html;
+    };
+
+    var toolbarOptions = {
+        container: [
+            ['bold', 'italic', 'underline', 'strike', 'code'],
+            ['link'],
+            ['clean'],
+            ['emoji']
+        ],
+        handlers: {
+            'emoji': function () {}
+        }
+    };
+
+    var quill = new Quill('#editor-container', {
+        modules: {
+            "toolbar": toolbarOptions,
+            "emoji-toolbar": true,
+            "emoji-shortname": true
+        },
+        theme: 'snow',
+    });
+</script>
+{% endblock %}

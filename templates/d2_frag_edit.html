@@ -13,9 +13,9 @@
                 </thead>
                 <tbody>
                     {% for row in items %}
-                    <tr>
-                        <td>{{ row.number }}</td>
-                        <td>{{ row.title }}</td>
+                    <tr {% if current_uuid and row.uuids %}class="{{ 'table-primary' if current_uuid in row.uuids else '' }}"{% endif %}>
+                        <td>{% if current_uuid and current_uuid in row.uuids %}<span class="badge bg-primary-lt">редактируемое</span> {% endif %}{{ row.number }}</td>
+                        <td><a href="/d2/{{ row.first_uuid }}">{{ row.title }}</a></td>
                         <td>{{ row.reading }}</td>
                         <td>{{ row.status }}</td>
                         <td>{{ row.readings_count }}</td>
