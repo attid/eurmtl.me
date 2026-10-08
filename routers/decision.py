@@ -171,7 +171,7 @@ async def cmd_add_decision():
 
 @blueprint.route("/d2", methods=("GET",))
 async def cmd_d2_index():
-    return await render_template("d2_index.html")
+    return redirect("/d2/fragment/edit?status=active")
 
 
 async def _load_question_tables():
@@ -393,7 +393,6 @@ async def cmd_d2_show(question_uuid):
         reading=reading,
         readings_total=readings_total,
         links_url=links_url,
-        fragment_mode=request.headers.get("HX-Request") == "true",
     )
 
 
@@ -436,7 +435,6 @@ async def cmd_d2_form():
         reading=1,
         statuses=statuses_list,
         user_weight=user_weight,
-        fragment_mode=request.headers.get("HX-Request") == "true",
     )
 
 
@@ -575,7 +573,6 @@ async def cmd_d2_copy():
         reading=1,
         statuses=statuses_list,
         user_weight=user_weight,
-        fragment_mode=request.headers.get("HX-Request") == "true",
     )
 
 
@@ -700,7 +697,6 @@ async def cmd_d2_edit():
 
     return await render_template(
         "d2_frag_edit.html",
-        fragment_mode=request.headers.get("HX-Request") == "true",
         items=page_items,
         current_uuid=request.args.get("uuid"),
         page=page,

@@ -1,3 +1,6 @@
+{% extends 'tabler_base.html' %}{% block page_title %}D2: Новый вопрос из шаблона{% endblock %}
+{% block content %}
+<div class="mb-1"><a href="/d2/fragment/edit?status=active">← К списку вопросов</a></div>
 <div class="card">
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -15,9 +18,8 @@
                         <td>{{ row.title }}</td>
                         <td class="text-secondary">{{ row.body | striptags }}</td>
                         <td class="text-end">
-                            <button class="btn btn-sm btn-primary"
-                                    hx-get="/d2/fragment/form?template_id={{ row.id }}"
-                                    hx-target="#d2-panel" hx-swap="innerHTML">Выбрать</button>
+                            <a class="btn btn-sm btn-primary"
+                               href="/d2/fragment/form?template_id={{ row.id }}">Выбрать</a>
                         </td>
                     </tr>
                     {% else %}
@@ -30,3 +32,4 @@
         </div>
     </div>
 </div>
+{% endblock %}

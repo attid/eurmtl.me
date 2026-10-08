@@ -1,6 +1,5 @@
 {# Инициализация quill-редактора #editor-container.
-   Подключать после CDN-скриптов quill. Безопасно вызывать повторно:
-   после htmx-свапа контейнер новый, старый quill уходит вместе с DOM. #}
+   Подключать после CDN-скриптов quill. #}
 <script src="/static/js/quill-emoji.js"></script>
 <script>
     function d2InitQuill() {
@@ -38,5 +37,4 @@
         }
     }
     d2InitQuill();
-    document.body.addEventListener('htmx:afterSwap', d2InitQuill);
 </script>
