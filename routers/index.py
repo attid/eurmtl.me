@@ -235,17 +235,17 @@ async def openapi_json():
             },
             "/login/agent": {
                 "get": {
-                    "summary": "Get single-use login nonce for multisig signer agent",
+                    "summary": "Get single-use login nonce for agent login",
                     "responses": {
                         "200": {"description": "Nonce for ed25519 signature"},
                     },
                 },
                 "post": {
-                    "summary": "Agent login by signing the nonce with a fund signer key",
+                    "summary": "Agent login by signing the nonce with a EURMTL_users key",
                     "responses": {
                         "200": {"description": "Session cookie established"},
                         "400": {"description": "Invalid signature, address or expired nonce"},
-                        "403": {"description": "Not a fund signer or no Grist user row"},
+                        "403": {"description": "No EURMTL_users row for the address"},
                     },
                 },
             },
