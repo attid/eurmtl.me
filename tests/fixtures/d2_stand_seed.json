@@ -1,0 +1,64 @@
+{
+    "hpZWKq729vw2D5AkG7oYYz": {
+        "QUESTIONS": [
+            {"NUMBER": 1, "TITLE": "Принять отчёт казначея", "READING": 1},
+            {"NUMBER": 2, "TITLE": "Купить сервер для ноды", "READING": 2},
+            {"NUMBER": 3, "TITLE": "Спорный вопрос без чтений", "READING": 1},
+        ],
+        "QUESTION_DATA": [
+            {
+                "QUESTION_ID": 1,
+                "READING": 1,
+                "UUID": "aaaabbbbccccddddeeeeffff00001111",
+                "TELEGRAM_LINK": "https://t.me/c/1863399780/100",
+                "BODY": "Вопрос один, первое чтение. Текст вопроса для проверки экрана.",
+                "EXTRA": "",
+                "STATUS": "❗️ #active",
+                "CREATED_BY": "itolstov",
+                "CREATED_AT": "2026-10-07 22:00:00",
+            },
+            {
+                "QUESTION_ID": 1,
+                "READING": 2,
+                "UUID": "aaaabbbbccccddddeeeeffff00002222",
+                "TELEGRAM_LINK": "https://t.me/c/1863399780/101",
+                "BODY": "Вопрос один, второе чтение после правок.",
+                "EXTRA": "",
+                "STATUS": "☑️ #next",
+                "CREATED_BY": "itolstov",
+                "CREATED_AT": "2026-10-07 22:05:00",
+            },
+            {
+                "QUESTION_ID": 2,
+                "READING": 1,
+                "UUID": "aaaabbbbccccddddeeeeffff00003333",
+                "TELEGRAM_LINK": "",
+                "BODY": "Вопрос два, только первое чтение.",
+                "EXTRA": "",
+                "STATUS": "✅ #done",
+                "CREATED_BY": "attid",
+                "CREATED_AT": "2026-10-07 22:10:00",
+            },
+            {
+                "QUESTION_ID": 3,
+                "READING": 1,
+                "UUID": "aaaabbbbccccddddeeeeffff00004444",
+                "TELEGRAM_LINK": "https://t.me/c/1863399780/103",
+                "BODY": "Вопрос три, одно чтение, активный.",
+                "EXTRA": "",
+                "STATUS": "❗️ #active",
+                "CREATED_BY": "itolstov",
+                "CREATED_AT": "2026-10-07 22:15:00",
+            },
+        ],
+        "QUESTION_TEMPLATES": [
+            {"TITLE": "Простой вопрос", "BODY": "<p>Текст простого вопроса</p>"},
+            {"TITLE": "Отчёт", "BODY": "<p>Отчёт о проделанной работе</p>"},
+            {"TITLE": "Заявка на расход", "BODY": "<p>Прошу выделить сумму</p>"},
+        ],
+        "SP_USERS": [
+            {"USERNAME": "itolstov", "TGID": 1837984392},
+            {"USERNAME": "attid", "TGID": 1863399780},
+        ],
+    }
+}
