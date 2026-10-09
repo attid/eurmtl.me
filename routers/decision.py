@@ -955,9 +955,9 @@ async def cmd_d2_edit():
     else:
         status_filter = status_param
 
-    org_names = sorted({row["org"] for row in items})
-    if DEFAULT_ORG_NAME not in org_names:
-        org_names.insert(0, DEFAULT_ORG_NAME)
+    # Фильтр = все orgи, видимые пользователю (как в форме создания),
+    # независимо от того, есть ли по ним вопросы.
+    org_names = await _org_names()
     return await render_template(
         "d2_frag_edit.html",
         items=page_items,

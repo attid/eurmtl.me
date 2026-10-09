@@ -439,12 +439,14 @@ async def test_edit_list_marks_draft_questions(client):
         _secretary_ids_mock({1837984392}),
         patch(
             "other.grist_tools.grist_manager.load_table_data",
-            # /d2/fragment/edit: QUESTIONS, QUESTION_DATA, затем ORGS
-            # (секретари замоканы хелпером; секретарю видны все оргы из ORGS).
+            # /d2/fragment/edit: QUESTIONS, QUESTION_DATA, ORGS (фильтр
+            # вопросов по видимости) и снова ORGS для списка фильтра —
+            # он теперь равен всем видимым оргам, как в форме создания.
             new=AsyncMock(
                 side_effect=[
                     questions,
                     question_data,
+                    [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
                     [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
                 ]
             ),
