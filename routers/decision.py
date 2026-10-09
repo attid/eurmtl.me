@@ -111,6 +111,15 @@ async def _org_secretary_addresses(org: str) -> set[int]:
     return by_account.get(main_address, set())
 
 
+def _org_readings(org: str) -> int:
+    """Число чтений орги (0 = чтений нет, один вопрос-пост)."""
+    from other import orgs_config
+
+    return next(
+        (o.readings for o in orgs_config.ORGS if o.name == org), 0
+    )
+
+
 async def _is_org_secretary(org: str) -> bool:
     """Текущий пользователь (по userdata.id) — секретарь счёта MAIN_ADDRESS орги."""
     user_id = (session.get("userdata") or {}).get("id")
@@ -574,9 +583,7 @@ async def cmd_d2_show(question_uuid):
     statuses_list = [
         (status_, "selected" if status_ == status else "") for status_ in statuses
     ]
-    readings_total = sum(
-        1 for row in question_data if row.get("QUESTION_ID") == question["id"]
-    )
+    readings_total = _org_readings(org)
     is_draft = not (data_row.get("TELEGRAM_LINK") or "")
     can_publish = is_draft and await _is_org_secretary(org)
     return await render_template(
@@ -722,6 +729,7 @@ async def cmd_d2_form():
         inquiry=inquiry,
         template_title=template_title,
         reading=1,
+        readings_total=_org_readings(org),
         statuses=statuses_list,
         user_weight=user_weight,
         **await _d2_workspace_context(),
