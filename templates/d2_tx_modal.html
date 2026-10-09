@@ -2,11 +2,9 @@
    с prefill xdr/description/memo (GET-параметры routers/sign_tools.py).
    Подключается из d2_form.html и d2_question.html. Серверной логики
    не требует; кнопку размещает вызывающий шаблон. #}
-<span class="d-inline-block">
-    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#txModal">
-        Транза…
-    </button>
-</span>
+<button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#txModal">
+    Транза…
+</button>
 
 <div class="modal modal-blur fade" id="txModal" tabindex="-1" role="dialog" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
