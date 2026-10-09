@@ -75,10 +75,11 @@ async def test_decision_fragment_edit_renders_sorted_items(client):
     async with client.session_transaction() as session:
         session["userdata"] = {"id": 1837984392, "username": "itolstov"}
         session["user_id"] = 1837984392
+        session["d2_org"] = "PFM"
 
     questions = [
-        {"id": 1, "NUMBER": 2, "TITLE": "Second"},
-        {"id": 2, "NUMBER": 5, "TITLE": "Fifth"},
+        {"id": 1, "NUMBER": 2, "TITLE": "Second", "ORG": "PFM"},
+        {"id": 2, "NUMBER": 5, "TITLE": "Fifth", "ORG": "PFM"},
     ]
     question_data = [
         {"QUESTION_ID": 1, "READING": "1", "STATUS": "draft"},
@@ -91,18 +92,17 @@ async def test_decision_fragment_edit_renders_sorted_items(client):
             return questions
         if name == "QUESTION_DATA":
             return question_data
-        # Secretaries/Accounts/Users: юзер 1837984392 — секретарь.
-        # Орги секретарю видны из orgs_config, Grist не читается.
-        seeded = {
-            "Secretaries": [{"id": 1, "account": 1, "users": [1]}],
-            "Accounts": [{"id": 1, "account": "G"}],
-            "Users": [{"id": 1, "telegram_id": 1837984392, "account_id": "G"}],
-        }
-        return list(seeded.get(name, []))
+        return []
 
-    with patch(
-        "other.grist_tools.grist_manager.load_table_data",
-        new=AsyncMock(side_effect=fake),
+    with (
+        patch(
+            "other.grist_tools.grist_manager.load_table_data",
+            new=AsyncMock(side_effect=fake),
+        ),
+        patch(
+            "other.grist_tools.user_org_names",
+            new=AsyncMock(return_value={"PFM"}),
+        ),
     ):
         response = await client.get("/d2/fragment/edit?status=all")
 
@@ -115,13 +115,24 @@ async def test_decision_fragment_edit_renders_sorted_items(client):
 @pytest.mark.asyncio
 async def test_decision_fragment_new_renders_sorted_templates(client):
     templates = [
-        {"id": 2, "TITLE": "Zulu", "BODY": "z"},
-        {"id": 1, "TITLE": "Alpha", "BODY": "a"},
+        {"id": 2, "TITLE": "Zulu", "BODY": "z", "ORG": "PFM"},
+        {"id": 1, "TITLE": "Alpha", "BODY": "a", "ORG": "PFM"},
     ]
 
-    with patch(
-        "other.grist_tools.grist_manager.load_table_data",
-        new=AsyncMock(return_value=templates),
+    async with client.session_transaction() as session:
+        session["userdata"] = {"id": 1837984392, "username": "itolstov"}
+        session["user_id"] = 1837984392
+        session["d2_org"] = "PFM"
+
+    with (
+        patch(
+            "other.grist_tools.grist_manager.load_table_data",
+            new=AsyncMock(return_value=templates),
+        ),
+        patch(
+            "other.grist_tools.user_org_names",
+            new=AsyncMock(return_value={"PFM"}),
+        ),
     ):
         response = await client.get("/d2/fragment/new")
 
