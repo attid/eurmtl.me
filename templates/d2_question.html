@@ -8,6 +8,7 @@
 
 {% set disable_fields = user_weight < 1 %}
 <div>
+    {% include 'd2_header_buttons.html' %}
     <div class="mb-1"><a href="/d2/fragment/edit?status=active">← К списку вопросов</a></div>
     <h2 class="page-title">Вопрос №{{ question_number }} <span class="badge bg-secondary-lt">{{ org }}</span></h2>
     <div class="text-secondary">
