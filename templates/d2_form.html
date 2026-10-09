@@ -7,13 +7,13 @@
 {% block content %}
 
 {% set disable_fields = user_weight < 1 %}
-{% include 'd2_tx_modal.html' %}
 <div>
     <div class="mb-1"><a href="/d2/fragment/edit?status=active">← К списку вопросов</a></div>
     <h2 class="page-title">Новый вопрос</h2>
     {% if template_title %}
     <div class="text-secondary">Шаблон: {{ template_title }}</div>
     {% endif %}
+    {% include 'd2_tx_modal.html' %}
 </div>
 
 <div class="container-xl">
