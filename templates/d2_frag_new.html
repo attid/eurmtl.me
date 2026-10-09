@@ -1,5 +1,6 @@
 {% extends 'tabler_base.html' %}{% block page_title %}D2: Новый вопрос из шаблона{% endblock %}
 {% block content %}
+{% include 'd2_header_buttons.html' %}
 <div class="mb-1"><a href="/d2/fragment/edit?status=active">← К списку вопросов</a></div>
 <div class="card">
     <div class="card-body p-0">
@@ -22,11 +23,23 @@
                                href="/d2/fragment/form?template_id={{ row.id }}">Выбрать</a>
                         </td>
                     </tr>
-                    {% else %}
+                    {% endfor %}
+                    {% if show_default %}
+                    {# Ни одного шаблона у орги — простой дефолт (владелец, 2026-10-09). #}
+                    <tr>
+                        <td>Простой вопрос</td>
+                        <td class="text-secondary">Предложение: Обоснование: Примечание: Имплементация:</td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-outline-primary"
+                               href="/d2/fragment/form">Без шаблона</a>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% if not templates and not show_default %}
                     <tr>
                         <td colspan="3" class="text-secondary">Шаблонов нет.</td>
                     </tr>
-                    {% endfor %}
+                    {% endif %}
                 </tbody>
             </table>
         </div>

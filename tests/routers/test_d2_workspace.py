@@ -293,7 +293,10 @@ async def test_form_ignores_foreign_template(client):
     body = await response.get_data(as_text=True)
     assert response.status_code == 200
     assert "Простой вопрос" not in body  # шаблон чужой орги проигнорирован
-    assert 'name="org"' not in body  # комбик «Организация» убран
+    # Комбик «Организация» в форме убран (в шапке остался select
+    # переключения воркспейса — это не комбик выбора орги вопроса).
+    assert 'id="org"' not in body
+    assert 'name="short_subject"' in body  # форма отрендерилась
 
 
 @pytest.mark.asyncio

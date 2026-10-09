@@ -590,8 +590,8 @@ async def cmd_d2_show(question_uuid):
         reading=reading,
         readings_total=readings_total,
         links_url=links_url,
-        org=org,
         can_publish=can_publish,
+        **await _d2_workspace_context(),
     )
 
 
@@ -724,7 +724,7 @@ async def cmd_d2_form():
         reading=1,
         statuses=statuses_list,
         user_weight=user_weight,
-        org=org,
+        **await _d2_workspace_context(),
     )
 
 
@@ -1057,7 +1057,15 @@ async def cmd_d2_new():
         )
 
     items.sort(key=lambda row: row["title"].lower())
-    return await render_template("d2_frag_new.html", templates=items)
+    # Ни одного шаблона у орги — показываем простой дефолт (решение
+    # владельца 2026-10-09); есть хоть один — дефолт не показываем.
+    show_default = not items
+    return await render_template(
+        "d2_frag_new.html",
+        templates=items,
+        show_default=show_default,
+        **await _d2_workspace_context(),
+    )
 
 
 @blueprint.route("/d/<decision_id>", methods=("GET", "POST"))
