@@ -9,7 +9,10 @@
 {% set disable_fields = user_weight < 1 %}
 <div>
     {% include 'd2_header_buttons.html' %}
-    <div class="mb-1"><a href="/d2/fragment/edit?status=active">← К списку вопросов</a></div>
+    <div class="mb-1 d-flex align-items-center justify-content-between">
+        <a href="/d2/fragment/edit?status=active">← К списку вопросов</a>
+        {% include 'd2_tx_modal.html' %}
+    </div>
     <h2 class="page-title">Новый вопрос</h2>
     {% if template_title %}
     <div class="text-secondary">Шаблон: {{ template_title }}</div>
@@ -17,9 +20,6 @@
 </div>
 
 <div class="container-xl">
-    <div class="mb-3">
-        {% include 'd2_tx_modal.html' %}
-    </div>
     <form action="/d2/add" method="post">
         <div class="row">
             <div class="col-12 mb-3">
