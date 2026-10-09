@@ -983,14 +983,14 @@ async def cmd_d2_edit():
 
     status_param = request.args.get("status")
     query = (request.args.get("q") or "").strip().lower()
-    if status_param in (None, "", "active") and not query:
+    # Непустой поиск ищет по всем статусам (решение владельца 2026-10-09):
+    # поиск + энтер не должен упираться в «Активные».
+    if status_param == "active" and not query:
         filtered = [row for row in items if row["status"] in D2_ACTIVE_STATUSES]
-    elif status_param in (None, "", "active") or status_param == "all":
+    elif status_param in (None, "", "active", "all") or status_param not in statuses:
         filtered = items
-    elif status_param in statuses:
-        filtered = [row for row in items if row["status"] == status_param]
     else:
-        filtered = items
+        filtered = [row for row in items if row["status"] == status_param]
 
     if query:
         filtered = [
@@ -1012,8 +1012,9 @@ async def cmd_d2_edit():
     page = min(page, total_pages)
     page_items = filtered[(page - 1) * per_page : page * per_page]
 
-    if status_param in (None, "", "active"):
-        status_filter = "all" if query else "active"
+    if status_param in (None, "", "active", "all") or status_param not in statuses:
+        # Поиск идёт по всем статусам — селектор показывает «Все».
+        status_filter = "all"
     else:
         status_filter = status_param
 

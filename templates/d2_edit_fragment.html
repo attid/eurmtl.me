@@ -17,6 +17,12 @@
                 </select>
                 <noscript><button type="submit" class="btn btn-outline-secondary ms-1">Фильтр</button></noscript>
             </div>
+            {% if query or (status_filter and status_filter != 'active') %}
+            <div class="col-auto">
+                <a href="/d2/fragment/edit{% if current_uuid %}?uuid={{ current_uuid }}{% endif %}"
+                   class="btn btn-outline-secondary" title="Сбросить фильтры">⟲ Сброс</a>
+            </div>
+            {% endif %}
         </form>
     </div>
 </div>
