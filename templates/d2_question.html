@@ -32,13 +32,13 @@
     </div>
     {% endif %}
 
-    <div class="mb-3">
-        <a href="/d2/copy?uuid={{ row_uuid }}" class="btn btn-outline-secondary btn-sm">Копировать в новый вопрос</a>
-        <a href="/d2/template/from?uuid={{ row_uuid }}" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#saveTemplateModal">Сохранить как шаблон</a>
+    <div class="mb-3 d-flex align-items-center gap-2">
+        <a href="/d2/copy?uuid={{ row_uuid }}" class="btn btn-outline-secondary">Копировать в новый вопрос</a>
+        <a href="/d2/template/from?uuid={{ row_uuid }}" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#saveTemplateModal">Сохранить как шаблон</a>
         {% include 'd2_tx_modal.html' %}
         {% if can_publish %}
         <form action="/d2/{{ row_uuid }}/publish" method="post" class="d-inline">
-            <button type="submit" class="btn btn-primary btn-sm">Опубликовать<i class="ti ti-send ms-2"></i></button>
+            <button type="submit" class="btn btn-primary">Опубликовать<i class="ti ti-send ms-2"></i></button>
         </form>
         <span class="badge bg-warning-lt ms-1">черновик</span>
         {% endif %}
