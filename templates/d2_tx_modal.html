@@ -249,6 +249,9 @@
                 if (data.success) {
                     txXdr.value = data.xdr;
                     txResultBlock.classList.add('d-none');
+                    showMemoStatus('Memo вшито в XDR', 'text-success');
+                    txXdr.classList.add('border-success');
+                    setTimeout(function () { txXdr.classList.remove('border-success'); }, 2000);
                 } else {
                     showMemoError(data.error || 'Не удалось обновить memo');
                 }
@@ -256,10 +259,21 @@
             .catch(function () { showMemoError('Ошибка запроса'); });
     });
 
+    function showMemoStatus(message, colorClass) {
+        txMemoFeedback.textContent = message;
+        txMemoFeedback.classList.remove('is-invalid', 'invalid-feedback');
+        txMemoFeedback.classList.add('form-text', colorClass);
+        setTimeout(function () {
+            txMemoFeedback.textContent = '';
+            txMemoFeedback.classList.remove(colorClass);
+        }, 2500);
+    }
+
     function showMemoError(message) {
         txMemoFeedback.textContent = message;
-        txMemoFeedback.classList.add('is-invalid');
-        setTimeout(function () { txMemoFeedback.classList.remove('is-invalid'); }, 4000);
+        txMemoFeedback.classList.remove('form-text');
+        txMemoFeedback.classList.add('invalid-feedback', 'd-block');
+        setTimeout(function () { txMemoFeedback.classList.remove('d-block'); }, 4000);
     }
 
     txSaveBtn.addEventListener('click', function () {
