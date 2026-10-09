@@ -78,11 +78,13 @@ async def test_federal_federation_name_falls_back_to_signer_username(
     db_session.add(signer)
     await db_session.commit()
 
-    response = await client.get("/federation?q=ALICE*eurmtl.me&type=name")
+    response = await client.get(
+        f"/federation?q=ALICE*{config.domain.lower()}&type=name"
+    )
 
     assert response.status_code == 200
     assert await response.get_json() == {
-        "stellar_address": "alice*eurmtl.me",
+        "stellar_address": f"alice*{config.domain.lower()}",
         "account_id": "GALICE",
     }
 
