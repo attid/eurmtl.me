@@ -81,8 +81,9 @@ async def test_add_publish_still_sends_message(client):
         ),
     ):
         questions = [{"id": 9, "NUMBER": 75, "TITLE": "", "READING": 1}]
-        # /d2/add: 1-я проверка номера (пусто), 2-я поиск id после post_data
-        load_mock.side_effect = [[], [], [], questions, [], []]
+        # /d2/add: 1-я проверка номера (пусто), 2-я поиск id после post_data,
+        # 7-й вызов — load_orgs внутри resolve_channel (не черновик).
+        load_mock.side_effect = [[], [], [], questions, [], [], []]
         response = await client.post(
             "/d2/add",
             form={

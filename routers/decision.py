@@ -309,7 +309,7 @@ async def cmd_d2_show(question_uuid):
             short_subject = form_data["short_subject"]
             inquiry = form_data["inquiry"]
             status = form_data["status"]
-            new_reading = int(form_data["reading"])
+            new_reading = int(form_data.get("reading", reading))
 
             from other.grist_tools import grist_manager, MTLGrist
 
