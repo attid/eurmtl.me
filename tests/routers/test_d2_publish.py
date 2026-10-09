@@ -3,20 +3,22 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
-DRAFT_UUID = "aaaabbbbccccddddeeeeffff00003333"  # вопрос №2, TELEGRAM_LINK=""
-PUBLISHED_UUID = "aaaabbbbccccddddeeeeffff00001111"  # вопрос №1, чтение 1
+DRAFT_UUID = "aaaabbbbccccddddeeeeffff00003333"  # вопрос №2, GORA, TELEGRAM_LINK=""
+PUBLISHED_UUID = "aaaabbbbccccddddeeeeffff00001111"  # вопрос №1, PFM, чтение 1
 
-# Реальный адрес PFM из orgs_config (секретарь стенда — подписант).
+# Реальные адреса организаций из orgs_config.
 PFM_ADDRESS = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+GORA_ADDRESS = "GCVTXUMIUAENJH2XY4AOVGTJKPSCOXW3746PUH7QFGPBDOPPHYLIGORA"
 
 SECRETARY_SESSION = {"id": 1837984392, "username": "itolstov"}
 PLAIN_SESSION = {"id": 1863399780, "username": "attid"}
 
 
-def _secretary_ids_mock(ids):
+def _secretaries_mock(by_account):
+    """Мок _secretaries_by_account: {адрес счёта: {telegram_id}}."""
     return patch(
-        "routers.decision._load_secretary_telegram_ids",
-        new=AsyncMock(return_value=ids),
+        "routers.decision._secretaries_by_account",
+        new=AsyncMock(return_value=by_account),
     )
 
 
@@ -63,6 +65,7 @@ async def test_add_draft_creates_question_without_tg(client):
     async with client.session_transaction() as session:
         session["userdata"] = SECRETARY_SESSION
         session["user_id"] = SECRETARY_SESSION["id"]
+        session["d2_org"] = "PFM"
 
     questions = [{"id": 9, "NUMBER": 76, "TITLE": "", "READING": 1}]
     calls = {"questions": 0}
@@ -73,23 +76,10 @@ async def test_add_draft_creates_question_without_tg(client):
         if name == "QUESTIONS":
             calls["questions"] += 1
             return questions if calls["questions"] >= 2 else []
-        seeded = {
-            "Secretaries": [{"id": 1, "account": 1, "users": [1]}],
-            "Accounts": [
-                {"id": 1, "account": PFM_ADDRESS},
-            ],
-            "Users": [
-                {
-                    "id": 1,
-                    "telegram_id": 1837984392,
-                    "account_id": PFM_ADDRESS,
-                }
-            ],
-        }
-        return list(seeded.get(name, []))
+        return []
 
     with (
-        patch("routers.decision.check_user_weight", new=AsyncMock(return_value=1)),
+        _secretaries_mock({PFM_ADDRESS: {1837984392}}),
         patch(
             "other.grist_tools.grist_manager.load_table_data",
             new=AsyncMock(side_effect=fake),
@@ -125,6 +115,7 @@ async def test_add_publish_still_sends_message(client):
     async with client.session_transaction() as session:
         session["userdata"] = SECRETARY_SESSION
         session["user_id"] = SECRETARY_SESSION["id"]
+        session["d2_org"] = "PFM"
 
     msg = AsyncMock()
     msg.message_id = 4242
@@ -137,23 +128,10 @@ async def test_add_publish_still_sends_message(client):
         if name == "QUESTIONS":
             calls["questions"] += 1
             return questions if calls["questions"] >= 2 else []
-        seeded = {
-            "Secretaries": [{"id": 1, "account": 1, "users": [1]}],
-            "Accounts": [
-                {"id": 1, "account": PFM_ADDRESS},
-            ],
-            "Users": [
-                {
-                    "id": 1,
-                    "telegram_id": 1837984392,
-                    "account_id": PFM_ADDRESS,
-                }
-            ],
-        }
-        return list(seeded.get(name, []))
+        return []
 
     with (
-        patch("routers.decision.check_user_weight", new=AsyncMock(return_value=1)),
+        _secretaries_mock({PFM_ADDRESS: {1837984392}}),
         patch(
             "other.grist_tools.grist_manager.load_table_data",
             new=AsyncMock(side_effect=fake),
@@ -178,7 +156,7 @@ async def test_add_publish_still_sends_message(client):
 
     assert response.status_code == 302
     fields = post_mock.await_args_list[-1].args[1]["records"][0]["fields"]
-    # Дефолтная орга — PFM: канал первого чтения из orgs_config.
+    # Воркспейс PFM: канал первого чтения из orgs_config.
     assert fields["TELEGRAM_LINK"] == "https://t.me/c/1863399780/4242"
 
 
@@ -191,8 +169,7 @@ async def test_publish_draft_by_secretary(client):
     msg = AsyncMock()
     msg.message_id = 5151
     with (
-        patch("routers.decision.check_user_weight", new=AsyncMock(return_value=1)),
-        _secretary_ids_mock({1837984392}),
+        _secretaries_mock({GORA_ADDRESS: {1837984392}}),
         patch(
             "other.grist_tools.grist_manager.load_table_data",
             new=AsyncMock(return_value=[]),
@@ -207,7 +184,15 @@ async def test_publish_draft_by_secretary(client):
             "routers.decision.skynet_bot.edit_message_text", new=AsyncMock()
         ) as edit_mock,
     ):
-        questions = [{"id": 2, "NUMBER": 2, "TITLE": "Купить сервер", "READING": 1}]
+        questions = [
+            {
+                "id": 2,
+                "NUMBER": 2,
+                "TITLE": "Купить сервер",
+                "READING": 1,
+                "ORG": "GORA",
+            }
+        ]
         data = [
             {
                 "id": 3,
@@ -221,7 +206,7 @@ async def test_publish_draft_by_secretary(client):
             }
         ]
         # /d2/publish: _find_question_row (3) + _load_question_tables (3).
-        # Видимость секретарю — из orgs_config, Grist не читается.
+        # Доступ — секретарство GORA из _secretaries_mock.
         load_mock.side_effect = [
             questions,
             data,
@@ -236,8 +221,9 @@ async def test_publish_draft_by_secretary(client):
     assert send_mock.await_count == 1
     edit_mock.assert_not_awaited()
     patched = patch_mock.await_args.args[1]
+    # GORA: канал орги вопроса из orgs_config (один канал на все чтения).
     assert patched["records"][0]["fields"]["TELEGRAM_LINK"] == (
-        "https://t.me/c/1837984392/5151"
+        "https://t.me/c/84131737/5151"
     )
 
 
@@ -251,8 +237,7 @@ async def test_republish_dead_post_sends_new_message(client):
     msg = AsyncMock()
     msg.message_id = 6000
     with (
-        patch("routers.decision.check_user_weight", new=AsyncMock(return_value=1)),
-        _secretary_ids_mock({1837984392}),
+        _secretaries_mock({PFM_ADDRESS: {1837984392}}),
         patch(
             "other.grist_tools.grist_manager.load_table_data",
             new=AsyncMock(return_value=[]),
@@ -270,7 +255,9 @@ async def test_republish_dead_post_sends_new_message(client):
             ),
         ) as edit_mock,
     ):
-        questions = [{"id": 1, "NUMBER": 1, "TITLE": "Принять отчёт", "READING": 1}]
+        questions = [
+            {"id": 1, "NUMBER": 1, "TITLE": "Принять отчёт", "READING": 1, "ORG": "PFM"}
+        ]
         data = [
             {
                 "id": 1,
@@ -284,7 +271,7 @@ async def test_republish_dead_post_sends_new_message(client):
             }
         ]
         # /d2/publish: _find_question_row (3) + _load_question_tables (3).
-        # Видимость секретарю — из orgs_config, Grist не читается.
+        # Доступ — секретарство PFM из _secretaries_mock.
         load_mock.side_effect = [
             questions,
             data,
@@ -300,27 +287,31 @@ async def test_republish_dead_post_sends_new_message(client):
     assert edit_mock.await_args.kwargs["message_id"] == "100"
     assert send_mock.await_count == 1
     patched = patch_mock.await_args.args[1]
+    # PFM: канал первого чтения орги вопроса из orgs_config.
     assert patched["records"][0]["fields"]["TELEGRAM_LINK"] == (
-        "https://t.me/c/1837984392/6000"
+        "https://t.me/c/1863399780/6000"
     )
 
 
 @pytest.mark.asyncio
 async def test_publish_by_non_secretary_rejected(client):
+    """Подписант PFM (не секретарь) публиковать не может."""
     async with client.session_transaction() as session:
         session["userdata"] = PLAIN_SESSION
         session["user_id"] = PLAIN_SESSION["id"]
 
     with (
-        patch("routers.decision.check_user_weight", new=AsyncMock(return_value=1)),
-        _secretary_ids_mock(set()),
+        _secretaries_mock({GORA_ADDRESS: {1837984392}}),
+        _signer_mock(PFM_ADDRESS, 1863399780),  # attid подписант PFM
         patch(
             "other.grist_tools.grist_manager.load_table_data",
             new=AsyncMock(return_value=[]),
         ) as load_mock,
         patch("routers.decision.skynet_bot.send_message", new=AsyncMock()) as send_mock,
     ):
-        questions = [{"id": 2, "NUMBER": 2, "TITLE": "Купить сервер", "READING": 1}]
+        questions = [
+            {"id": 2, "NUMBER": 2, "TITLE": "Купить сервер", "READING": 1, "ORG": "PFM"}
+        ]
         data = [
             {
                 "id": 3,
@@ -350,14 +341,16 @@ async def test_question_screen_hides_publish_button_for_draft_non_secretary(clie
         session["user_id"] = PLAIN_SESSION["id"]
 
     with (
-        patch("routers.decision.check_user_weight", new=AsyncMock(return_value=1)),
-        _secretary_ids_mock(set()),
+        _secretaries_mock({GORA_ADDRESS: {1837984392}}),
+        _signer_mock(PFM_ADDRESS, 1863399780),  # attid подписант PFM
         patch(
             "other.grist_tools.grist_manager.load_table_data",
             new=AsyncMock(return_value=[]),
         ) as load_mock,
     ):
-        questions = [{"id": 2, "NUMBER": 2, "TITLE": "Купить сервер", "READING": 1}]
+        questions = [
+            {"id": 2, "NUMBER": 2, "TITLE": "Купить сервер", "READING": 1, "ORG": "PFM"}
+        ]
         data = [
             {
                 "id": 3,
@@ -385,14 +378,21 @@ async def test_question_screen_shows_publish_button_for_secretary_draft(client):
         session["user_id"] = SECRETARY_SESSION["id"]
 
     with (
-        patch("routers.decision.check_user_weight", new=AsyncMock(return_value=1)),
-        _secretary_ids_mock({1837984392}),
+        _secretaries_mock({GORA_ADDRESS: {1837984392}}),
         patch(
             "other.grist_tools.grist_manager.load_table_data",
             new=AsyncMock(return_value=[]),
         ) as load_mock,
     ):
-        questions = [{"id": 2, "NUMBER": 2, "TITLE": "Купить сервер", "READING": 1}]
+        questions = [
+            {
+                "id": 2,
+                "NUMBER": 2,
+                "TITLE": "Купить сервер",
+                "READING": 1,
+                "ORG": "GORA",
+            }
+        ]
         data = [
             {
                 "id": 3,
@@ -406,8 +406,8 @@ async def test_question_screen_shows_publish_button_for_secretary_draft(client):
             }
         ]
         # GET /d2/<uuid>: _find_question_row (3 loads: QUESTIONS, DATA,
-        # TEMPLATES) + _load_question_tables (3). Видимость секретарю —
-        # из orgs_config, Grist не читается.
+        # TEMPLATES) + _load_question_tables (3). Доступ — секретарство
+        # GORA из _secretaries_mock.
         load_mock.side_effect = [
             questions,
             data,
@@ -429,10 +429,11 @@ async def test_edit_list_marks_draft_questions(client):
     async with client.session_transaction() as session:
         session["userdata"] = SECRETARY_SESSION
         session["user_id"] = SECRETARY_SESSION["id"]
+        session["d2_org"] = "PFM"
 
     questions = [
-        {"id": 1, "NUMBER": 1, "TITLE": "Published"},
-        {"id": 2, "NUMBER": 2, "TITLE": "Draft"},
+        {"id": 1, "NUMBER": 1, "TITLE": "Published", "ORG": "PFM"},
+        {"id": 2, "NUMBER": 2, "TITLE": "Draft", "ORG": "PFM"},
     ]
     question_data = [
         {
@@ -452,11 +453,9 @@ async def test_edit_list_marks_draft_questions(client):
     ]
 
     with (
-        _secretary_ids_mock({1837984392}),
+        _secretaries_mock({PFM_ADDRESS: {1837984392}}),
         patch(
             "other.grist_tools.grist_manager.load_table_data",
-            # /d2/fragment/edit: QUESTIONS, QUESTION_DATA. Список фильтра
-            # берётся из orgs_config (PFM/GORA/USDMM/TFM) без Grist.
             new=AsyncMock(
                 side_effect=[
                     questions,

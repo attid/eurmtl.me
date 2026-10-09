@@ -113,8 +113,20 @@
             {
                 "id": 2,
                 "account": "GB6E7SNNIOUXKVTYELGSSLUW3EHCPYTQCUQJKQQKGEUQH4BIGAFFGV4C"
+            },
+            {
+                "id": 3,
+                "account": "GCVTXUMIUAENJH2XY4AOVGTJKPSCOXW3746PUH7QFGPBDOPPHYLIGORA"
+            },
+            {
+                "id": 4,
+                "account": "GDHDC4GBNPMENZAOBB4NCQ25TGZPDRK6ZGWUGSI22TVFATOLRPSUUSDM"
             }
         ],
-        "Secretaries": [{"account": 1, "users": [1]}]
+        "Secretaries": [
+            {"account": 1, "users": [1]},
+            {"account": 3, "users": [1]},
+            {"account": 4, "users": [1]}
+        ]
     }
 }

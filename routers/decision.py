@@ -51,23 +51,25 @@ def d2_pager_pages(page, total_pages):
 secretary_ids_cache = AsyncTTLCache(ttl_seconds=60)  # Предвыборка секретарей
 
 
-async def _load_secretary_telegram_ids() -> set[int]:
-    """Telegram_id всех секретарей.
+async def _secretaries_by_account() -> dict[str, set[int]]:
+    """Секретари по счетам: {адрес счёта: {telegram_id}}.
 
     В проде берём get_secretaries() (grist_cache), в тест-режиме кеш не
     инициализируется — читаем таблицы EURMTL_secretaries/accounts/users
     напрямую через grist_manager. Результат кешируется на минуту:
-    _is_secretary() зовётся несколько раз за запрос.
+    секретарские проверки зовутся несколько раз за запрос.
     """
     from other.grist_tools import get_secretaries, grist_manager, MTLGrist
 
-    cached = await secretary_ids_cache.get("ids")
+    cached = await secretary_ids_cache.get("by_account")
     if cached is not None:
         return cached
 
     if not config.test_mode:
         secretaries = await get_secretaries()
-        telegram_ids = {int(tg) for ids in secretaries.values() for tg in ids}
+        by_account: dict[str, set[int]] = {
+            account: {int(tg) for tg in ids} for account, ids in secretaries.items()
+        }
     else:
         secretary_rows = (
             await grist_manager.load_table_data(MTLGrist.EURMTL_secretaries) or []
@@ -81,28 +83,55 @@ async def _load_secretary_telegram_ids() -> set[int]:
         user_tg_by_id = {
             u["id"]: u.get("telegram_id") for u in user_rows if u.get("id")
         }
-        telegram_ids: set[int] = set()
+        by_account = {}
         for record in secretary_rows:
-            account_id = account_by_id.get(record.get("account"))
-            if not account_id:
+            account = account_by_id.get(record.get("account"))
+            if not account:
                 continue
+            telegram_ids = by_account.setdefault(account, set())
             for user_id in record.get("users") or []:
                 tg_id = user_tg_by_id.get(user_id)
                 if tg_id:
                     telegram_ids.add(int(tg_id))
 
-    await secretary_ids_cache.set("ids", telegram_ids)
-    return telegram_ids
+    await secretary_ids_cache.set("by_account", by_account)
+    return by_account
 
 
-async def _is_secretary() -> bool:
-    """Текущий пользователь (по userdata.id) — секретарь."""
-    userdata = session.get("userdata") or {}
-    user_id = userdata.get("id")
-    if not user_id:
+async def _org_secretary_addresses(org: str) -> set[int]:
+    """Telegram_id секретарей счёта MAIN_ADDRESS организации org."""
+    from other import orgs_config
+
+    main_address = next(
+        (o.main_address for o in orgs_config.ORGS if o.name == org), None
+    )
+    if not main_address:
+        return set()
+    by_account = await _secretaries_by_account()
+    return by_account.get(main_address, set())
+
+
+async def _is_org_secretary(org: str) -> bool:
+    """Текущий пользователь (по userdata.id) — секретарь счёта MAIN_ADDRESS орги."""
+    user_id = (session.get("userdata") or {}).get("id")
+    if user_id in (None, ""):
         return False
-    secretary_ids = await _load_secretary_telegram_ids()
-    return int(user_id) in secretary_ids
+    return int(user_id) in await _org_secretary_addresses(org)
+
+
+async def _d2_edit_allowed(org: str) -> bool:
+    """Гейт правок d2 (решение владельца): секретарь орги ИЛИ подписант
+    её MAIN_ADDRESS."""
+    if not org:
+        return False
+    if await _is_org_secretary(org):
+        return True
+    user_telegram_id = await _session_user_telegram_id()
+    if user_telegram_id is None:
+        return False
+    from other.grist_tools import user_org_names
+
+    return org in await user_org_names(user_telegram_id)
 
 
 async def _session_user_telegram_id() -> int | None:
@@ -120,20 +149,26 @@ async def _session_user_telegram_id() -> int | None:
 async def _user_visible_orgs() -> set:
     """Организации, видимые текущему пользователю.
 
-    Секретарь видит все; иначе — только организации, где он подписант
-    MAIN_ADDRESS (user_org_names). Неопознанный пользователь не видит ничего.
+    Видимость = подписант MAIN_ADDRESS (user_org_names) ИЛИ секретарь счёта
+    этой орги (EURMTL_secretaries на MAIN_ADDRESS). Секретарство одной орги
+    само по себе другие орги не открывает (решение владельца, 2026-10-09).
+    Неопознанный пользователь не видит ничего.
     """
     from other import orgs_config
     from other.grist_tools import user_org_names
 
-    if await _is_secretary():
-        # Секретарь на стенде подписант всех адресов — пока как раньше:
-        # все орги конфига с непустым адресом (расхождение ловит задача 2).
-        return {o.name for o in orgs_config.ORGS if o.name and o.main_address}
     user_telegram_id = await _session_user_telegram_id()
     if user_telegram_id is None:
         return set()
-    return await user_org_names(user_telegram_id)
+
+    visible = await user_org_names(user_telegram_id)
+
+    for org in orgs_config.ORGS:
+        if org.name in visible or not org.main_address:
+            continue
+        if user_telegram_id in await _org_secretary_addresses(org.name):
+            visible.add(org.name)
+    return visible
 
 
 async def _org_visible(org_name: str) -> bool:
@@ -282,7 +317,43 @@ async def cmd_add_decision():
 
 @blueprint.route("/d2", methods=("GET",))
 async def cmd_d2_index():
-    return redirect("/d2/fragment/edit?status=active")
+    session_org = await _d2_session_org()
+    if session_org:
+        return redirect("/d2/fragment/edit?status=active")
+
+    visible = await _user_visible_orgs()
+    return await render_template(
+        "d2_workspace.html",
+        org_names=sorted(visible),
+        no_orgs=not visible,
+    )
+
+
+async def _d2_session_org() -> str | None:
+    """Текущий воркспейс из сессии; None, если не выбран или невалиден."""
+    org = (session.get("d2_org") or "").strip()
+    if org and await _org_visible(org):
+        return org
+    return None
+
+
+async def _d2_workspace_context() -> dict:
+    """render-контекст шапки: текущая орга + видимые для переключателя."""
+    return {
+        "org": await _d2_session_org(),
+        "org_names": await _org_names(),
+    }
+
+
+@blueprint.route("/d2/workspace", methods=("POST",))
+async def cmd_d2_workspace():
+    form_data = await request.form
+    org = (form_data.get("org") or "").strip()
+    if await _org_visible(org):
+        session["d2_org"] = org
+        return redirect("/d2/fragment/edit?status=active")
+    await flash("Такая организация вам недоступна.")
+    return redirect("/d2")
 
 
 async def _load_question_tables():
@@ -327,38 +398,26 @@ def _question_links(question_id: int, question_data: list) -> tuple:
 
 
 async def _org_names() -> list[str]:
-    """Имена организаций, видимых текущему пользователю; Фонд — первым.
-
-    Секретарь видит все организации, остальные — только те, где они
-    подписант MAIN_ADDRESS (user_org_names).
-    """
-    from other import orgs_config
-    from other.grist_tools import user_org_names
-
-    if await _is_secretary():
-        names = sorted(o.name for o in orgs_config.ORGS if o.name and o.main_address)
-    else:
-        user_telegram_id = await _session_user_telegram_id()
-        names = (
-            sorted(await user_org_names(user_telegram_id))
-            if user_telegram_id is not None
-            else []
-        )
-    if DEFAULT_ORG_NAME not in names:
-        names.insert(0, DEFAULT_ORG_NAME)
-    return names
+    """Имена организаций, видимых текущему пользователю (для переключателя
+    воркспейса в шапке)."""
+    return sorted(await _user_visible_orgs())
 
 
 @blueprint.route("/d2/<question_uuid>", methods=("GET", "POST"))
 async def cmd_d2_show(question_uuid):
     session["return_to"] = request.url
 
+    # Просмотр d2 только для авторизованных с доступом к орге вопроса:
+    # аноним и чужак получают одинаковый отказ — существование не палить.
+    if session.get("userdata") is None:
+        return "Decision not exist =(", 404
     data_row, question = await _find_question_row(question_uuid)
     if data_row is None or question is None:
-        return "Decision not exist =("
-    if not await _org_visible(question.get("ORG") or DEFAULT_ORG_NAME):
+        return "Decision not exist =(", 404
+    org = question.get("ORG") or DEFAULT_ORG_NAME
+    if not await _org_visible(org):
         # Чужая организация — как несуществующая, существование не палить.
-        return "Decision not exist =("
+        return "Decision not exist =(", 404
 
     questions, question_data, _ = await _load_question_tables()
     links_url = _question_links(question["id"], question_data)
@@ -369,11 +428,9 @@ async def cmd_d2_show(question_uuid):
     reading = _readings_int(data_row) or 1
     status = data_row.get("STATUS") or ""
     username = data_row.get("CREATED_BY") or ""
-    org = question.get("ORG") or DEFAULT_ORG_NAME
 
-    user_weight = await check_user_weight(False)
+    user_weight = 1 if await _d2_edit_allowed(org) else 0
     if request.method == "POST":
-        user_weight = await check_user_weight()
         if user_weight > 0:
             form_data = await request.form
             short_subject = form_data["short_subject"]
@@ -521,7 +578,7 @@ async def cmd_d2_show(question_uuid):
         1 for row in question_data if row.get("QUESTION_ID") == question["id"]
     )
     is_draft = not (data_row.get("TELEGRAM_LINK") or "")
-    can_publish = is_draft and user_weight > 0 and await _is_secretary()
+    can_publish = is_draft and await _is_org_secretary(org)
     return await render_template(
         "d2_question.html",
         question_number=question_number,
@@ -548,16 +605,15 @@ D2_EDIT_NOT_FOUND_MARKERS = (
 async def cmd_d2_publish(question_uuid):
     session["return_to"] = request.url
 
-    user_weight = await check_user_weight()
-    if user_weight <= 0 or not await _is_secretary():
-        await flash("Публиковать могут только секретари.")
-        return redirect(f"/d2/{question_uuid}")
-
     data_row, question = await _find_question_row(question_uuid)
     if data_row is None or question is None:
-        return "Decision not exist =("
-    if not await _org_visible(question.get("ORG") or DEFAULT_ORG_NAME):
-        return "Decision not exist =("
+        return "Decision not exist =(", 404
+    org = question.get("ORG") or DEFAULT_ORG_NAME
+    if not await _org_visible(org):
+        return "Decision not exist =(", 404
+    if not await _is_org_secretary(org):
+        await flash("Публиковать могут только секретари.")
+        return redirect(f"/d2/{question_uuid}")
 
     from other.grist_tools import grist_manager, MTLGrist
 
@@ -570,12 +626,13 @@ async def cmd_d2_publish(question_uuid):
     text = get_full_text(status, inquiry, links_url, question_uuid, username)
 
     telegram_link = data_row.get("TELEGRAM_LINK") or ""
+    channel = await resolve_channel(org, reading)
     published = False
     if telegram_link:
         # Републикация: сначала пробуем поправить существующий пост.
         try:
             await skynet_bot.edit_message_text(
-                chat_id=int(f"-100{chat_ids[reading]}"),
+                chat_id=int(f"-100{channel}"),
                 text=text,
                 parse_mode=SULGUK_PARSE_MODE,
                 disable_web_page_preview=True,
@@ -595,7 +652,7 @@ async def cmd_d2_publish(question_uuid):
     if not published:
         try:
             msg = await skynet_bot.send_message(
-                chat_id=int(f"-100{chat_ids[reading]}"),
+                chat_id=int(f"-100{channel}"),
                 text=text,
                 parse_mode=SULGUK_PARSE_MODE,
                 disable_web_page_preview=True,
@@ -604,7 +661,7 @@ async def cmd_d2_publish(question_uuid):
             logger.info(f"Error with telegram publishing: {e}")
             await flash("Публикация в Telegram не прошла.")
             return redirect(f"/d2/{question_uuid}")
-        new_link = f"https://t.me/c/{chat_ids[reading]}/{msg.message_id}"
+        new_link = f"https://t.me/c/{channel}/{msg.message_id}"
         if new_link != telegram_link:
             await grist_manager.patch_data(
                 MTLGrist.QUESTION_DATA,
@@ -624,6 +681,11 @@ async def cmd_d2_publish(question_uuid):
 
 @blueprint.route("/d2/fragment/form", methods=("GET",))
 async def cmd_d2_form():
+    # Форма живёт в воркспейсе: нет валидной сессии — на выбор воркспейса.
+    org = await _d2_session_org()
+    if not org:
+        return redirect("/d2")
+
     template_id = request.args.get("template_id", type=int)
 
     template_title, inquiry = (
@@ -639,11 +701,12 @@ async def cmd_d2_form():
     if template_id is not None:
         _, _, templates = await _load_question_tables()
         template = next((t for t in templates if t.get("id") == template_id), None)
-        if template:
+        # Шаблон чужой орги (или без орги) — игнорируем: чистая форма.
+        if template and (template.get("ORG") or DEFAULT_ORG_NAME) == org:
             template_title = template.get("TITLE") or ""
             inquiry = template.get("BODY") or ""
 
-    user_weight = await check_user_weight(False)
+    user_weight = 1 if await _d2_edit_allowed(org) else 0
     statuses_list = [(status_, "") for status_ in statuses]
 
     from other.grist_tools import grist_manager, MTLGrist
@@ -651,8 +714,6 @@ async def cmd_d2_form():
     questions = await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
     numbers = [q.get("NUMBER") for q in questions if q.get("NUMBER") is not None]
     next_number = max(numbers, default=0) + 1
-
-    org_names = await _org_names()
 
     return await render_template(
         "d2_form.html",
@@ -663,8 +724,7 @@ async def cmd_d2_form():
         reading=1,
         statuses=statuses_list,
         user_weight=user_weight,
-        org_names=org_names,
-        org=DEFAULT_ORG_NAME,
+        org=org,
     )
 
 
@@ -681,23 +741,22 @@ async def cmd_d2_get_number():
 async def cmd_d2_add():
     session["return_to"] = request.url
 
-    user_weight = await check_user_weight(False)
+    # Орга вопроса — воркспейс из сессии, org из формы не читается.
+    org = await _d2_session_org()
+    if not org:
+        await flash("Сначала выберите организацию (воркспейс).")
+        return redirect("/d2")
+
     form_data = await request.form
     question_number = form_data["question_number"]
     short_subject = form_data["short_subject"]
     inquiry = form_data["inquiry"]
     status = form_data["status"]
     reading = int(form_data["reading"])
-    org = (form_data.get("org") or "").strip() or DEFAULT_ORG_NAME
     as_draft = form_data.get("as_draft") == "on"
 
-    user_weight = await check_user_weight()
-    if user_weight <= 0:
+    if not await _d2_edit_allowed(org):
         return redirect("/d2")
-
-    if not await _org_visible(org):
-        await flash("Такая организация вам недоступна.")
-        return redirect("/d2/fragment/form")
 
     from other.grist_tools import grist_manager, MTLGrist
 
@@ -797,11 +856,12 @@ async def cmd_d2_add():
 async def cmd_d2_copy():
     data_row, question = await _find_question_row(request.args.get("uuid", ""))
     if data_row is None or question is None:
-        return "Decision not exist =("
-    if not await _org_visible(question.get("ORG") or DEFAULT_ORG_NAME):
-        return "Decision not exist =("
+        return "Decision not exist =(", 404
+    org = question.get("ORG") or DEFAULT_ORG_NAME
+    if not await _org_visible(org):
+        return "Decision not exist =(", 404
 
-    user_weight = await check_user_weight(False)
+    user_weight = 1 if await _d2_edit_allowed(org) else 0
     statuses_list = [(status_, "") for status_ in statuses]
 
     from other.grist_tools import grist_manager, MTLGrist
@@ -819,8 +879,7 @@ async def cmd_d2_copy():
         reading=1,
         statuses=statuses_list,
         user_weight=user_weight,
-        org_names=await _org_names(),
-        org=question.get("ORG") or DEFAULT_ORG_NAME,
+        org=org,
     )
 
 
@@ -832,9 +891,10 @@ async def cmd_d2_template_from():
 
     data_row, question = await _find_question_row(template_uuid)
     if data_row is None or question is None:
-        return "Decision not exist =("
-    if not await _org_visible(question.get("ORG") or DEFAULT_ORG_NAME):
-        return "Decision not exist =("
+        return "Decision not exist =(", 404
+    org = question.get("ORG") or DEFAULT_ORG_NAME
+    if not await _org_visible(org):
+        return "Decision not exist =(", 404
 
     from other.grist_tools import grist_manager, MTLGrist
 
@@ -857,6 +917,11 @@ async def cmd_d2_template_from():
 
 @blueprint.route("/d2/fragment/edit", methods=("GET",))
 async def cmd_d2_edit():
+    # Список живёт в воркспейсе: нет валидной сессии — на выбор воркспейса.
+    session_org = await _d2_session_org()
+    if not session_org:
+        return redirect("/d2")
+
     from other.grist_tools import grist_manager, MTLGrist
 
     questions = await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
@@ -913,13 +978,12 @@ async def cmd_d2_edit():
 
     items.sort(key=lambda row: (row["number"] is None, row["number"]), reverse=True)
 
-    visible_orgs = await _user_visible_orgs()
-    items = [row for row in items if row["org"] in visible_orgs]
+    # Воркспейс-модель: только вопросы текущей организации.
+    items = [row for row in items if row["org"] == session_org]
 
     status_param = request.args.get("status")
-    org_param = (request.args.get("org") or "").strip()
     query = (request.args.get("q") or "").strip().lower()
-    if status_param in (None, "", "active") and not query and not org_param:
+    if status_param in (None, "", "active") and not query:
         filtered = [row for row in items if row["status"] in D2_ACTIVE_STATUSES]
     elif status_param in (None, "", "active") or status_param == "all":
         filtered = items
@@ -927,9 +991,6 @@ async def cmd_d2_edit():
         filtered = [row for row in items if row["status"] == status_param]
     else:
         filtered = items
-
-    if org_param and org_param != "all":
-        filtered = [row for row in filtered if row["org"] == org_param]
 
     if query:
         filtered = [
@@ -956,9 +1017,6 @@ async def cmd_d2_edit():
     else:
         status_filter = status_param
 
-    # Фильтр = все orgи, видимые пользователю (как в форме создания),
-    # независимо от того, есть ли по ним вопросы.
-    org_names = await _org_names()
     return await render_template(
         "d2_frag_edit.html",
         items=page_items,
@@ -969,19 +1027,26 @@ async def cmd_d2_edit():
         status_filter=status_filter,
         query=query,
         statuses=statuses,
-        org_names=org_names,
-        org_filter=org_param,
         d2_hide_list_link=True,
+        **await _d2_workspace_context(),
     )
 
 
 @blueprint.route("/d2/fragment/new", methods=("GET",))
 async def cmd_d2_new():
+    # Пикер живёт в воркспейсе: нет валидной сессии — на выбор воркспейса.
+    session_org = await _d2_session_org()
+    if not session_org:
+        return redirect("/d2")
+
     from other.grist_tools import grist_manager, MTLGrist
 
     templates = await grist_manager.load_table_data(MTLGrist.QUESTION_TEMPLATES) or []
     items = []
     for template in templates:
+        # Чужие шаблоны прячутся целиком (решение владельца, раунд 1 Q4).
+        if (template.get("ORG") or DEFAULT_ORG_NAME) != session_org:
+            continue
         items.append(
             {
                 "id": template.get("id"),

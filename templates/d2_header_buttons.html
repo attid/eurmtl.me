@@ -1,4 +1,15 @@
+{% if org %}
 <div class="btn-list mb-3">
+    <span class="badge bg-blue-lt align-self-center">Воркспейс: {{ org }}</span>
     <a class="btn btn-primary" href="/d2/fragment/new">Создать вопрос</a>
     {% if not d2_hide_list_link %}<a class="btn btn-outline-primary" href="/d2/fragment/edit">Открыть список</a>{% endif %}
+    <form method="post" action="/d2/workspace" class="ms-auto">
+        <select name="org" class="form-select" onchange="this.form.submit()">
+            {% for name in org_names %}
+            <option value="{{ name }}" {% if name == org %}selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+        </select>
+        <noscript><button type="submit" class="btn btn-outline-secondary ms-1">Сменить</button></noscript>
+    </form>
 </div>
+{% endif %}
