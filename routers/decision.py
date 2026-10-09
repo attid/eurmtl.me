@@ -123,11 +123,13 @@ async def _user_visible_orgs() -> set:
     Секретарь видит все; иначе — только организации, где он подписант
     MAIN_ADDRESS (user_org_names). Неопознанный пользователь не видит ничего.
     """
-    from other.grist_tools import load_orgs, user_org_names
+    from other import orgs_config
+    from other.grist_tools import user_org_names
 
     if await _is_secretary():
-        orgs = await load_orgs()
-        return {(o.get("NAME") or "") for o in orgs if o.get("NAME")}
+        # Секретарь на стенде подписант всех адресов — пока как раньше:
+        # все орги конфига с непустым адресом (расхождение ловит задача 2).
+        return {o.name for o in orgs_config.ORGS if o.name and o.main_address}
     user_telegram_id = await _session_user_telegram_id()
     if user_telegram_id is None:
         return set()
@@ -158,11 +160,10 @@ else:
 
 
 async def resolve_channel(org_name: str | None, reading: int) -> str | None:
-    """Канал публикации чтения N: из ORGS, fallback — хардкод фонда."""
-    from other.grist_tools import load_orgs, resolve_org_channel
+    """Канал публикации чтения N: из orgs_config, fallback — хардкод фонда."""
+    from other.grist_tools import resolve_org_channel
 
-    orgs = await load_orgs()
-    channel = resolve_org_channel(orgs, org_name, reading)
+    channel = resolve_org_channel(org_name, reading)
     if channel is not None:
         return channel
     if 1 <= reading <= 3:
@@ -331,11 +332,11 @@ async def _org_names() -> list[str]:
     Секретарь видит все организации, остальные — только те, где они
     подписант MAIN_ADDRESS (user_org_names).
     """
-    from other.grist_tools import load_orgs, user_org_names
+    from other import orgs_config
+    from other.grist_tools import user_org_names
 
     if await _is_secretary():
-        orgs = await load_orgs()
-        names = [(o.get("NAME") or "") for o in orgs if o.get("NAME")]
+        names = sorted(o.name for o in orgs_config.ORGS if o.name and o.main_address)
     else:
         user_telegram_id = await _session_user_telegram_id()
         names = (

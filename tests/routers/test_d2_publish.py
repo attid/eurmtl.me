@@ -6,6 +6,9 @@ from unittest.mock import AsyncMock, patch
 DRAFT_UUID = "aaaabbbbccccddddeeeeffff00003333"  # вопрос №2, TELEGRAM_LINK=""
 PUBLISHED_UUID = "aaaabbbbccccddddeeeeffff00001111"  # вопрос №1, чтение 1
 
+# Реальный адрес PFM из orgs_config (секретарь стенда — подписант).
+PFM_ADDRESS = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+
 SECRETARY_SESSION = {"id": 1837984392, "username": "itolstov"}
 PLAIN_SESSION = {"id": 1863399780, "username": "attid"}
 
@@ -34,8 +37,9 @@ def _tables_mock(**tables):
 
     Ключи — атрибуты MTLGrist (QUESTIONS, QUESTION_DATA, QUESTION_TEMPLATES)
     и имена таблиц сид-режима (EURMTL_secretaries, EURMTL_accounts,
-    EURMTL_users, ORGS). Неизвестная таблица → []. Не зависит от порядка
-    вызовов и горячего кеша секретарей между тестами.
+    EURMTL_users). Неизвестная таблица → []. Не зависит от порядка вызовов
+    и горячего кеша секретарей между тестами. Орги читаются из orgs_config,
+    поэтому ORGS в мок не передаётся.
     """
     from other.grist_tools import MTLGrist
 
@@ -71,9 +75,16 @@ async def test_add_draft_creates_question_without_tg(client):
             return questions if calls["questions"] >= 2 else []
         seeded = {
             "Secretaries": [{"id": 1, "account": 1, "users": [1]}],
-            "Accounts": [{"id": 1, "account": "G"}],
-            "Users": [{"id": 1, "telegram_id": 1837984392, "account_id": "G"}],
-            "ORGS": [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
+            "Accounts": [
+                {"id": 1, "account": PFM_ADDRESS},
+            ],
+            "Users": [
+                {
+                    "id": 1,
+                    "telegram_id": 1837984392,
+                    "account_id": PFM_ADDRESS,
+                }
+            ],
         }
         return list(seeded.get(name, []))
 
@@ -128,9 +139,16 @@ async def test_add_publish_still_sends_message(client):
             return questions if calls["questions"] >= 2 else []
         seeded = {
             "Secretaries": [{"id": 1, "account": 1, "users": [1]}],
-            "Accounts": [{"id": 1, "account": "G"}],
-            "Users": [{"id": 1, "telegram_id": 1837984392, "account_id": "G"}],
-            "ORGS": [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
+            "Accounts": [
+                {"id": 1, "account": PFM_ADDRESS},
+            ],
+            "Users": [
+                {
+                    "id": 1,
+                    "telegram_id": 1837984392,
+                    "account_id": PFM_ADDRESS,
+                }
+            ],
         }
         return list(seeded.get(name, []))
 
@@ -160,7 +178,8 @@ async def test_add_publish_still_sends_message(client):
 
     assert response.status_code == 302
     fields = post_mock.await_args_list[-1].args[1]["records"][0]["fields"]
-    assert fields["TELEGRAM_LINK"] == "https://t.me/c/1837984392/4242"
+    # Дефолтная орга — PFM: канал первого чтения из orgs_config.
+    assert fields["TELEGRAM_LINK"] == "https://t.me/c/1863399780/4242"
 
 
 @pytest.mark.asyncio
@@ -201,13 +220,12 @@ async def test_publish_draft_by_secretary(client):
                 "CREATED_BY": "@attid",
             }
         ]
-        # /d2/publish: _find_question_row (3) + _org_visible→load_orgs (1)
-        # + _load_question_tables (3). Секретарю видна орга из ORGS-мока.
+        # /d2/publish: _find_question_row (3) + _load_question_tables (3).
+        # Видимость секретарю — из orgs_config, Grist не читается.
         load_mock.side_effect = [
             questions,
             data,
             [],
-            [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
             questions,
             data,
             [],
@@ -265,13 +283,12 @@ async def test_republish_dead_post_sends_new_message(client):
                 "CREATED_BY": "@itolstov",
             }
         ]
-        # /d2/publish: _find_question_row (3) + _org_visible→load_orgs (1)
-        # + _load_question_tables (3). Секретарю видна орга из ORGS-мока.
+        # /d2/publish: _find_question_row (3) + _load_question_tables (3).
+        # Видимость секретарю — из orgs_config, Grist не читается.
         load_mock.side_effect = [
             questions,
             data,
             [],
-            [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
             questions,
             data,
             [],
@@ -389,13 +406,12 @@ async def test_question_screen_shows_publish_button_for_secretary_draft(client):
             }
         ]
         # GET /d2/<uuid>: _find_question_row (3 loads: QUESTIONS, DATA,
-        # TEMPLATES) + _org_visible → load_orgs (1) + _load_question_tables
-        # (3). Секретарю видны орги из ORGS-мока.
+        # TEMPLATES) + _load_question_tables (3). Видимость секретарю —
+        # из orgs_config, Grist не читается.
         load_mock.side_effect = [
             questions,
             data,
             [],
-            [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
             questions,
             data,
             [],
@@ -439,15 +455,12 @@ async def test_edit_list_marks_draft_questions(client):
         _secretary_ids_mock({1837984392}),
         patch(
             "other.grist_tools.grist_manager.load_table_data",
-            # /d2/fragment/edit: QUESTIONS, QUESTION_DATA, ORGS (фильтр
-            # вопросов по видимости) и снова ORGS для списка фильтра —
-            # он теперь равен всем видимым оргам, как в форме создания.
+            # /d2/fragment/edit: QUESTIONS, QUESTION_DATA. Список фильтра
+            # берётся из orgs_config (PFM/GORA/USDMM/TFM) без Grist.
             new=AsyncMock(
                 side_effect=[
                     questions,
                     question_data,
-                    [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
-                    [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
                 ]
             ),
         ),
