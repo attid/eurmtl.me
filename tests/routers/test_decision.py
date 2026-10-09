@@ -92,11 +92,11 @@ async def test_decision_fragment_edit_renders_sorted_items(client):
         if name == "QUESTION_DATA":
             return question_data
         # Secretaries/Accounts/Users: юзер 1837984392 — секретарь.
+        # Орги секретарю видны из orgs_config, Grist не читается.
         seeded = {
             "Secretaries": [{"id": 1, "account": 1, "users": [1]}],
             "Accounts": [{"id": 1, "account": "G"}],
             "Users": [{"id": 1, "telegram_id": 1837984392, "account_id": "G"}],
-            "ORGS": [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
         }
         return list(seeded.get(name, []))
 

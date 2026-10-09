@@ -1,55 +1,23 @@
 {
     "hpZWKq729vw2D5AkG7oYYz": {
-        "ORGS": [
-            {
-                "NAME": "Фонд",
-                "MAIN_ADDRESS": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-                "CHANNELS": "1837984392,1837984392,1837984392",
-                "READINGS": 3
-            },
-            {
-                "NAME": "Фонд3",
-                "MAIN_ADDRESS": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-                "CHANNELS": "1837984392",
-                "READINGS": 3
-            },
-            {
-                "NAME": "МТЛА",
-                "MAIN_ADDRESS": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-                "CHANNELS": "1837984392",
-                "READINGS": 3
-            },
-            {
-                "NAME": "ЛАБР",
-                "MAIN_ADDRESS": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-                "CHANNELS": "1837984392",
-                "READINGS": 3
-            },
-            {
-                "NAME": "ЮЗДМ",
-                "MAIN_ADDRESS": "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V",
-                "CHANNELS": "1837984392",
-                "READINGS": 0
-            }
-        ],
         "QUESTIONS": [
             {
                 "NUMBER": 1,
                 "TITLE": "Принять отчёт казначея",
                 "READING": 1,
-                "ORG": "Фонд"
+                "ORG": "PFM"
             },
             {
                 "NUMBER": 2,
                 "TITLE": "Купить сервер для ноды",
                 "READING": 2,
-                "ORG": "МТЛА"
+                "ORG": "GORA"
             },
             {
                 "NUMBER": 3,
                 "TITLE": "Спорный вопрос без чтений",
                 "READING": 1,
-                "ORG": "ЮЗДМ"
+                "ORG": "USDMM"
             }
         ],
         "QUESTION_DATA": [
@@ -63,7 +31,7 @@
                 "STATUS": "❗️ #active",
                 "CREATED_BY": "itolstov",
                 "CREATED_AT": "2026-10-07 22:00:00",
-                "ORG": "Фонд"
+                "ORG": "PFM"
             },
             {
                 "QUESTION_ID": 1,
@@ -75,7 +43,7 @@
                 "STATUS": "☑️ #next",
                 "CREATED_BY": "itolstov",
                 "CREATED_AT": "2026-10-07 22:05:00",
-                "ORG": "Фонд"
+                "ORG": "PFM"
             },
             {
                 "QUESTION_ID": 2,
@@ -87,7 +55,7 @@
                 "STATUS": "✅ #done",
                 "CREATED_BY": "attid",
                 "CREATED_AT": "2026-10-07 22:10:00",
-                "ORG": "МТЛА"
+                "ORG": "GORA"
             },
             {
                 "QUESTION_ID": 3,
@@ -99,13 +67,25 @@
                 "STATUS": "❗️ #active",
                 "CREATED_BY": "itolstov",
                 "CREATED_AT": "2026-10-07 22:15:00",
-                "ORG": "ЮЗДМ"
+                "ORG": "USDMM"
             }
         ],
         "QUESTION_TEMPLATES": [
-            {"TITLE": "Простой вопрос", "BODY": "<p>Текст простого вопроса</p>"},
-            {"TITLE": "Отчёт", "BODY": "<p>Отчёт о проделанной работе</p>"},
-            {"TITLE": "Заявка на расход", "BODY": "<p>Прошу выделить сумму</p>"}
+            {
+                "TITLE": "Простой вопрос",
+                "BODY": "<p>Текст простого вопроса</p>",
+                "ORG": "PFM"
+            },
+            {
+                "TITLE": "Отчёт",
+                "BODY": "<p>Отчёт о проделанной работе</p>",
+                "ORG": "PFM"
+            },
+            {
+                "TITLE": "Заявка на расход",
+                "BODY": "<p>Прошу выделить сумму</p>",
+                "ORG": "GORA"
+            }
         ],
         "SP_USERS": [
             {"USERNAME": "itolstov", "TGID": 1837984392},
