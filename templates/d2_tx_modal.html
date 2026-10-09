@@ -1,11 +1,12 @@
 {# Кнопка «Транза…» + модалка #txModal: переброс транзакции в /sign_tools
    с prefill xdr/description/memo (GET-параметры routers/sign_tools.py).
-   Подключается из d2_form.html. Серверной логики не требует. #}
-<div class="container-xl mb-3">
-    <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#txModal">
+   Подключается из d2_form.html и d2_question.html. Серверной логики
+   не требует; кнопку размещает вызывающий шаблон. #}
+<span class="d-inline-block">
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#txModal">
         Транза…
     </button>
-</div>
+</span>
 
 <div class="modal modal-blur fade" id="txModal" tabindex="-1" role="dialog" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
