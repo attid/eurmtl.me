@@ -71,6 +71,11 @@ def test_get_full_text_builds_links_and_footer():
 
 @pytest.mark.asyncio
 async def test_decision_fragment_edit_renders_sorted_items(client):
+    """Секретарь видит список; сортировка по номеру убыванию (5 раньше 2)."""
+    async with client.session_transaction() as session:
+        session["userdata"] = {"id": 1837984392, "username": "itolstov"}
+        session["user_id"] = 1837984392
+
     questions = [
         {"id": 1, "NUMBER": 2, "TITLE": "Second"},
         {"id": 2, "NUMBER": 5, "TITLE": "Fifth"},
@@ -80,15 +85,30 @@ async def test_decision_fragment_edit_renders_sorted_items(client):
         {"QUESTION_ID": 2, "READING": "3", "STATUS": "done"},
     ]
 
+    async def fake(table, *a, **k):
+        name = table.table_name
+        if name == "QUESTIONS":
+            return questions
+        if name == "QUESTION_DATA":
+            return question_data
+        # Secretaries/Accounts/Users: юзер 1837984392 — секретарь.
+        seeded = {
+            "Secretaries": [{"id": 1, "account": 1, "users": [1]}],
+            "Accounts": [{"id": 1, "account": "G"}],
+            "Users": [{"id": 1, "telegram_id": 1837984392, "account_id": "G"}],
+            "ORGS": [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
+        }
+        return list(seeded.get(name, []))
+
     with patch(
         "other.grist_tools.grist_manager.load_table_data",
-        new=AsyncMock(side_effect=[questions, question_data]),
+        new=AsyncMock(side_effect=fake),
     ):
-        response = await client.get("/d2/fragment/edit")
+        response = await client.get("/d2/fragment/edit?status=all")
 
     body = await response.get_data(as_text=True)
     assert response.status_code == 200
-    assert body.index("5") < body.index("2")
+    assert body.index("Fifth") < body.index("Second")
     assert "done" in body
 
 
