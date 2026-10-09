@@ -233,6 +233,12 @@ async def start_add_transaction():
     memo = ""
     error_message = None
 
+    def _wants_json() -> bool:
+        return (
+            request.headers.get("X-Requested-With") == "XMLHttpRequest"
+            or request.accept_mimetypes.best == "application/json"
+        )
+
     if request.method == "POST":
         form_data = await request.form
         xdr = form_data.get("xdr", "").strip()
@@ -252,12 +258,17 @@ async def start_add_transaction():
                 result = ADD_TRANSACTION_SAVE_ERROR_MESSAGE
 
             if success:
+                tx_url = url_for("sign_tools.show_transaction", tr_hash=result)
+                if _wants_json():
+                    return jsonify({"url": tx_url})
                 await flash("Transaction added successfully", "good")
                 print(url_for("sign_tools.show_transaction", tr_hash=result))
-                return redirect(url_for("sign_tools.show_transaction", tr_hash=result))
+                return redirect(tx_url)
             error_message = result
 
     if error_message:
+        if _wants_json():
+            return jsonify({"error": error_message}), 400
         await flash(error_message)
 
     return await render_template(
