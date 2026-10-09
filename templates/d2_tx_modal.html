@@ -1,0 +1,182 @@
+{# Кнопка «Транза…» + модалка #txModal: переброс транзакции в /sign_tools
+   с prefill xdr/description/memo (GET-параметры routers/sign_tools.py).
+   Подключается из d2_form.html. Серверной логики не требует. #}
+<div class="container-xl mb-3">
+    <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#txModal">
+        Транза…
+    </button>
+</div>
+
+<div class="modal modal-blur fade" id="txModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Транзакция в sign_tools</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label" for="txDescription">Description</label>
+                    <div class="input-group">
+                        <input type="text" id="txDescription" class="form-control" autocomplete="off">
+                        <button type="button" class="btn btn-outline-secondary" id="txCopyDescription">Копировать</button>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="txXdr">XDR</label>
+                    <textarea id="txXdr" class="form-control" rows="5" placeholder="Вставьте XDR…"></textarea>
+                    <div class="invalid-feedback">Вставьте XDR транзакции.</div>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label" for="txMemo">Memo</label>
+                    <input type="text" id="txMemo" class="form-control" autocomplete="off">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="txOpenSignTools">Открыть в sign_tools</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/stellar-sdk.min.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    var txDescription = document.getElementById('txDescription');
+    var txXdr = document.getElementById('txXdr');
+    var txMemo = document.getElementById('txMemo');
+    var txCopyBtn = document.getElementById('txCopyDescription');
+    var txOpenBtn = document.getElementById('txOpenSignTools');
+    if (!txDescription || !txXdr || !txMemo || !txCopyBtn || !txOpenBtn) {
+        return;
+    }
+
+    var txDescriptionDirty = false;
+    var txMemoDirty = false;
+
+    // Порт extractMemoFromXdr из templates/tabler_sign_add.html: тот же
+    // StellarSdk-разбор, но без зависимости от глобальной функции той страницы.
+    function extractMemoFromXdr(xdr) {
+        if (typeof StellarSdk === 'undefined') {
+            return '';
+        }
+        try {
+            var transaction = StellarSdk.TransactionBuilder.fromXDR(xdr, StellarSdk.Networks.PUBLIC);
+            if (transaction.memo && transaction.memo.type === 'text') {
+                return transaction.memo.value;
+            }
+            return '';
+        } catch (error) {
+            console.error('Error extracting memo:', error);
+            return '';
+        }
+    }
+
+    // «Вопрос <номер>: <тема>»; номер ещё не проставлен — «Вопрос : <тема>»;
+    // тема пуста — «Вопрос <номер>»; пусты оба — пустая строка.
+    function buildDescription() {
+        var numberEl = document.getElementById('question_number');
+        var subjectEl = document.getElementById('short_subject');
+        var number = numberEl && numberEl.value ? numberEl.value.trim() : '';
+        var subject = subjectEl && subjectEl.value ? subjectEl.value.trim() : '';
+        if (!number && !subject) {
+            return '';
+        }
+        if (!subject) {
+            return 'Вопрос ' + number;
+        }
+        return 'Вопрос ' + number + ': ' + subject;
+    }
+
+    function syncDescription() {
+        if (!txDescriptionDirty) {
+            txDescription.value = buildDescription();
+        }
+    }
+
+    ['question_number', 'short_subject'].forEach(function (id) {
+        var field = document.getElementById(id);
+        if (field) {
+            field.addEventListener('input', syncDescription);
+        }
+    });
+
+    txDescription.addEventListener('input', function () {
+        txDescriptionDirty = true;
+    });
+
+    txMemo.addEventListener('input', function () {
+        txMemoDirty = true;
+    });
+
+    txXdr.addEventListener('input', function () {
+        txXdr.classList.remove('is-invalid');
+        var xdr = txXdr.value.trim();
+        if (!xdr) {
+            return;
+        }
+        var memo = extractMemoFromXdr(xdr);
+        if (memo && !txMemoDirty) {
+            txMemo.value = memo;
+        }
+    });
+
+    // Свежий снимок description при каждом открытии модалки — номер мог
+    // подъехать через 🔍 (getNumber пишет value программно, без input-события).
+    document.getElementById('txModal').addEventListener('show.bs.modal', syncDescription);
+
+    function copyViaSelection(text) {
+        var scratch = document.createElement('textarea');
+        scratch.value = text;
+        scratch.setAttribute('readonly', '');
+        scratch.style.position = 'fixed';
+        scratch.style.opacity = '0';
+        document.body.appendChild(scratch);
+        scratch.select();
+        try {
+            document.execCommand('copy');
+        } catch (error) {
+            console.error('Clipboard copy failed:', error);
+        }
+        document.body.removeChild(scratch);
+    }
+
+    function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(function () {
+                copyViaSelection(text);
+            });
+        } else {
+            copyViaSelection(text);
+        }
+    }
+
+    txCopyBtn.addEventListener('click', function () {
+        copyToClipboard(txDescription.value);
+        var original = txCopyBtn.textContent;
+        txCopyBtn.textContent = 'Скопировано';
+        setTimeout(function () {
+            txCopyBtn.textContent = original;
+        }, 1500);
+    });
+
+    txOpenBtn.addEventListener('click', function () {
+        var xdr = txXdr.value.trim();
+        if (!xdr) {
+            txXdr.classList.add('is-invalid');
+            txXdr.focus();
+            return;
+        }
+        var params = new URLSearchParams();
+        params.set('xdr', xdr);
+        params.set('description', txDescription.value.trim());
+        params.set('memo', txMemo.value.trim());
+        window.location.href = '/sign_tools?' + params.toString();
+    });
+
+    syncDescription();
+})();
+</script>
