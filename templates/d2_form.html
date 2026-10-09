@@ -14,10 +14,12 @@
     {% if template_title %}
     <div class="text-secondary">Шаблон: {{ template_title }}</div>
     {% endif %}
-    {% include 'd2_tx_modal.html' %}
 </div>
 
 <div class="container-xl">
+    <div class="mb-3">
+        {% include 'd2_tx_modal.html' %}
+    </div>
     <form action="/d2/add" method="post">
         <div class="row">
             <div class="col-12 mb-3">
