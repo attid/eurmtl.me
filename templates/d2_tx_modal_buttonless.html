@@ -1,0 +1,315 @@
+{# Модалка #txModal БЕЗ кнопки: кнопку рисует вызывающий шаблон
+   (сам выбирает размер/текст/класс). Кнопка должна иметь
+   data-bs-toggle="modal" data-bs-target="#txModal". #}
+
+<div class="modal modal-blur fade" id="txModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Транзакция в sign_tools</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label" for="txDescription">Description</label>
+                    <div class="input-group">
+                        <input type="text" id="txDescription" class="form-control" autocomplete="off">
+                        <button type="button" class="btn btn-outline-secondary" id="txCopyDescription">Копировать</button>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="txXdr">XDR</label>
+                    <textarea id="txXdr" class="form-control" rows="5" placeholder="Вставьте XDR…"></textarea>
+                    <div class="invalid-feedback">Вставьте XDR транзакции.</div>
+                </div>
+                <div class="mb-0">
+                    <label class="form-label" for="txMemo">Memo</label>
+                    <div class="input-group">
+                        <input type="text" id="txMemo" class="form-control" autocomplete="off">
+                        <button type="button" class="btn btn-outline-secondary" id="txInsertMemo"
+                                title="Заменит memo внутри XDR на значение из этого поля">
+                            Вставить memo в XDR
+                        </button>
+                    </div>
+                    <div class="invalid-feedback" id="txMemoFeedback"></div>
+                </div>
+                <div class="mt-3 d-none" id="txResultBlock">
+                    <label class="form-label" for="txResultUrl">Ссылка на транзакцию</label>
+                    <div class="input-group">
+                        <input type="text" id="txResultUrl" class="form-control" readonly>
+                        <button type="button" class="btn btn-outline-secondary" id="txCopyResult">Копировать</button>
+                    </div>
+                    <div class="form-text">Вставьте её в текст вопроса. Повторное «Сохранить» не создаёт дубликат.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-link link-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-primary" id="txSave">Сохранить</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/stellar-sdk.min.js"></script>
+<script>
+(function () {
+    'use strict';
+
+    var txModal = document.getElementById('txModal');
+    var txDescription = document.getElementById('txDescription');
+    var txXdr = document.getElementById('txXdr');
+    var txMemo = document.getElementById('txMemo');
+    var txCopyBtn = document.getElementById('txCopyDescription');
+    var txInsertMemoBtn = document.getElementById('txInsertMemo');
+    var txSaveBtn = document.getElementById('txSave');
+    var txMemoFeedback = document.getElementById('txMemoFeedback');
+    var txResultBlock = document.getElementById('txResultBlock');
+    var txResultUrl = document.getElementById('txResultUrl');
+    var txCopyResultBtn = document.getElementById('txCopyResult');
+    if (!txDescription || !txXdr || !txMemo || !txCopyBtn || !txInsertMemoBtn || !txSaveBtn) {
+        return;
+    }
+
+    // Ввод переживает закрытие модалки: при повторном открытии всё на месте.
+    var saved = { xdr: '', memo: '', description: '', dirty: false, resultUrl: '' };
+
+    function rememberState() {
+        saved.xdr = txXdr.value;
+        saved.memo = txMemo.value;
+        saved.description = txDescription.value;
+        saved.dirty = txDescriptionDirty || txMemoDirty;
+        saved.resultUrl = txResultUrl.value;
+    }
+
+    function restoreState() {
+        txXdr.value = saved.xdr;
+        txMemo.value = saved.memo;
+        txDescription.value = saved.description;
+        txMemoDirty = saved.dirty;
+        txDescriptionDirty = saved.dirty;
+        txResultUrl.value = saved.resultUrl;
+        if (saved.resultUrl) {
+            txResultBlock.classList.remove('d-none');
+        }
+    }
+
+    var txDescriptionDirty = false;
+    var txMemoDirty = false;
+
+    // syncDescription (ниже) добавит свой show.bs.modal раньше — порядок
+    // листенеров сохранит: сначала авто-description, затем restore, если
+    // юзер правил описание руками.
+    txModal.addEventListener('hide.bs.modal', rememberState);
+    txModal.addEventListener('show.bs.modal', restoreState);
+
+    // Порт extractMemoFromXdr из templates/tabler_sign_add.html: тот же
+    // StellarSdk-разбор, но без зависимости от глобальной функции той страницы.
+    function extractMemoFromXdr(xdr) {
+        if (typeof StellarSdk === 'undefined') {
+            return '';
+        }
+        try {
+            var transaction = StellarSdk.TransactionBuilder.fromXDR(xdr, StellarSdk.Networks.PUBLIC);
+            if (transaction.memo && transaction.memo.type === 'text') {
+                return transaction.memo.value;
+            }
+            return '';
+        } catch (error) {
+            console.error('Error extracting memo:', error);
+            return '';
+        }
+    }
+
+    // «Вопрос <номер>: <тема>»; номер ещё не проставлен — «Вопрос : <тема>»;
+    // тема пуста — «Вопрос <номер>»; пусты оба — пустая строка.
+    function buildDescription() {
+        var numberEl = document.getElementById('question_number');
+        var subjectEl = document.getElementById('short_subject');
+        var number = numberEl && numberEl.value ? numberEl.value.trim() : '';
+        var subject = subjectEl && subjectEl.value ? subjectEl.value.trim() : '';
+        if (!number && !subject) {
+            return '';
+        }
+        if (!subject) {
+            return 'Вопрос ' + number;
+        }
+        return 'Вопрос ' + number + ': ' + subject;
+    }
+
+    function syncDescription() {
+        if (!txDescriptionDirty) {
+            txDescription.value = buildDescription();
+        }
+    }
+
+    ['question_number', 'short_subject'].forEach(function (id) {
+        var field = document.getElementById(id);
+        if (field) {
+            field.addEventListener('input', syncDescription);
+        }
+    });
+
+    txDescription.addEventListener('input', function () {
+        txDescriptionDirty = true;
+    });
+
+    txMemo.addEventListener('input', function () {
+        txMemoDirty = true;
+    });
+
+    txXdr.addEventListener('input', function () {
+        txXdr.classList.remove('is-invalid');
+        var xdr = txXdr.value.trim();
+        if (!xdr) {
+            return;
+        }
+        var memo = extractMemoFromXdr(xdr);
+        if (memo && !txMemoDirty) {
+            txMemo.value = memo;
+        }
+    });
+
+    // Свежий снимок description при каждом открытии модалки — номер мог
+    // подъехать через 🔍 (getNumber пишет value программно, без input-события).
+    // restoreState добавлен раньше и возвращает сохранённый description,
+    // если юзер правил его руками; порядок листенеров: sync → restore.
+    txModal.addEventListener('show.bs.modal', syncDescription);
+
+    function copyViaSelection(text) {
+        var scratch = document.createElement('textarea');
+        scratch.value = text;
+        scratch.setAttribute('readonly', '');
+        scratch.style.position = 'fixed';
+        scratch.style.opacity = '0';
+        document.body.appendChild(scratch);
+        scratch.select();
+        try {
+            document.execCommand('copy');
+        } catch (error) {
+            console.error('Clipboard copy failed:', error);
+        }
+        document.body.removeChild(scratch);
+    }
+
+    function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(function () {
+                copyViaSelection(text);
+            });
+        } else {
+            copyViaSelection(text);
+        }
+    }
+
+    txCopyBtn.addEventListener('click', function () {
+        copyToClipboard(txDescription.value);
+        var original = txCopyBtn.textContent;
+        txCopyBtn.textContent = 'Скопировано';
+        setTimeout(function () {
+            txCopyBtn.textContent = original;
+        }, 1500);
+    });
+
+    txInsertMemoBtn.addEventListener('click', function () {
+        txMemoFeedback.textContent = '';
+        var xdr = txXdr.value.trim();
+        var memo = txMemo.value.trim();
+        if (!xdr) {
+            showMemoError('Сначала вставьте XDR.');
+            return;
+        }
+        if (memo.length < 3) {
+            showMemoError('Memo должно содержать минимум 3 символа');
+            return;
+        }
+        if (new TextEncoder().encode(memo).length > 28) {
+            showMemoError('Memo должно быть не длиннее 28 байт');
+            return;
+        }
+        if ([...memo].some(function (ch) {
+            var code = ch.codePointAt(0);
+            return code < 32 || code === 127;
+        })) {
+            showMemoError('Memo может содержать только печатные символы');
+            return;
+        }
+        fetch('/lab/update_memo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ xdr: xdr, memo: memo })
+        })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+                if (data.success) {
+                    txXdr.value = data.xdr;
+                    txResultBlock.classList.add('d-none');
+                    showMemoStatus('Memo вшито в XDR', 'text-success');
+                    txXdr.classList.add('border-success');
+                    setTimeout(function () { txXdr.classList.remove('border-success'); }, 2000);
+                } else {
+                    showMemoError(data.error || 'Не удалось обновить memo');
+                }
+            })
+            .catch(function () { showMemoError('Ошибка запроса'); });
+    });
+
+    function showMemoStatus(message, colorClass) {
+        txMemoFeedback.textContent = message;
+        txMemoFeedback.classList.remove('is-invalid', 'invalid-feedback');
+        txMemoFeedback.classList.add('form-text', colorClass);
+        setTimeout(function () {
+            txMemoFeedback.textContent = '';
+            txMemoFeedback.classList.remove(colorClass);
+        }, 2500);
+    }
+
+    function showMemoError(message) {
+        txMemoFeedback.textContent = message;
+        txMemoFeedback.classList.remove('form-text');
+        txMemoFeedback.classList.add('invalid-feedback', 'd-block');
+        setTimeout(function () { txMemoFeedback.classList.remove('d-block'); }, 4000);
+    }
+
+    txSaveBtn.addEventListener('click', function () {
+        var xdr = txXdr.value.trim();
+        if (!xdr) {
+            txXdr.classList.add('is-invalid');
+            txXdr.focus();
+            return;
+        }
+        var form = new URLSearchParams();
+        form.set('xdr', xdr);
+        form.set('description', txDescription.value.trim());
+        form.set('memo', txMemo.value.trim());
+        txSaveBtn.disabled = true;
+        fetch('/sign_tools', {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: form
+        })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+                txSaveBtn.disabled = false;
+                if (data.url) {
+                    txResultUrl.value = window.location.origin + data.url;
+                    txResultBlock.classList.remove('d-none');
+                } else if (data.error) {
+                    showMemoError(data.error);
+                }
+            })
+            .catch(function () {
+                txSaveBtn.disabled = false;
+                showMemoError('Ошибка запроса');
+            });
+    });
+
+    txCopyResultBtn.addEventListener('click', function () {
+        copyToClipboard(txResultUrl.value);
+        var original = txCopyResultBtn.textContent;
+        txCopyResultBtn.textContent = 'Скопировано';
+        setTimeout(function () { txCopyResultBtn.textContent = original; }, 1500);
+    });
+
+    syncDescription();
+})();
+</script>
