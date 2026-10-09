@@ -20,6 +20,7 @@ from sulguk import SULGUK_PARSE_MODE
 import urllib.parse
 
 from other.config_reader import config
+from other.cache_tools import AsyncTTLCache
 from db.sql_models import Decisions
 from other.gspread_tools import gs_update_decision, gs_get_last_id, gs_save_new_decision
 from services.stellar_client import check_user_weight
@@ -47,36 +48,50 @@ def d2_pager_pages(page, total_pages):
     return range(start, min(start + window - 1, total_pages) + 1)
 
 
+secretary_ids_cache = AsyncTTLCache(ttl_seconds=60)  # Предвыборка секретарей
+
+
 async def _load_secretary_telegram_ids() -> set[int]:
     """Telegram_id всех секретарей.
 
     В проде берём get_secretaries() (grist_cache), в тест-режиме кеш не
     инициализируется — читаем таблицы EURMTL_secretaries/accounts/users
-    напрямую через grist_manager.
+    напрямую через grist_manager. Результат кешируется на минуту:
+    _is_secretary() зовётся несколько раз за запрос.
     """
     from other.grist_tools import get_secretaries, grist_manager, MTLGrist
 
+    cached = await secretary_ids_cache.get("ids")
+    if cached is not None:
+        return cached
+
     if not config.test_mode:
         secretaries = await get_secretaries()
-        return {int(tg) for ids in secretaries.values() for tg in ids}
+        telegram_ids = {int(tg) for ids in secretaries.values() for tg in ids}
+    else:
+        secretary_rows = (
+            await grist_manager.load_table_data(MTLGrist.EURMTL_secretaries) or []
+        )
+        account_rows = (
+            await grist_manager.load_table_data(MTLGrist.EURMTL_accounts) or []
+        )
+        user_rows = await grist_manager.load_table_data(MTLGrist.EURMTL_users) or []
 
-    secretary_rows = (
-        await grist_manager.load_table_data(MTLGrist.EURMTL_secretaries) or []
-    )
-    account_rows = await grist_manager.load_table_data(MTLGrist.EURMTL_accounts) or []
-    user_rows = await grist_manager.load_table_data(MTLGrist.EURMTL_users) or []
+        account_by_id = {a["id"]: a.get("account") for a in account_rows if a.get("id")}
+        user_tg_by_id = {
+            u["id"]: u.get("telegram_id") for u in user_rows if u.get("id")
+        }
+        telegram_ids: set[int] = set()
+        for record in secretary_rows:
+            account_id = account_by_id.get(record.get("account"))
+            if not account_id:
+                continue
+            for user_id in record.get("users") or []:
+                tg_id = user_tg_by_id.get(user_id)
+                if tg_id:
+                    telegram_ids.add(int(tg_id))
 
-    account_by_id = {a["id"]: a.get("account") for a in account_rows if a.get("id")}
-    user_tg_by_id = {u["id"]: u.get("telegram_id") for u in user_rows if u.get("id")}
-    telegram_ids: set[int] = set()
-    for record in secretary_rows:
-        account_id = account_by_id.get(record.get("account"))
-        if not account_id:
-            continue
-        for user_id in record.get("users") or []:
-            tg_id = user_tg_by_id.get(user_id)
-            if tg_id:
-                telegram_ids.add(int(tg_id))
+    await secretary_ids_cache.set("ids", telegram_ids)
     return telegram_ids
 
 
@@ -88,6 +103,45 @@ async def _is_secretary() -> bool:
         return False
     secretary_ids = await _load_secretary_telegram_ids()
     return int(user_id) in secretary_ids
+
+
+async def _session_user_telegram_id() -> int | None:
+    """Telegram_id текущего пользователя из сессии (userdata.id)."""
+    userdata = session.get("userdata") or {}
+    user_id = userdata.get("id")
+    if user_id in (None, ""):
+        return None
+    try:
+        return int(user_id)
+    except (TypeError, ValueError):
+        return None
+
+
+async def _user_visible_orgs() -> set:
+    """Организации, видимые текущему пользователю.
+
+    Секретарь видит все; иначе — только организации, где он подписант
+    MAIN_ADDRESS (user_org_names). Неопознанный пользователь не видит ничего.
+    """
+    from other.grist_tools import load_orgs, user_org_names
+
+    if await _is_secretary():
+        orgs = await load_orgs()
+        return {(o.get("NAME") or "") for o in orgs if o.get("NAME")}
+    user_telegram_id = await _session_user_telegram_id()
+    if user_telegram_id is None:
+        return set()
+    return await user_org_names(user_telegram_id)
+
+
+async def _org_visible(org_name: str) -> bool:
+    """Видна ли организация текущему пользователю."""
+    if not org_name:
+        return False
+    visible_orgs = await _user_visible_orgs()
+    return org_name in visible_orgs
+
+
 statuses = (
     "❗️ #active",
     "☑️ #next",
@@ -272,11 +326,23 @@ def _question_links(question_id: int, question_data: list) -> tuple:
 
 
 async def _org_names() -> list[str]:
-    """Имена организаций для селекта; Фонд — всегда первый пункт."""
-    from other.grist_tools import load_orgs
+    """Имена организаций, видимых текущему пользователю; Фонд — первым.
 
-    orgs = await load_orgs()
-    names = [(o.get("NAME") or "") for o in orgs if o.get("NAME")]
+    Секретарь видит все организации, остальные — только те, где они
+    подписант MAIN_ADDRESS (user_org_names).
+    """
+    from other.grist_tools import load_orgs, user_org_names
+
+    if await _is_secretary():
+        orgs = await load_orgs()
+        names = [(o.get("NAME") or "") for o in orgs if o.get("NAME")]
+    else:
+        user_telegram_id = await _session_user_telegram_id()
+        names = (
+            sorted(await user_org_names(user_telegram_id))
+            if user_telegram_id is not None
+            else []
+        )
     if DEFAULT_ORG_NAME not in names:
         names.insert(0, DEFAULT_ORG_NAME)
     return names
@@ -288,6 +354,9 @@ async def cmd_d2_show(question_uuid):
 
     data_row, question = await _find_question_row(question_uuid)
     if data_row is None or question is None:
+        return "Decision not exist =("
+    if not await _org_visible(question.get("ORG") or DEFAULT_ORG_NAME):
+        # Чужая организация — как несуществующая, существование не палить.
         return "Decision not exist =("
 
     questions, question_data, _ = await _load_question_tables()
@@ -486,6 +555,8 @@ async def cmd_d2_publish(question_uuid):
     data_row, question = await _find_question_row(question_uuid)
     if data_row is None or question is None:
         return "Decision not exist =("
+    if not await _org_visible(question.get("ORG") or DEFAULT_ORG_NAME):
+        return "Decision not exist =("
 
     from other.grist_tools import grist_manager, MTLGrist
 
@@ -623,6 +694,10 @@ async def cmd_d2_add():
     if user_weight <= 0:
         return redirect("/d2")
 
+    if not await _org_visible(org):
+        await flash("Такая организация вам недоступна.")
+        return redirect("/d2/fragment/form")
+
     from other.grist_tools import grist_manager, MTLGrist
 
     questions, question_data, _ = await _load_question_tables()
@@ -722,6 +797,8 @@ async def cmd_d2_copy():
     data_row, question = await _find_question_row(request.args.get("uuid", ""))
     if data_row is None or question is None:
         return "Decision not exist =("
+    if not await _org_visible(question.get("ORG") or DEFAULT_ORG_NAME):
+        return "Decision not exist =("
 
     user_weight = await check_user_weight(False)
     statuses_list = [(status_, "") for status_ in statuses]
@@ -754,6 +831,8 @@ async def cmd_d2_template_from():
 
     data_row, question = await _find_question_row(template_uuid)
     if data_row is None or question is None:
+        return "Decision not exist =("
+    if not await _org_visible(question.get("ORG") or DEFAULT_ORG_NAME):
         return "Decision not exist =("
 
     from other.grist_tools import grist_manager, MTLGrist
@@ -833,6 +912,9 @@ async def cmd_d2_edit():
 
     items.sort(key=lambda row: (row["number"] is None, row["number"]), reverse=True)
 
+    visible_orgs = await _user_visible_orgs()
+    items = [row for row in items if row["org"] in visible_orgs]
+
     status_param = request.args.get("status")
     org_param = (request.args.get("org") or "").strip()
     query = (request.args.get("q") or "").strip().lower()
@@ -876,7 +958,6 @@ async def cmd_d2_edit():
     org_names = sorted({row["org"] for row in items})
     if DEFAULT_ORG_NAME not in org_names:
         org_names.insert(0, DEFAULT_ORG_NAME)
-
     return await render_template(
         "d2_frag_edit.html",
         items=page_items,

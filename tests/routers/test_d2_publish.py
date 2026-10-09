@@ -17,27 +17,77 @@ def _secretary_ids_mock(ids):
     )
 
 
+def _signer_mock(account_id, telegram_id):
+    """user_org_names (тест-режим): grist_cache.find_by_index возвращает юзера."""
+    return patch(
+        "other.grist_cache.grist_cache.find_by_index",
+        return_value={
+            "telegram_id": telegram_id,
+            "account_id": account_id,
+            "username": "itolstov",
+        },
+    )
+
+
+def _tables_mock(**tables):
+    """Мок load_table_data по таблице вместо позиционного side_effect.
+
+    Ключи — атрибуты MTLGrist (QUESTIONS, QUESTION_DATA, QUESTION_TEMPLATES)
+    и имена таблиц сид-режима (EURMTL_secretaries, EURMTL_accounts,
+    EURMTL_users, ORGS). Неизвестная таблица → []. Не зависит от порядка
+    вызовов и горячего кеша секретарей между тестами.
+    """
+    from other.grist_tools import MTLGrist
+
+    by_name = {}
+    for attr, rows in tables.items():
+        table = getattr(MTLGrist, attr, None)
+        key = table.table_name if table is not None else attr
+        by_name[key] = rows
+
+    async def fake(table, *args, **kwargs):
+        return list(by_name.get(table.table_name, []))
+
+    return patch(
+        "other.grist_tools.grist_manager.load_table_data",
+        new=AsyncMock(side_effect=fake),
+    )
+
+
 @pytest.mark.asyncio
 async def test_add_draft_creates_question_without_tg(client):
     async with client.session_transaction() as session:
         session["userdata"] = SECRETARY_SESSION
         session["user_id"] = SECRETARY_SESSION["id"]
 
+    questions = [{"id": 9, "NUMBER": 76, "TITLE": "", "READING": 1}]
+    calls = {"questions": 0}
+
+    async def fake(table, *a, **k):
+        """QUESTIONS: 1-я проверка номера — 76 ещё нет, после post — появился."""
+        name = table.table_name
+        if name == "QUESTIONS":
+            calls["questions"] += 1
+            return questions if calls["questions"] >= 2 else []
+        seeded = {
+            "Secretaries": [{"id": 1, "account": 1, "users": [1]}],
+            "Accounts": [{"id": 1, "account": "G"}],
+            "Users": [{"id": 1, "telegram_id": 1837984392, "account_id": "G"}],
+            "ORGS": [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
+        }
+        return list(seeded.get(name, []))
+
     with (
         patch("routers.decision.check_user_weight", new=AsyncMock(return_value=1)),
         patch(
             "other.grist_tools.grist_manager.load_table_data",
-            new=AsyncMock(return_value=[]),
-        ) as load_mock,
+            new=AsyncMock(side_effect=fake),
+        ),
         patch(
             "other.grist_tools.grist_manager.post_data", new=AsyncMock()
         ) as post_mock,
         patch("routers.decision.skynet_bot.send_message", new=AsyncMock()) as send_mock,
     ):
-        questions = [{"id": 9, "NUMBER": 76, "TITLE": "", "READING": 1}]
-        # /d2/add: 1-я _load_question_tables — проверка номера (пусто, 76 нет),
-        # 2-я — поиск id после post_data (появился 76)
-        load_mock.side_effect = [[], [], [], questions, [], []]
         response = await client.post(
             "/d2/add",
             form={
@@ -67,12 +117,29 @@ async def test_add_publish_still_sends_message(client):
 
     msg = AsyncMock()
     msg.message_id = 4242
+    questions = [{"id": 9, "NUMBER": 75, "TITLE": "", "READING": 1}]
+    calls = {"questions": 0}
+
+    async def fake(table, *a, **k):
+        """QUESTIONS: 1-я проверка номера — 75 ещё нет, после post — появился."""
+        name = table.table_name
+        if name == "QUESTIONS":
+            calls["questions"] += 1
+            return questions if calls["questions"] >= 2 else []
+        seeded = {
+            "Secretaries": [{"id": 1, "account": 1, "users": [1]}],
+            "Accounts": [{"id": 1, "account": "G"}],
+            "Users": [{"id": 1, "telegram_id": 1837984392, "account_id": "G"}],
+            "ORGS": [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
+        }
+        return list(seeded.get(name, []))
+
     with (
         patch("routers.decision.check_user_weight", new=AsyncMock(return_value=1)),
         patch(
             "other.grist_tools.grist_manager.load_table_data",
-            new=AsyncMock(return_value=[]),
-        ) as load_mock,
+            new=AsyncMock(side_effect=fake),
+        ),
         patch(
             "other.grist_tools.grist_manager.post_data", new=AsyncMock()
         ) as post_mock,
@@ -80,10 +147,6 @@ async def test_add_publish_still_sends_message(client):
             "routers.decision.skynet_bot.send_message", new=AsyncMock(return_value=msg)
         ),
     ):
-        questions = [{"id": 9, "NUMBER": 75, "TITLE": "", "READING": 1}]
-        # /d2/add: 1-я проверка номера (пусто), 2-я поиск id после post_data,
-        # 7-й вызов — load_orgs внутри resolve_channel (не черновик).
-        load_mock.side_effect = [[], [], [], questions, [], [], []]
         response = await client.post(
             "/d2/add",
             form={
@@ -138,8 +201,17 @@ async def test_publish_draft_by_secretary(client):
                 "CREATED_BY": "@attid",
             }
         ]
-        # /d2/publish: _find_question_row + свои таблицы = 2× _load_question_tables
-        load_mock.side_effect = [questions, data, [], questions, data, []]
+        # /d2/publish: _find_question_row (3) + _org_visible→load_orgs (1)
+        # + _load_question_tables (3). Секретарю видна орга из ORGS-мока.
+        load_mock.side_effect = [
+            questions,
+            data,
+            [],
+            [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
+            questions,
+            data,
+            [],
+        ]
         response = await client.post(f"/d2/{DRAFT_UUID}/publish")
 
     assert response.status_code == 302
@@ -193,7 +265,17 @@ async def test_republish_dead_post_sends_new_message(client):
                 "CREATED_BY": "@itolstov",
             }
         ]
-        load_mock.side_effect = [questions, data, [], questions, data, []]
+        # /d2/publish: _find_question_row (3) + _org_visible→load_orgs (1)
+        # + _load_question_tables (3). Секретарю видна орга из ORGS-мока.
+        load_mock.side_effect = [
+            questions,
+            data,
+            [],
+            [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
+            questions,
+            data,
+            [],
+        ]
         response = await client.post(f"/d2/{PUBLISHED_UUID}/publish")
 
     assert response.status_code == 302
@@ -306,8 +388,18 @@ async def test_question_screen_shows_publish_button_for_secretary_draft(client):
                 "CREATED_BY": "@attid",
             }
         ]
-        # GET /d2/<uuid>: _find_question_row + _load_question_tables = 6 loads
-        load_mock.side_effect = [questions, data, [], questions, data, []]
+        # GET /d2/<uuid>: _find_question_row (3 loads: QUESTIONS, DATA,
+        # TEMPLATES) + _org_visible → load_orgs (1) + _load_question_tables
+        # (3). Секретарю видны орги из ORGS-мока.
+        load_mock.side_effect = [
+            questions,
+            data,
+            [],
+            [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
+            questions,
+            data,
+            [],
+        ]
         response = await client.get(f"/d2/{DRAFT_UUID}")
 
     body = await response.get_data(as_text=True)
@@ -318,6 +410,10 @@ async def test_question_screen_shows_publish_button_for_secretary_draft(client):
 
 @pytest.mark.asyncio
 async def test_edit_list_marks_draft_questions(client):
+    async with client.session_transaction() as session:
+        session["userdata"] = SECRETARY_SESSION
+        session["user_id"] = SECRETARY_SESSION["id"]
+
     questions = [
         {"id": 1, "NUMBER": 1, "TITLE": "Published"},
         {"id": 2, "NUMBER": 2, "TITLE": "Draft"},
@@ -339,9 +435,20 @@ async def test_edit_list_marks_draft_questions(client):
         },
     ]
 
-    with patch(
-        "other.grist_tools.grist_manager.load_table_data",
-        new=AsyncMock(side_effect=[questions, question_data]),
+    with (
+        _secretary_ids_mock({1837984392}),
+        patch(
+            "other.grist_tools.grist_manager.load_table_data",
+            # /d2/fragment/edit: QUESTIONS, QUESTION_DATA, затем ORGS
+            # (секретари замоканы хелпером; секретарю видны все оргы из ORGS).
+            new=AsyncMock(
+                side_effect=[
+                    questions,
+                    question_data,
+                    [{"NAME": "Фонд", "MAIN_ADDRESS": "G"}],
+                ]
+            ),
+        ),
     ):
         response = await client.get("/d2/fragment/edit?status=all")
 

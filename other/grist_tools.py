@@ -449,6 +449,119 @@ assets_not_found_cache = AsyncTTLCache(
     ttl_seconds=3600
 )  # Кеш для ненайденных активов на 1 час
 
+org_signers_cache = AsyncTTLCache(
+    ttl_seconds=300
+)  # Подписанты MAIN_ADDRESS организаций на 5 минут
+
+HORIZON_URL = "https://horizon.stellar.org"
+
+
+async def _org_main_address_signers(main_address: str) -> list[str]:
+    """Публичные ключи подписантов счёта организации через Horizon.
+
+    Ошибка сети/счёта — пустой список (организация просто не видна).
+    """
+    from other.web_tools import http_session_manager
+
+    try:
+        response = await http_session_manager.get_web_request(
+            "GET",
+            f"{HORIZON_URL}/accounts/{main_address}",
+            return_type="json",
+        )
+    except Exception as e:
+        logger.warning(f"Error loading signers for {main_address}: {e}")
+        return []
+    if response.status != 200:
+        logger.warning(f"Horizon returned {response.status} for {main_address} signers")
+        return []
+    signers = (response.data or {}).get("signers", [])
+    return [
+        signer["key"]
+        for signer in signers
+        if signer.get("key") and int(signer.get("weight", 0)) > 0
+    ]
+
+
+async def load_org_signers(main_addresses: List[str]) -> Dict[str, set]:
+    """Подписанты нескольких MAIN_ADDRESS; Horizon дергается параллельно."""
+    unique_addresses = list(dict.fromkeys(addr for addr in main_addresses if addr))
+    signer_lists = await asyncio.gather(
+        *(_org_main_address_signers(addr) for addr in unique_addresses)
+    )
+    return dict(zip(unique_addresses, signer_lists))
+
+
+async def user_org_names(user_telegram_id: int) -> set:
+    """Имена организаций, видимых пользователю: он подписант MAIN_ADDRESS.
+
+    Тест-режим: Horizon не дергается — подписанты берутся из grist_cache
+    (EURMTL_users/account_id), как для прода, только источник счётов другой.
+    activate_stand мокает stellar_client.get_fund_signers; здесь свой путь.
+    """
+    cache_key = f"org_names:{user_telegram_id}"
+    cached = await org_signers_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    orgs = await load_orgs()
+    org_addresses = {
+        (o.get("NAME") or ""): (o.get("MAIN_ADDRESS") or "")
+        for o in orgs
+        if o.get("NAME")
+    }
+
+    if config.test_mode:
+        # Стенд: вместо Horizon — таблицы двойника. Подписант счёта =
+        # пользователь, чей account_id совпадает с MAIN_ADDRESS.
+        signers_by_address: Dict[str, set] = {}
+        for address in org_addresses.values():
+            if not address:
+                continue
+            signers_by_address[address] = {address}
+        users_map = {}
+        for address in signers_by_address:
+            account_user = await grist_cash.get(address)
+            if account_user is not None:
+                users_map[address] = account_user
+        if not users_map:
+            from other.grist_cache import grist_cache
+
+            for address in signers_by_address:
+                user_record = grist_cache.find_by_index("EURMTL_users", address)
+                if user_record:
+                    users_map[address] = User(
+                        telegram_id=user_record["telegram_id"],
+                        account_id=user_record["account_id"],
+                        username=user_record.get("username"),
+                    )
+    else:
+        signers_by_address = await load_org_signers(list(org_addresses.values()))
+
+        signer_account_ids = {
+            signer_key
+            for signer_keys in signers_by_address.values()
+            for signer_key in signer_keys
+        }
+        users_map = await load_users_from_grist(list(signer_account_ids))
+
+    visible: set = set()
+    for org_name, address in org_addresses.items():
+        if not address:
+            continue
+        for signer_key in signers_by_address.get(address, []):
+            user = users_map.get(signer_key)
+            if (
+                user
+                and user.telegram_id
+                and int(user.telegram_id) == int(user_telegram_id)
+            ):
+                visible.add(org_name)
+                break
+
+    await org_signers_cache.set(cache_key, visible)
+    return visible
+
 
 async def get_grist_asset_by_code(asset_code: str) -> Optional[Dict[str, Any]]:
     """
