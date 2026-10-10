@@ -9,7 +9,8 @@
             </div>
             <div class="col-auto">
                 <select name="status" class="form-select" onchange="this.form.submit()">
-                    <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Активные</option>
+                    <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Требует внимания</option>
+                    <option value="drafts" {% if status_filter == 'drafts' %}selected{% endif %}>Черновики</option>
                     <option value="all" {% if status_filter == 'all' %}selected{% endif %}>Все</option>
                     {% for st in statuses %}
                     <option value="{{ st }}" {% if status_filter == st %}selected{% endif %}>{{ st }}</option>
