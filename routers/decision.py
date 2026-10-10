@@ -1257,7 +1257,15 @@ async def cmd_d2_edit():
     # Явный выбор статуса — уважается всегда. Поиск без явного статуса ищет по всем
     # (решение владельца 2026-10-09/10).
     if status_param == "active":
-        filtered = [row for row in items if row["status"] in D2_ACTIVE_STATUSES]
+        # «Требует внимания»: активные + контроль (решение владельца
+        # 2026-10-10; ☑️ #next — конечный статус, в агрегат не входит).
+        filtered = [
+            row for row in items
+            if row["status"] in ("❗️ #active", "‼️ #control")
+        ]
+    elif status_param == "drafts":
+        # Черновики: все чтения без TELEGRAM_LINK.
+        filtered = [row for row in items if row["is_draft"]]
     elif not explicit_status and query:
         filtered = items
     elif status_param == "all" or not explicit_status:
@@ -1287,7 +1295,9 @@ async def cmd_d2_edit():
     page = min(page, total_pages)
     page_items = filtered[(page - 1) * per_page : page * per_page]
 
-    if not explicit_status:
+    if status_param == "drafts":
+        status_filter = "drafts"
+    elif not explicit_status:
         # Нет явного выбора: дефолт вида «Активные», но фильтр статуса не применён
         # (поиск без статуса ищет по всем).
         status_filter = "all" if query else "active"
