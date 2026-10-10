@@ -64,7 +64,7 @@
         <li class="page-item {% if page <= 1 %}disabled{% endif %}">
             <a class="page-link" href="{{ d2_pager_url(page - 1) }}">Назад</a>
         </li>
-        {% for p in pager_pages(page, total_pages) %}
+        {% for p in d2_pager_pages(page, total_pages) %}
         <li class="page-item {% if p == page %}active{% endif %}">
             <a class="page-link" href="{{ d2_pager_url(p) }}">{{ p }}</a>
         </li>
