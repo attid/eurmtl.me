@@ -296,7 +296,11 @@ class GristAPI:
         )
         match response.status:
             case 200 if isinstance(response.data, list) and response.data:
-                attachment_id = response.data[0].get("id")
+                # Grist отвечает списком: [{"id": N}] или просто [N].
+                first = response.data[0]
+                attachment_id = (
+                    first.get("id") if isinstance(first, dict) else first
+                )
             case _:
                 raise Exception(f"Ошибка загрузки attachment: Статус {response.status}")
         if attachment_id is None:
@@ -319,7 +323,12 @@ class GristAPI:
             case 200 if isinstance(
                 records_response.data, dict
             ) and records_response.data.get("records"):
-                row_id = records_response.data["records"][0].get("id")
+                first_record = records_response.data["records"][0]
+                row_id = (
+                    first_record.get("id")
+                    if isinstance(first_record, dict)
+                    else first_record
+                )
                 if row_id is not None:
                     return int(row_id)
                 raise Exception("Grist не вернул id созданной записи")
