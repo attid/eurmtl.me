@@ -1,0 +1,126 @@
+{% extends 'tabler_base.html' %}{% block page_title %}D2: Новый вопрос{% endblock %}
+{% block head_scripts %}
+<script src="/static/js/quill2/quill.js"></script>
+<link rel="stylesheet" href="/static/css/quill2.snow.css">
+{% endblock %}
+{% block content %}
+
+{% set disable_fields = user_weight < 1 %}
+<div>
+    {% include 'd2_header_buttons.html' %}
+    <div class="mb-1 d-flex align-items-center gap-2">
+        <a href="/d2/fragment/edit?status=active">← К списку вопросов</a>
+        {% include 'd2_tx_modal.html' %}
+    </div>
+    <h2 class="page-title">Новый вопрос</h2>
+    {% if template_title %}
+    <div class="text-secondary">Шаблон: {{ template_title }}</div>
+    {% endif %}
+</div>
+
+<div class="container-xl">
+    <form action="/d2/add" method="post">
+        <div class="row">
+            <div class="col-12 mb-3">
+                <label for="short_subject" class="form-label">Тема (В реестр)</label>
+                <input type="text" id="short_subject" name="short_subject" class="form-control" required
+                       value="{{ short_subject }}" {% if disable_fields %}disabled{% endif %}>
+            </div>
+
+            <div class="col-10 mb-3">
+                <label for="question_number" class="form-label">Номер вопроса</label>
+                <input type="text" id="question_number" name="question_number" class="form-control" required
+                       value="{{ question_number }}" {% if disable_fields %}disabled{% endif %}>
+            </div>
+            <div class="col-2 mb-3 d-flex align-items-end">
+                <button type="button" id="loadsDecisionNum" class="btn btn-outline-primary"
+                        {% if disable_fields %}disabled{% endif %}>
+                    🔍
+                </button>
+            </div>
+
+            <div class="col-12 mb-3">
+                <label for="status" class="form-label">Статус вопроса</label>
+                <select id="status" name="status" class="form-select" {% if disable_fields %}disabled{% endif %}>
+                    <option value="" disabled>Выберите статус</option>
+                    {% for value, selected in statuses %}
+                    <option value="{{ value }}" {{ selected }}>{{ value }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="card col-12 mb-3 h-auto overflow-hidden">
+                <div class="card-body">
+                    <input type="hidden" name="inquiry" id="inquiry">
+                    <div>
+                        <h5 class="card-title">Вопрос (Идет в канал без темы как написано ниже)</h5>
+                    </div>
+                    <div id="editor-container" {% if disable_fields %}data-disabled="true"{% endif %}>
+                        {{ inquiry|safe }}
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 mb-3">
+                {% if readings_total > 0 %}
+                <label class="form-label">Чтение</label>
+                {% for n in range(1, readings_total + 1) %}
+                <div class="form-check">
+                    <input type="radio" id="reading{{ n }}" name="reading" value="{{ n }}"
+                           class="form-check-input" {{ 'checked' if reading == n else '' }}>
+                    <label for="reading{{ n }}" class="form-check-label">
+                        {{ 'Первое чтение' if n == 1 else ('Второе чтение' if n == 2 else 'Третье чтение') }}
+                    </label>
+                </div>
+                {% endfor %}
+                {% else %}
+                {# У орги нет чтений (readings=0): поле не показываем, всегда 1. #}
+                <input type="hidden" name="reading" value="1">
+                {% endif %}
+            </div>
+
+            <div class="col-12 mb-3">
+                <div class="form-check">
+                    <input type="checkbox" id="as_draft" name="as_draft" class="form-check-input">
+                    <label for="as_draft" class="form-check-label">Сохранить как черновик</label>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary w-100" {% if disable_fields %}disabled{% endif %}>
+                    Опубликовать<i class="ti ti-send ms-2"></i>
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block bottom_scripts %}
+{% include 'd2_quill_include.html' %}
+<script>
+    async function getNumber() {
+        if (document.querySelector("#question_number").disabled) {
+            return;
+        }
+
+        fetch(`/d2/number`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error("Network response was not ok");
+                }
+                return response.json();
+            })
+            .then(data => {
+                document.querySelector("#question_number").value = data.number;
+                var currentText = window.d2Quill.root.innerHTML;
+                var shortSubject = document.querySelector("#short_subject").value;
+                window.d2Quill.root.innerHTML = "<b>Вопрос " + data.number + ": "+ shortSubject +"</b><br> " + currentText;
+            })
+            .catch(error => {
+                console.log("There was a problem with the fetch operation:", error.message);
+            });
+    }
+    document.getElementById('loadsDecisionNum').addEventListener('click', getNumber);
+</script>
+{% endblock %}

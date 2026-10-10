@@ -5,6 +5,7 @@ import pytest
 from jwt import InvalidSignatureError
 
 from db.sql_models import Signers
+from other.config_reader import config
 
 
 @pytest.mark.asyncio
@@ -33,7 +34,7 @@ async def test_login_telegram_stores_session_values_and_redirects_to_auth(client
     assert query["scope"] == ["openid profile"]
     assert query["response_type"] == ["code"]
     assert query["code_challenge_method"] == ["S256"]
-    assert query["redirect_uri"] == ["https://eurmtl.me/login/telegram/callback"]
+    assert query["redirect_uri"] == [f"https://{config.domain}/login/telegram/callback"]
 
     async with client.session_transaction() as test_session:
         assert test_session["telegram_oidc_state"] == query["state"][0]

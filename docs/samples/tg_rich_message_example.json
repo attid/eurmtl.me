@@ -1,0 +1,1720 @@
+{
+ "_comment": "Эталон rich-поста TG (Bot API 10.x) для конвертера Quill -> InputRichMessage. Из канала gonzo_ML_podcasts, выгрузка 64Gram.",
+ "tg_rich_message": {
+  "rtl": false,
+  "part": false,
+  "blocks": [
+   {
+    "type": "heading",
+    "level": 1,
+    "text": {
+     "type": "bold",
+     "text": {
+      "type": "plain",
+      "text": "За пределами единого подпространства: как моносемантичная специализация нейронов повышает эффективность MLP"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "empty"
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "bold",
+       "text": {
+        "type": "plain",
+        "text": "Revenge of Monosemanticity: Specialized Neurons Improve Data Efficiency in MLPs"
+       }
+      },
+      {
+       "type": "plain",
+       "text": "\n"
+      },
+      {
+       "type": "italic",
+       "text": {
+        "type": "plain",
+        "text": "Amirhesam Abedsoltan, Enric Boix-Adsera, Fivos Kalogiannis, Mikhail Belkin"
+       }
+      },
+      {
+       "type": "plain",
+       "text": "\nPaper: "
+      },
+      {
+       "type": "text_link",
+       "href": "https://arxiv.org/abs/2608.24007",
+       "text": {
+        "type": "plain",
+        "text": "https://arxiv.org/abs/2608.24007"
+       }
+      },
+      {
+       "type": "plain",
+       "text": "\nReview: "
+      },
+      {
+       "type": "text_link",
+       "href": "https://arxiviq.substack.com/p/revenge-of-monosemanticity-specialized",
+       "text": {
+        "type": "plain",
+        "text": "https://arxiviq.substack.com/p/revenge-of-monosemanticity-specialized"
+       }
+      },
+      {
+       "type": "plain",
+       "text": "\nCode: N/A\nModel: N/A"
+      }
+     ]
+    }
+   },
+   {
+    "type": "heading",
+    "level": 2,
+    "text": {
+     "type": "bold",
+     "text": {
+      "type": "plain",
+      "text": "# TL;DR"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "bold",
+       "text": {
+        "type": "plain",
+        "text": "ЧТО сделали:"
+       }
+      },
+      {
+       "type": "plain",
+       "text": " Исследовали, как нейросети выучивают представления, когда в многообразии данных нет единой низкоразмерной глобальной структуры. С помощью экспериментов на классических и gated MLP, подкреплённых теорией динамики и выборочной сложности (sample complexity), авторы показали: двухслойные MLP при градиентном обучении естественным образом формируют моносемантичные специализированные нейроны. Каждый такой нейрон настраивается на локальное предсказательное направление отдельного кластера и одновременно выучивает неявное разбиение входного пространства, по сути реализуя маршрутизацию Mixture-of-Experts (MoE) без каких-либо явных модулей маршрутизации."
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "bold",
+       "text": {
+        "type": "plain",
+        "text": "ПОЧЕМУ это важно:"
+       }
+      },
+      {
+       "type": "plain",
+       "text": " Значительная часть фундаментальной теории, объясняющей превосходство нейросетей над ядерными методами, опиралась на гипотезу о существовании общего низкоразмерного предсказательного подпространства для всех точек данных. Эта работа меняет устоявшийся подход: авторы доказали полиномиальное разделение по объёму выборки, при котором MLP успешно обучаются, тогда как классическая гребневая регрессия на ядрах (kernel ridge regression) и адаптивные методы обучения признаков, такие как "
+      },
+      {
+       "type": "text_link",
+       "href": "https://doi.org/10.1126/science.adi5639",
+       "text": {
+        "type": "plain",
+        "text": "Recursive Feature Machine"
+       }
+      },
+      {
+       "type": "plain",
+       "text": " (RFM), гарантированно терпят неудачу. Статья связывает концепции механистической интерпретируемости (моносемантичность на уровне нейронов) с теорией обобщения, объясняя, как перепараметризованные сети декомпозируют гетерогенные задачи."
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "bold",
+       "text": {
+        "type": "plain",
+        "text": "Для практиков:"
+       }
+      },
+      {
+       "type": "plain",
+       "text": " Долгое время в теории машинного обучения считалось, что нейросети работают за счёт сжатия многомерных входов в единый компактный набор глобальных признаков. Однако реальные данные часто состоят из отдельных режимов или подгрупп, каждой из которых управляют совершенно разные факторы. Данная работа показывает, что стандартные нейросети не пытаются загнать все данные в один шаблон: отдельные нейроны спонтанно специализируются, превращаясь в локальных экспертов под конкретные кластеры. Такая врождённая специализация позволяет простым архитектурам существенно опережать продвинутые ядерные машины на сложных неоднородных данных без усложнения архитектуры специализированными модулями."
+      }
+     ]
+    }
+   },
+   {
+    "type": "photo",
+    "photo_id": "5251320002038668462",
+    "photo": "photos/photo_3678@04-09-2026_16-02-04.jpg",
+    "photo_file_size": 0,
+    "width": 2560,
+    "height": 1428,
+    "spoiler": false,
+    "caption": {
+     "text": {
+      "type": "empty"
+     },
+     "credit": {
+      "type": "empty"
+     }
+    }
+   },
+   {
+    "type": "heading",
+    "level": 2,
+    "text": {
+     "type": "bold",
+     "text": {
+      "type": "plain",
+      "text": "# Мясо 🍖"
+     }
+    }
+   },
+   {
+    "type": "heading",
+    "level": 4,
+    "text": {
+     "type": "bold",
+     "text": {
+      "type": "plain",
+      "text": "🕳 Узкое горлышко глобального подпространства"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Краеугольный камень современной теории глубокого обучения гласит: нейросети превосходят методы с фиксированными ядрами, потому что адаптируют свои представления под низкоразмерную структуру задачи. В классических single-index и multi-index моделях целевая функция имеет вид "
+      },
+      {
+       "type": "math",
+       "source": "f(x) = g(U^\\top x)"
+      },
+      {
+       "type": "plain",
+       "text": ", где "
+      },
+      {
+       "type": "math",
+       "source": "U \\in \\mathbb{R}^{d \\times r}"
+      },
+      {
+       "type": "plain",
+       "text": " и "
+      },
+      {
+       "type": "math",
+       "source": "r \\ll d"
+      },
+      {
+       "type": "plain",
+       "text": ". В такой постановке методы с фиксированными ядрами масштабируются от размерности исходного пространства "
+      },
+      {
+       "type": "math",
+       "source": "d"
+      },
+      {
+       "type": "plain",
+       "text": ", тогда как дифференцируемые сети находят скрытое "
+      },
+      {
+       "type": "math",
+       "source": "r"
+      },
+      {
+       "type": "plain",
+       "text": "-мерное предсказательное подпространство. Адаптивные ядерные алгоритмы, например "
+      },
+      {
+       "type": "text_link",
+       "href": "https://doi.org/10.1126/science.adi5639",
+       "text": {
+        "type": "plain",
+        "text": "Recursive Feature Machine"
+       }
+      },
+      {
+       "type": "plain",
+       "text": " (RFM), реализуют этот принцип на практике: они оценивают матрицу внешнего произведения градиентов (Average Gradient Outer Product, AGOP), сжимая неинформативные измерения."
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Однако этот глобальный взгляд натыкается на препятствие, когда данные состоят из неоднородных подвыборок. Если данные разбиты на "
+      },
+      {
+       "type": "math",
+       "source": "K"
+      },
+      {
+       "type": "plain",
+       "text": " кластеров, каждый кластер "
+      },
+      {
+       "type": "math",
+       "source": "c \\in [K]"
+      },
+      {
+       "type": "plain",
+       "text": " может зависеть от совершенно уникального направления "
+      },
+      {
+       "type": "math",
+       "source": "v_c \\in \\mathbb{R}^d"
+      },
+      {
+       "type": "plain",
+       "text": " и собственной функции связи (link function) "
+      },
+      {
+       "type": "math",
+       "source": "g_c"
+      },
+      {
+       "type": "plain",
+       "text": ". С ростом числа кластеров размерность линейной оболочки "
+      },
+      {
+       "type": "math",
+       "source": "\\operatorname{rank}([v_1, \\dots, v_K])"
+      },
+      {
+       "type": "plain",
+       "text": " способна достигать полной размерности пространства "
+      },
+      {
+       "type": "math",
+       "source": "d"
+      },
+      {
+       "type": "plain",
+       "text": ". В таких условиях единого низкоразмерного глобального подпространства попросту нет. Алгоритмы, пытающиеся спроецировать весь датасет в единую систему координат, неизбежно скатываются к изотропному обучению и теряют локальные связи признаков."
+      }
+     ]
+    }
+   },
+   {
+    "type": "photo",
+    "photo_id": "5251320002038668464",
+    "photo": "photos/photo_3679@04-09-2026_16-02-04.jpg",
+    "photo_file_size": 0,
+    "width": 465,
+    "height": 362,
+    "spoiler": false,
+    "caption": {
+     "text": {
+      "type": "empty"
+     },
+     "credit": {
+      "type": "empty"
+     }
+    }
+   },
+   {
+    "type": "heading",
+    "level": 4,
+    "text": {
+     "type": "bold",
+     "text": {
+      "type": "plain",
+      "text": "🧩 Кластерная мульти-индексная модель"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Чтобы строго разобрать этот феномен, авторы формулируют смесь single-index моделей. Входной вектор "
+      },
+      {
+       "type": "math",
+       "source": "x \\in \\mathbb{R}^d"
+      },
+      {
+       "type": "plain",
+       "text": " генерируется при условии латентного индекса кластера "
+      },
+      {
+       "type": "math",
+       "source": "c \\sim \\operatorname{Unif}(\\{1, \\dots, K\\})"
+      },
+      {
+       "type": "plain",
+       "text": ". Внутри кластера "
+      },
+      {
+       "type": "math",
+       "source": "c"
+      },
+      {
+       "type": "plain",
+       "text": " ковариаты распределены нормально: "
+      },
+      {
+       "type": "math",
+       "source": "x \\mid c \\sim \\mathcal{N}(\\mu_c, \\Sigma_c)"
+      },
+      {
+       "type": "plain",
+       "text": ", где "
+      },
+      {
+       "type": "math",
+       "source": "\\mu_c \\in \\mathbb{R}^d"
+      },
+      {
+       "type": "plain",
+       "text": " обозначает центр кластера, а "
+      },
+      {
+       "type": "math",
+       "source": "\\Sigma_c \\in \\mathbb{R}^{d \\times d}"
+      },
+      {
+       "type": "plain",
+       "text": " — ковариационную матрицу. Целевая переменная "
+      },
+      {
+       "type": "math",
+       "source": "y \\in \\mathbb{R}"
+      },
+      {
+       "type": "plain",
+       "text": " подчиняется локальной зависимости "
+      },
+      {
+       "type": "math",
+       "source": "y = g_c(\\langle x, v_c \\rangle) + \\varepsilon"
+      },
+      {
+       "type": "plain",
+       "text": ", где "
+      },
+      {
+       "type": "math",
+       "source": "\\varepsilon \\sim \\mathcal{N}(0, \\sigma^2)"
+      },
+      {
+       "type": "plain",
+       "text": " — независимый шум наблюдений, "
+      },
+      {
+       "type": "math",
+       "source": "v_c \\in \\mathbb{R}^d"
+      },
+      {
+       "type": "plain",
+       "text": " — единичный вектор локального направления ("
+      },
+      {
+       "type": "math",
+       "source": "|v_c|_2 = 1"
+      },
+      {
+       "type": "plain",
+       "text": "), а "
+      },
+      {
+       "type": "math",
+       "source": "g_c: \\mathbb{R} \\to \\mathbb{R}"
+      },
+      {
+       "type": "plain",
+       "text": " — нелинейная функция связи."
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "В аналитических выкладках статьи окружающее пространство раскладывается на ортогональные подпространства маршрутизации и предсказания: "
+      },
+      {
+       "type": "math",
+       "source": "\\mathbb{R}^d = \\mathcal{S}{\\text{cluster}} \\oplus \\mathcal{S}{\\text{pred}}"
+      },
+      {
+       "type": "plain",
+       "text": ". В симметричном случае с размерностью "
+      },
+      {
+       "type": "math",
+       "source": "d = 2K"
+      },
+      {
+       "type": "plain",
+       "text": " центры кластеров задаются через стандартный базис "
+      },
+      {
+       "type": "math",
+       "source": "e_1, \\dots, e_K"
+      },
+      {
+       "type": "plain",
+       "text": " пространства "
+      },
+      {
+       "type": "math",
+       "source": "\\mathbb{R}^K"
+      },
+      {
+       "type": "plain",
+       "text": " в координатах маршрутизации: "
+      },
+      {
+       "type": "math",
+       "source": "\\mu_c = [R e_c; \\, 0]"
+      },
+      {
+       "type": "plain",
+       "text": ", где параметр "
+      },
+      {
+       "type": "math",
+       "source": "R > 0"
+      },
+      {
+       "type": "plain",
+       "text": " управляет разделимостью кластеров. Предсказательные направления лежат в оставшихся координатах: "
+      },
+      {
+       "type": "math",
+       "source": "v_c = [0; \\, e_c]"
+      },
+      {
+       "type": "plain",
+       "text": ". Здесь размерность предсказательного пространства равна "
+      },
+      {
+       "type": "math",
+       "source": "K"
+      },
+      {
+       "type": "plain",
+       "text": ". При обучении по MSE лоссу "
+      },
+      {
+       "type": "math",
+       "source": "\\mathcal{L}(f) = \\mathbb{E}[(f(x) - y)^2]"
+      },
+      {
+       "type": "plain",
+       "text": " задача состоит не просто в поиске векторов "
+      },
+      {
+       "type": "math",
+       "source": "\\{v_c\\}"
+      },
+      {
+       "type": "plain",
+       "text": ", но и в сохранении условной привязки каждого направления "
+      },
+      {
+       "type": "math",
+       "source": "v_c"
+      },
+      {
+       "type": "plain",
+       "text": " к своей области вокруг "
+      },
+      {
+       "type": "math",
+       "source": "\\mu_c"
+      },
+      {
+       "type": "plain",
+       "text": "."
+      }
+     ]
+    }
+   },
+   {
+    "type": "heading",
+    "level": 4,
+    "text": {
+     "type": "bold",
+     "text": {
+      "type": "plain",
+      "text": "⚙️ Механика специализации и динамика градиентов"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "plain",
+     "text": "Механизмом решения этой задачи выступает спонтанное возникновение моносемантичных нейронов в процессе градиентного спуска. "
+    }
+   },
+   {
+    "type": "photo",
+    "photo_id": "5251320002038668476",
+    "photo": "photos/photo_3680@04-09-2026_16-02-04.jpg",
+    "photo_file_size": 0,
+    "width": 966,
+    "height": 713,
+    "spoiler": false,
+    "caption": {
+     "text": {
+      "type": "empty"
+     },
+     "credit": {
+      "type": "empty"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Рассмотрим двухслойную сеть "
+      },
+      {
+       "type": "math",
+       "source": "f_\\theta(x) = \\sum_{j=1}^m a_j \\phi(w_j^\\top x)"
+      },
+      {
+       "type": "plain",
+       "text": " с функцией активации ReLU "
+      },
+      {
+       "type": "math",
+       "source": "\\phi(t) = \\max(0, t)"
+      },
+      {
+       "type": "plain",
+       "text": ", выходными весами "
+      },
+      {
+       "type": "math",
+       "source": "a_j \\in \\mathbb{R}"
+      },
+      {
+       "type": "plain",
+       "text": " и скрытыми весами "
+      },
+      {
+       "type": "math",
+       "source": "w_j \\in \\mathbb{R}^d"
+      },
+      {
+       "type": "plain",
+       "text": ". Популяционный градиентный поток на квадратичном лоссе задаётся системой дифференциальных уравнений:"
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "math",
+     "source": "\\dot{a}j = \\mathbb{E}\\left[(y - f\\theta(x))\\phi(w_j^\\top x)\\right], \\qquad \\dot{w}j = a_j \\mathbb{E}\\left[(y - f\\theta(x))\\mathbb{I}\\{w_j^\\top x > 0\\}x\\right]."
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "При малой инициализации "
+      },
+      {
+       "type": "math",
+       "source": "w_j(0) = \\varepsilon \\omega_j^0"
+      },
+      {
+       "type": "plain",
+       "text": " с единичной сферы "
+      },
+      {
+       "type": "math",
+       "source": "\\omega_j^0 \\sim \\operatorname{Unif}(\\mathbb{S}^{d-1})"
+      },
+      {
+       "type": "plain",
+       "text": " и нулевых "
+      },
+      {
+       "type": "math",
+       "source": "a_j(0) = 0"
+      },
+      {
+       "type": "plain",
+       "text": " сеть входит в начальный режим, где взаимодействие между нейронами ограничено величиной "
+      },
+      {
+       "type": "math",
+       "source": "\\mathcal{O}(m\\varepsilon^2)"
+      },
+      {
+       "type": "plain",
+       "text": ". Положительная однородность сохраняет динамический инвариант "
+      },
+      {
+       "type": "math",
+       "source": "|w_j(t)|2^2 - a_j(t)^2 = \\varepsilon^2"
+      },
+      {
+       "type": "italic",
+       "text": {
+        "type": "plain",
+        "text": ", что позволяет перепараметризовать веса через амплитуду "
+       }
+      },
+      {
+       "type": "math",
+       "source": "u_j(t) = \\operatorname{arsinh}(a_j(t)/\\varepsilon)"
+      },
+      {
+       "type": "italic",
+       "text": {
+        "type": "plain",
+        "text": " и направление "
+       }
+      },
+      {
+       "type": "math",
+       "source": "\\omega_j(t) = w_j(t)/|w_j(t)|_2"
+      },
+      {
+       "type": "italic",
+       "text": {
+        "type": "plain",
+        "text": ". Это приводит к изолированной динамике относительно целевой функции: "
+       }
+      },
+      {
+       "type": "math",
+       "source": "\\dot{u}_j = \\Phi(\\omega_j)"
+      },
+      {
+       "type": "italic",
+       "text": {
+        "type": "plain",
+        "text": " и "
+       }
+      },
+      {
+       "type": "math",
+       "source": "\\dot{\\omega}_j = \\tanh(u_j)\\nabla{\\mathbb{S}^{d-1}}\\Phi(\\omega_j)"
+      },
+      {
+       "type": "plain",
+       "text": ", где корреляционная цель равна "
+      },
+      {
+       "type": "math",
+       "source": "\\Phi(\\omega) = \\mathbb{E}[y\\phi(\\omega^\\top x)]"
+      },
+      {
+       "type": "plain",
+       "text": "."
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Для функции связи на основе полинома Эрмита третьей степени "
+      },
+      {
+       "type": "math",
+       "source": "h_3(t) = (t^3 - 3t)/\\sqrt{6}"
+      },
+      {
+       "type": "plain",
+       "text": " целевая функция корреляции принимает явный вид:"
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "math",
+     "source": "\\Psi_\\zeta(\\omega) = -\\frac{\\zeta}{K\\sqrt{6}}\\sum_{c=1}^K b_c(\\omega)\\varphi(b_c(\\omega))\\rho_c(\\omega)^3,"
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "где "
+      },
+      {
+       "type": "math",
+       "source": "b_c(\\omega) = \\langle \\omega, \\mu_c \\rangle"
+      },
+      {
+       "type": "plain",
+       "text": ", "
+      },
+      {
+       "type": "math",
+       "source": "\\rho_c(\\omega) = \\langle \\omega, v_c \\rangle"
+      },
+      {
+       "type": "plain",
+       "text": ", а "
+      },
+      {
+       "type": "math",
+       "source": "\\varphi"
+      },
+      {
+       "type": "plain",
+       "text": " — стандартная плотность нормального распределения. Анализ критических точек этого ландшафта, формализованный в графе зависимостей на Figure 7, показывает: каждый положительный локальный максимум концентрирует свой предсказательный вес ровно на одном кластере ("
+      },
+      {
+       "type": "math",
+       "source": "|\\rho_c| > 0"
+      },
+      {
+       "type": "plain",
+       "text": " при "
+      },
+      {
+       "type": "math",
+       "source": "\\rho_{r \\ne c} = 0"
+      },
+      {
+       "type": "plain",
+       "text": "). Любая критическая точка, пытающаяся смешать несколько направлений, содержит нестабильное касательное направление с положительной кривизной. Поэтому градиентные траектории почти наверное избегают сёдел и сходятся к изолированным точкам специализации вида "
+      },
+      {
+       "type": "math",
+       "source": "\\omega_j^* = \\tau_j v_{J_j} + \\mathcal{O}(R^{-1})"
+      },
+      {
+       "type": "plain",
+       "text": " для кластера "
+      },
+      {
+       "type": "math",
+       "source": "J_j \\in [K]"
+      },
+      {
+       "type": "plain",
+       "text": " и ориентации "
+      },
+      {
+       "type": "math",
+       "source": "\\tau_j \\in \\{\\pm 1\\}"
+      },
+      {
+       "type": "plain",
+       "text": "."
+      }
+     ]
+    }
+   },
+   {
+    "type": "photo",
+    "photo_id": "5251320002038668485",
+    "photo": "photos/photo_3681@04-09-2026_16-02-04.jpg",
+    "photo_file_size": 0,
+    "width": 892,
+    "height": 1052,
+    "spoiler": false,
+    "caption": {
+     "text": {
+      "type": "empty"
+     },
+     "credit": {
+      "type": "empty"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Как эмпирически показано на Figure 1, каждый специализированный нейрон задействует компоненту "
+      },
+      {
+       "type": "math",
+       "source": "\\mathcal{O}(R^{-1})"
+      },
+      {
+       "type": "plain",
+       "text": " в направлении маршрутизации, чтобы поместить порог активации внутрь кластера "
+      },
+      {
+       "type": "math",
+       "source": "c"
+      },
+      {
+       "type": "plain",
+       "text": ", выравнивая основную ориентацию вдоль "
+      },
+      {
+       "type": "math",
+       "source": "v_c"
+      },
+      {
+       "type": "plain",
+       "text": ". Современные архитектуры с механизмом гейтинга вроде ReGLU и "
+      },
+      {
+       "type": "text_link",
+       "href": "https://arxiv.org/abs/2002.05202",
+       "text": {
+        "type": "plain",
+        "text": "SwiGLU"
+       }
+      },
+      {
+       "type": "plain",
+       "text": " с формулой "
+      },
+      {
+       "type": "math",
+       "source": "h(x) = \\phi(W_g x + b_g) \\odot (W_v x + b_v)"
+      },
+      {
+       "type": "plain",
+       "text": " усиливают этот эффект: ветка гейта "
+      },
+      {
+       "type": "math",
+       "source": "W_g"
+      },
+      {
+       "type": "plain",
+       "text": " учится выделять границы кластера, а ветка значений "
+      },
+      {
+       "type": "math",
+       "source": "W_v"
+      },
+      {
+       "type": "plain",
+       "text": " извлекает локальные предсказательные координаты, устраняя конфликт между маршрутизацией и оценкой признаков."
+      }
+     ]
+    }
+   },
+   {
+    "type": "photo",
+    "photo_id": "5251320002038668488",
+    "photo": "photos/photo_3682@04-09-2026_16-02-04.jpg",
+    "photo_file_size": 0,
+    "width": 980,
+    "height": 958,
+    "spoiler": false,
+    "caption": {
+     "text": {
+      "type": "empty"
+     },
+     "credit": {
+      "type": "empty"
+     }
+    }
+   },
+   {
+    "type": "heading",
+    "level": 4,
+    "text": {
+     "type": "bold",
+     "text": {
+      "type": "plain",
+      "text": "🔬 Эксперименты и выделение признаков"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Появление моносемантичных нейронов подтверждается на различных функциях активации. В экспериментах с "
+      },
+      {
+       "type": "math",
+       "source": "K=10"
+      },
+      {
+       "type": "plain",
+       "text": " кластерами при "
+      },
+      {
+       "type": "math",
+       "source": "d=40"
+      },
+      {
+       "type": "plain",
+       "text": " нейроны оценивались на активных подмножествах, дающих 99.9% дисперсии выхода. Согласно Figure 1, 45.5% активных нейронов с ReLU и 49.9% с GELU достигают абсолютного косинусного сходства "
+      },
+      {
+       "type": "math",
+       "source": "A_j = \\max_c |\\langle w_j, v_c \\rangle| / |w_j|_2 \\ge 0.71"
+      },
+      {
+       "type": "plain",
+       "text": ", причём более 28% преодолевают планку 0.90. В сетях ReGLU локализация выражена сильнее: 73.1% активных весов гейта достигают "
+      },
+      {
+       "type": "math",
+       "source": "A_j \\ge 0.71"
+      },
+      {
+       "type": "plain",
+       "text": ", а у 96.7% наибольшая по модулю координата весов точно совпадает с истинным предсказательным направлением. Дополнительно оценки доминирования координат на Figure 5 подтверждают концентрацию весов отдельных нейронов на координатах конкретного кластера даже при наличии фонового шума."
+      }
+     ]
+    }
+   },
+   {
+    "type": "photo",
+    "photo_id": "5251320002038668490",
+    "photo": "photos/photo_3683@04-09-2026_16-02-04.jpg",
+    "photo_file_size": 0,
+    "width": 973,
+    "height": 590,
+    "spoiler": false,
+    "caption": {
+     "text": {
+      "type": "empty"
+     },
+     "credit": {
+      "type": "empty"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "plain",
+     "text": "Чтобы доказать, что скрытый слой MLP функционально разделяет пространство, исследователи построили пайплайн, показанный на Figure 3."
+    }
+   },
+   {
+    "type": "photo",
+    "photo_id": "5251320002038668492",
+    "photo": "photos/photo_3684@04-09-2026_16-02-04.jpg",
+    "photo_file_size": 0,
+    "width": 968,
+    "height": 646,
+    "spoiler": false,
+    "caption": {
+     "text": {
+      "type": "empty"
+     },
+     "credit": {
+      "type": "empty"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Обучив стандартный двухслойный ReLU MLP на кластеризованных данных при "
+      },
+      {
+       "type": "math",
+       "source": "K \\in \\{2, 5, 10, 50\\}"
+      },
+      {
+       "type": "plain",
+       "text": ", сеть замораживают. Для каждого обучающего примера вычисляют профиль вклада активных нейронов:"
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "math",
+     "source": "p_j(x) = \\frac{|a_j|\\operatorname{ReLU}(w_j^\\top x + b_j)}{\\sum_{\\ell \\in \\mathcal{J}} |a_\\ell|\\operatorname{ReLU}(w_\\ell^\\top x + b_\\ell)}."
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Кластеризация этих векторов алгоритмом K-means++ восстанавливает скрытые кластеры без каких-либо внешних меток. Для каждого найденного центроида "
+      },
+      {
+       "type": "math",
+       "source": "q_c"
+      },
+      {
+       "type": "plain",
+       "text": " рассчитывается локальная метрика "
+      },
+      {
+       "type": "math",
+       "source": "G_c = \\sum_{j} q_{cj} w_j w_j^\\top / \\sum_j q_{cj}"
+      },
+      {
+       "type": "plain",
+       "text": ". Как видно на Figure 4, обучение независимых локальных предсказателей Лапласа или RFM на спроецированных координатах "
+      },
+      {
+       "type": "math",
+       "source": "z_c(x) = G_c^{1/2} x"
+      },
+      {
+       "type": "plain",
+       "text": " практически ликвидирует отрыв глобальных ядерных бейзлайнов от кластерного оракула."
+      }
+     ]
+    }
+   },
+   {
+    "type": "photo",
+    "photo_id": "5251320002038668496",
+    "photo": "photos/photo_3685@04-09-2026_16-02-04.jpg",
+    "photo_file_size": 0,
+    "width": 981,
+    "height": 905,
+    "spoiler": false,
+    "caption": {
+     "text": {
+      "type": "empty"
+     },
+     "credit": {
+      "type": "empty"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "На Figure 2 и Figure 6 отчётливо видно: с увеличением "
+      },
+      {
+       "type": "math",
+       "source": "K"
+      },
+      {
+       "type": "plain",
+       "text": " глобальный RFM деградирует до уровня неинформативного изотропного ядра Лапласа, тогда как обычные и gated MLP сохраняют эффективность выборки на уровне покластерных оракулов."
+      }
+     ]
+    }
+   },
+   {
+    "type": "photo",
+    "photo_id": "5251320002038668497",
+    "photo": "photos/photo_3686@04-09-2026_16-02-04.jpg",
+    "photo_file_size": 0,
+    "width": 967,
+    "height": 652,
+    "spoiler": false,
+    "caption": {
+     "text": {
+      "type": "empty"
+     },
+     "credit": {
+      "type": "empty"
+     }
+    }
+   },
+   {
+    "type": "heading",
+    "level": 4,
+    "text": {
+     "type": "bold",
+     "text": {
+      "type": "plain",
+      "text": "📉 Разделение по выборке: почему ядра проигрывают"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Провал глобальных ядерных методов в мультикластерных сценариях доказан теоретически через нижнюю оценку выборочной сложности по всем порядкам полиномов. Рассмотрим постановку Data Setting 2, где координаты маршрутизации свободны от шума ("
+      },
+      {
+       "type": "math",
+       "source": "\\mu_c = [e_c; \\, 0]"
+      },
+      {
+       "type": "plain",
+       "text": "), а в качестве функции связи взята усечённая рампа (clipped ramp) "
+      },
+      {
+       "type": "math",
+       "source": "g(t) = \\min(1, \\max(0, t)) = t_+ - (t-1)_+"
+      },
+      {
+       "type": "plain",
+       "text": "."
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Для минимизатора эмпирического риска среди двухслойных MLP с ограничением на норму Фробениуса "
+      },
+      {
+       "type": "math",
+       "source": "|\\theta|_F^2 = \\frac{1}{2}\\sum{j=1}^m (a_j^2 + |w_j|2^2) \\le B"
+      },
+      {
+       "type": "italic",
+       "text": {
+        "type": "plain",
+        "text": " существует точное представление всего на "
+       }
+      },
+      {
+       "type": "math",
+       "source": "2K"
+      },
+      {
+       "type": "italic",
+       "text": {
+        "type": "plain",
+        "text": " нейронах. Задав пары скрытых весов "
+       }
+      },
+      {
+       "type": "math",
+       "source": "w{c, 1} = v_c"
+      },
+      {
+       "type": "plain",
+       "text": " и "
+      },
+      {
+       "type": "math",
+       "source": "w_{c, 2} = v_c - \\mu_c"
+      },
+      {
+       "type": "plain",
+       "text": " с внешними коэффициентами "
+      },
+      {
+       "type": "math",
+       "source": "+1"
+      },
+      {
+       "type": "plain",
+       "text": " и "
+      },
+      {
+       "type": "math",
+       "source": "-1"
+      },
+      {
+       "type": "plain",
+       "text": ", получаем "
+      },
+      {
+       "type": "math",
+       "source": "F(x) = \\sum_{c=1}^K [\\phi(v_c^\\top x) - \\phi((v_c - \\mu_c)^\\top x)] \\equiv f^*(x)"
+      },
+      {
+       "type": "plain",
+       "text": " в рамках бюджета "
+      },
+      {
+       "type": "math",
+       "source": "B = 3K"
+      },
+      {
+       "type": "plain",
+       "text": ". Оценка ёмкости через path-norm вместе со стандартными границами Радемахера даёт верхнюю границу ошибки обобщения:"
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "math",
+     "source": "\\mathbb{E}\\left[\\|\\hat{f}_{\\text{MLP}} - f^*\\|_{L^2(P_x)}^2\\right] \\le \\mathcal{O}\\left(\\frac{K^{3/2}}{\\sqrt{n}}\\right)."
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Теперь рассмотрим любой ротационно-инвариантный ядерный регрессор "
+      },
+      {
+       "type": "math",
+       "source": "\\hat{f}_{\\text{Kernel}}"
+      },
+      {
+       "type": "italic",
+       "text": {
+        "type": "plain",
+        "text": " или регуляризованный RFM "
+       }
+      },
+      {
+       "type": "math",
+       "source": "\\hat{f}_{\\text{RFM}}"
+      },
+      {
+       "type": "plain",
+       "text": " с истинной популяционной матрицей AGOP:"
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "math",
+     "source": "M = \\mathbb{E}\\left[\\nabla_x f^*(x) \\nabla_x f^*(x)^\\top\\right] = \\frac{\\alpha}{K} P_V,"
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "где "
+      },
+      {
+       "type": "math",
+       "source": "P_V = \\sum_{c=1}^K v_c v_c^\\top"
+      },
+      {
+       "type": "plain",
+       "text": " — ортогональный проектор на предсказательное подпространство, а $"
+      },
+      {
+       "type": "math",
+       "source": "\\alpha = \\mathbb{P}(0 < \\mathcal{N}(0, 1) < 1)$"
+      },
+      {
+       "type": "plain",
+       "text": ". Регуляризованная метрика "
+      },
+      {
+       "type": "math",
+       "source": "M_\\rho = M + \\rho I_d"
+      },
+      {
+       "type": "plain",
+       "text": " действует как простой скалярный множитель и на подпространство маршрутизации, и на подпространство предсказаний. В результате индуцированное метрическое ядро остаётся строго инвариантным относительно ортогональной группы "
+      },
+      {
+       "type": "math",
+       "source": "O(K)"
+      },
+      {
+       "type": "plain",
+       "text": ", действующей на "
+      },
+      {
+       "type": "math",
+       "source": "\\mathcal{S}_{\\text{pred}}"
+      },
+      {
+       "type": "plain",
+       "text": "."
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "По теореме о представлении ядерный предиктор лежит в линейной оболочке "
+      },
+      {
+       "type": "math",
+       "source": "n"
+      },
+      {
+       "type": "plain",
+       "text": " сечений ядра. При порядке полиномов Эрмита "
+      },
+      {
+       "type": "math",
+       "source": "r \\ge 2"
+      },
+      {
+       "type": "plain",
+       "text": " покластерная целевая функция содержит неприводимые гармонические полиномиальные компоненты внутри подпространства "
+      },
+      {
+       "type": "math",
+       "source": "\\mathcal{V}_{r,K}"
+      },
+      {
+       "type": "italic",
+       "text": {
+        "type": "plain",
+        "text": " размерности "
+       }
+      },
+      {
+       "type": "math",
+       "source": "H_{r,K} = \\binom{K+r-1}{r} - \\binom{K+r-3}{r-2} = \\Theta(K^r)"
+      },
+      {
+       "type": "plain",
+       "text": ". Применение леммы Шура для инвариантных случайных подпространств показывает, что матожидание проекции этих гармоник на любое n-мерное инвариантное подпространство оставляет неустранимую ошибку:"
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "math",
+     "source": "\\mathbb{E}\\left[\\|\\hat{f} - f^*\\|_{L^2(P_x)}^2\\right] \\ge \\sum_{r=2}^\\infty \\hat{g}_r^2 \\alpha_{r,K} \\left(1 - \\frac{n}{H_{r,K}}\\right)_+."
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Если размер выборки растёт полиномиально $"
+      },
+      {
+       "type": "math",
+       "source": "n = \\mathcal{O}(K^A)$"
+      },
+      {
+       "type": "plain",
+       "text": " для любой константы "
+      },
+      {
+       "type": "math",
+       "source": "A < \\infty"
+      },
+      {
+       "type": "plain",
+       "text": ", то для всех порядков "
+      },
+      {
+       "type": "math",
+       "source": "r > A"
+      },
+      {
+       "type": "plain",
+       "text": " отношение "
+      },
+      {
+       "type": "math",
+       "source": "n / H_{r,K} \\to 0"
+      },
+      {
+       "type": "plain",
+       "text": " при "
+      },
+      {
+       "type": "math",
+       "source": "K \\to \\infty"
+      },
+      {
+       "type": "plain",
+       "text": ". Поскольку коэффициенты Эрмита "
+      },
+      {
+       "type": "math",
+       "source": "\\hat{g}_r"
+      },
+      {
+       "type": "plain",
+       "text": " для усечённой рампы строго ненулевые для всех порядков, асимптотический избыточный риск строго ограничен снизу:"
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "math",
+     "source": "\\liminf_{K \\to \\infty} \\mathbb{E}\\left[\\|\\hat{f}_{\\text{RFM}} - f^*\\|_{L^2(P_x)}^2\\right] \\ge \\sum_{r > A} \\hat{g}_r^2 > 0."
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Таким образом, двухслойным MLP для достижения околонулевой ошибки достаточно полиномиального числа примеров "
+      },
+      {
+       "type": "math",
+       "source": "n = \\tilde{\\mathcal{O}}(K^3)"
+      },
+      {
+       "type": "plain",
+       "text": ", тогда как глобальные ядерные методы и RFM гарантированно не сходятся при любом полиномиальном бюджете выборки."
+      }
+     ]
+    }
+   },
+   {
+    "type": "heading",
+    "level": 4,
+    "text": {
+     "type": "bold",
+     "text": {
+      "type": "plain",
+      "text": "🌐 Контекст и смежные работы"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Исследование объединяет несколько направлений на стыке теории представлений и механистической интерпретируемости. Ранние теоретические работы доказали, что градиентный спуск преодолевает проклятие размерности на изотропных single-index задачах ("
+      },
+      {
+       "type": "text_link",
+       "href": "https://jmlr.org/papers/v18/14-546.html",
+       "text": {
+        "type": "plain",
+        "text": "Bach, 2017"
+       }
+      },
+      {
+       "type": "plain",
+       "text": "; "
+      },
+      {
+       "type": "text_link",
+       "href": "https://proceedings.mlr.press/v178/damian22a.html",
+       "text": {
+        "type": "plain",
+        "text": "Damian et al., 2022"
+       }
+      },
+      {
+       "type": "plain",
+       "text": "). Однако эти работы ограничивались поиском единого глобального подпространства. Параллельно эмпирическая механистическая интерпретируемость находила моносемантичные нейроны в специфических алгоритмических задачах вроде модульной арифметики ("
+      },
+      {
+       "type": "text_link",
+       "href": "https://arxiv.org/abs/2301.02679",
+       "text": {
+        "type": "plain",
+        "text": "Gromov, 2023"
+       }
+      },
+      {
+       "type": "plain",
+       "text": ") и XOR-классификации ("
+      },
+      {
+       "type": "text_link",
+       "href": "https://jmlr.org/papers/v24/22-1132.html",
+       "text": {
+        "type": "plain",
+        "text": "Frei et al., 2023"
+       }
+      },
+      {
+       "type": "plain",
+       "text": "; "
+      },
+      {
+       "type": "text_link",
+       "href": "https://openreview.net/forum?id=HgOJlxzB16",
+       "text": {
+        "type": "plain",
+        "text": "Glasgow, 2024"
+       }
+      },
+      {
+       "type": "plain",
+       "text": ")."
+      }
+     ]
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "В свою очередь исследования архитектур со смесью экспертов ("
+      },
+      {
+       "type": "text_link",
+       "href": "https://proceedings.neurips.cc/paper_files/paper/2022/hash/91edff07232fb1b55a505a9e9f6c0ff3-Abstract-Conference.html",
+       "text": {
+        "type": "plain",
+        "text": "Chen et al., 2022"
+       }
+      },
+      {
+       "type": "plain",
+       "text": "; "
+      },
+      {
+       "type": "text_link",
+       "href": "https://proceedings.mlr.press/v267/kawata25a.html",
+       "text": {
+        "type": "plain",
+        "text": "Kawata et al., 2025"
+       }
+      },
+      {
+       "type": "plain",
+       "text": ") доказали, что явные сети маршрутизации успешно разделяют кластеризованные multi-index задачи регрессии. Главный вклад рассматриваемой статьи — доказательство того, что явные надстройки не требуются: обычный однородный MLP на градиентном спуске самостоятельно формирует идентичную динамику маршрутизации. Сеть органично распределяет признаки по отдельным нейронам, что даёт статистическое обоснование вычислительной выгоды моносемантичных представлений для эффективности обучения."
+      }
+     ]
+    }
+   },
+   {
+    "type": "heading",
+    "level": 4,
+    "text": {
+     "type": "bold",
+     "text": {
+      "type": "plain",
+      "text": "⚠️ Ограничения теории"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "plain",
+     "text": "Несмотря на математическую строгость доказательств, ряд допущений модели идеализирован. Во-первых, распределение данных предполагает изотропные гауссовы кластеры, где измерения маршрутизации строго ортогональны предсказательным признакам. В практических задачах эти признаки часто переплетены, что на ранних этапах оптимизации может приводить к взаимным помехам градиентов и тормозить специализацию нейронов."
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "concat",
+     "text": [
+      {
+       "type": "plain",
+       "text": "Во-вторых, доказательство динамики специализации в Теореме 1 опирается на популяционный градиентный поток из бесконечно малой инициализации ("
+      },
+      {
+       "type": "math",
+       "source": "\\varepsilon \\to 0"
+      },
+      {
+       "type": "plain",
+       "text": ") при нулевых выходных весах и кубической эрмитовой функции связи. Хотя авторы приводят аргументы о непрерывности при возмущениях, перенос доказательства на оптимизацию эмпирического риска при конечной выборке, неаналитические активации и глубокие многослойные сети остаётся открытым вопросом. Наконец, алгоритм выделения признаков на Figure 3 требует заранее знать число кластеров K для запуска K-means++, оставляя задачу автоматического поиска масштаба кластеризации без ответа."
+      }
+     ]
+    }
+   },
+   {
+    "type": "heading",
+    "level": 4,
+    "text": {
+     "type": "bold",
+     "text": {
+      "type": "plain",
+      "text": "🔮 Выводы и перспективы"
+     }
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "plain",
+     "text": "Полученные результаты меняют теоретическое понимание того, как формируются представления в глубоких нейросетях. Доказывая, что MLP обходят проблему глобального подпространства через спонтанную специализацию нейронов, статья объясняет механизм обучения кусочно-низкоразмерных многообразий обычными архитектурами. Моносемантичность перестаёт быть просто приятным свойством для пост-хок интерпретируемости: она выступает непосредственным двигателем эффективности по выборке в неоднородных средах."
+    }
+   },
+   {
+    "type": "paragraph",
+    "text": {
+     "type": "plain",
+     "text": "При проектировании архитектур следующего поколения эти выводы подтверждают пользу мультипликативного гейтинга (ReGLU, SwiGLU), который упрощает строгое разделение порогов маршрутизации и локальных проекций признаков. Логичным продолжением темы станет перенос этой теории на трансформерные блоки, изучение фазовых переходов от полисемантичности к моносемантичности на этапе предобучения, а также анализ того, как многоголовое внимание осуществляет маршрутизацию по локальным подпространствам."
+    }
+   }
+  ]
+ }
+}
