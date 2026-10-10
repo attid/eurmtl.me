@@ -329,7 +329,7 @@ async def test_publish_draft_by_secretary(client):
     send_mock.assert_not_awaited()
     edit_mock.assert_not_awaited()
     rich_kwargs = rich_mock.await_args.kwargs
-    assert rich_kwargs["chat_id"] == -10084131737
+    assert rich_kwargs["chat_id"] == -1001767165598
     assert rich_kwargs["rich_message"]["blocks"] == [
         {"type": "paragraph", "text": {"type": "bold", "text": "✅ #done"}},
         {"type": "paragraph", "text": "Body"},
@@ -337,7 +337,7 @@ async def test_publish_draft_by_secretary(client):
     patched = patch_mock.await_args.args[1]
     # GORA: канал орги вопроса из orgs_config (один канал на все чтения).
     assert patched["records"][0]["fields"]["TELEGRAM_LINK"] == (
-        "https://t.me/c/84131737/5151"
+        "https://t.me/c/1767165598/5151"
     )
 
 
