@@ -243,13 +243,29 @@ def get_full_text(status, start_text, links_url, uuid_url, username):
 D2_RICH_ENABLED = True  # kill-switch пилота rich-постов
 
 
-def _d2_rich_blocks(inquiry: str):
-    """Блоки InputRichMessage из HTML тела вопроса; None — конвертация не
-    удалась (публикатор уйдёт в фолбэк sendMessage+SULGUK)."""
+_READING_TAG = {1: "first_reading", 2: "second_reading", 3: "third_reading"}
+
+
+def _d2_rich_blocks(status: str, inquiry: str, org: str = "", reading: int = 1,
+                    question_number=None, title: str = ""):
+    """Блоки InputRichMessage. Формат зависит от org.hash_position:
+    - suffix (PFM/USDMM/GORA): жирная строка статуса, затем тело, ссылки внизу.
+    - prefix (MTLA): первая строка "<статус> #<N>_reading", затем "Вопрос N:
+      <тема>" и тело (формат канала MTLA Council, решение владельца 2026-10-10).
+    None — конвертация не удалась (фолбэк sendMessage+SULGUK)."""
     if not D2_RICH_ENABLED:
         return None
+    from other import orgs_config
+
+    org_obj = next((o for o in orgs_config.ORGS if o.name == org), None)
+    if org_obj and org_obj.hash_position == "prefix":
+        tag = _READING_TAG.get(reading, f"{reading}_reading")
+        num = f"Вопрос {question_number}: " if question_number else ""
+        html = f"<p><b>{status} #{tag}</b></p><p><b>{num}{title}</b>{inquiry}</p>"
+    else:
+        html = f"<p><b>{status}</b></p>{inquiry}"
     try:
-        blocks = html_to_rich_message(inquiry, _d2_base_url())["blocks"]
+        blocks = html_to_rich_message(html, _d2_base_url())["blocks"]
     except Exception as e:
         logger.warning(f"D2 rich convert failed, fallback to sulguk: {e}")
         return None
@@ -259,10 +275,12 @@ def _d2_rich_blocks(inquiry: str):
     return blocks
 
 
-async def _d2_send_rich(channel: str, inquiry: str):
+async def _d2_send_rich(channel: str, status: str, inquiry: str,
+                        org: str = "", reading: int = 1,
+                        question_number=None, title: str = ""):
     """sendRichMessage в канал. Возвращает message_id или None (ошибка уже
     залогирована warning'ом — вызывающий решает про фолбэк)."""
-    blocks = _d2_rich_blocks(inquiry)
+    blocks = _d2_rich_blocks(status, inquiry, org, reading, question_number, title)
     if blocks is None:
         return None
     try:
@@ -276,12 +294,14 @@ async def _d2_send_rich(channel: str, inquiry: str):
         return None
 
 
-async def _d2_edit_rich(channel: str, message_id, inquiry: str) -> bool:
+async def _d2_edit_rich(channel: str, message_id, status: str, inquiry: str,
+                        org: str = "", reading: int = 1,
+                        question_number=None, title: str = "") -> bool:
     """editMessageText(rich_message=...) опубликованного поста. message_id
     передаётся строкой как есть (из TELEGRAM_LINK), приводим к int.
     False — не получилось (включая «старый пост был не rich»): вызывающий
     републикует или падает в фолбэк."""
-    blocks = _d2_rich_blocks(inquiry)
+    blocks = _d2_rich_blocks(status, inquiry, org, reading, question_number, title)
     if blocks is None:
         return False
     try:
@@ -625,7 +645,7 @@ async def cmd_d2_show(question_uuid):
                     edited = False
                     if channel is not None:
                         edited = await _d2_edit_rich(
-                            channel, telegram_link.split("/")[-1], inquiry
+                            channel, telegram_link.split("/")[-1], status, inquiry
                         )
                         if not edited:
                             # Пост мог быть не rich (старые публикации) —
@@ -646,13 +666,35 @@ async def cmd_d2_show(question_uuid):
                 await flash("Вопрос успешно обновлён.", "good")
                 return redirect(f"/d2/{question_uuid}")
             else:
+                # Смена чтения (решение владельца 2026-10-10): в чтениях 1-2
+                # #done не ставится никогда. Прошлое чтение: ❗️ #active →
+                # ☑️ #next (работа по нему окончена); 🔇 #canceled и
+                # 🔂 #resign не трогаем. ✅ #done возможен только в финальном
+                # чтении и ставится человеком вручную.
+                if data_row.get("STATUS") == "❗️ #active":
+                    await grist_manager.patch_data(
+                        MTLGrist.QUESTION_DATA,
+                        {
+                            "records": [
+                                {
+                                    "id": data_row["id"],
+                                    "fields": {"STATUS": "☑️ #next"},
+                                }
+                            ]
+                        },
+                    )
+                    _d2_invalidate_cache()
                 # Смена чтения: новая строка QUESTION_DATA + новое сообщение.
                 new_uuid = uuid.uuid4().hex
                 text = get_full_text(status, inquiry, links_url, new_uuid, username)
                 channel = await resolve_channel(org, new_reading)
                 message_id = None
                 if channel is not None:
-                    message_id = await _d2_send_rich(channel, inquiry)
+                    message_id = await _d2_send_rich(
+                        channel, status, inquiry, org=org, reading=new_reading,
+                        question_number=question.get("NUMBER"),
+                        title=short_subject,
+                    )
                     if message_id is None:
                         message_id = await _d2_send_legacy(channel, text)
 
@@ -759,13 +801,21 @@ async def cmd_d2_publish(question_uuid):
         # Републикация: сначала пробуем поправить существующий пост rich'ем.
         # Не вышло (пост мёртв или был не rich) — уходим на ветку публикации
         # ниже.
-        published = await _d2_edit_rich(channel, telegram_link.split("/")[-1], inquiry)
+        published = await _d2_edit_rich(
+            channel, telegram_link.split("/")[-1], status, inquiry,
+            org=org, reading=reading, question_number=question.get("NUMBER"),
+            title=question.get("TITLE") or "",
+        )
         if published:
             await flash("Пост в Telegram обновлён.", "good")
 
     if not published and channel is not None:
         # Публикация (в т.ч. републикация мёртвого/не-rich поста).
-        message_id = await _d2_send_rich(channel, inquiry)
+        message_id = await _d2_send_rich(
+            channel, status, inquiry, org=org, reading=reading,
+            question_number=question.get("NUMBER"),
+            title=question.get("TITLE") or "",
+        )
         if message_id is None:
             text = get_full_text(status, inquiry, links_url, question_uuid, username)
             message_id = await _d2_send_legacy(channel, text)
@@ -932,7 +982,10 @@ async def cmd_d2_add():
     if not as_draft:
         channel = await resolve_channel(org, reading)
         if channel is not None:
-            message_id = await _d2_send_rich(channel, inquiry)
+            message_id = await _d2_send_rich(
+                channel, status, inquiry, org=org, reading=reading,
+                question_number=question_number, title=short_subject,
+            )
             if message_id is None:
                 text = get_full_text(status, inquiry, [[], [], []], d_uuid, username)
                 message_id = await _d2_send_legacy(channel, text)
@@ -1204,7 +1257,15 @@ async def cmd_d2_edit():
     # Явный выбор статуса — уважается всегда. Поиск без явного статуса ищет по всем
     # (решение владельца 2026-10-09/10).
     if status_param == "active":
-        filtered = [row for row in items if row["status"] in D2_ACTIVE_STATUSES]
+        # «Требует внимания»: активные + контроль (решение владельца
+        # 2026-10-10; ☑️ #next — конечный статус, в агрегат не входит).
+        filtered = [
+            row for row in items
+            if row["status"] in ("❗️ #active", "‼️ #control")
+        ]
+    elif status_param == "drafts":
+        # Черновики: все чтения без TELEGRAM_LINK.
+        filtered = [row for row in items if row["is_draft"]]
     elif not explicit_status and query:
         filtered = items
     elif status_param == "all" or not explicit_status:
@@ -1234,7 +1295,9 @@ async def cmd_d2_edit():
     page = min(page, total_pages)
     page_items = filtered[(page - 1) * per_page : page * per_page]
 
-    if not explicit_status:
+    if status_param == "drafts":
+        status_filter = "drafts"
+    elif not explicit_status:
         # Нет явного выбора: дефолт вида «Активные», но фильтр статуса не применён
         # (поиск без статуса ищет по всем).
         status_filter = "all" if query else "active"

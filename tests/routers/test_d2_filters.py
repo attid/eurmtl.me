@@ -1,0 +1,119 @@
+"""Дропдаун статусов списка: «Требует внимания» + «Черновики» + «Все»."""
+import pytest
+from unittest.mock import AsyncMock, patch
+from contextlib import ExitStack
+from tests.routers.test_d2_workspace import _secretaries_mock, _user_org_names_mock
+
+SECRETARY_ID = 1837984392
+PFM_ADDRESS = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+
+def _tables_mock(**tables):
+    from other.grist_tools import MTLGrist
+    by_name = {}
+    for attr, rows in tables.items():
+        table = getattr(MTLGrist, attr, None)
+        key = table.table_name if table is not None else attr
+        by_name[key] = rows
+    async def fake(table, *args, **kwargs):
+        return list(by_name.get(table.table_name, []))
+    return patch("other.grist_tools.grist_manager.load_table_data", new=AsyncMock(side_effect=fake))
+
+def _seed():
+    questions = [
+        {"id": 1, "NUMBER": 118, "TITLE": "ActiveQ", "READING": 1, "ORG": "PFM"},
+        {"id": 2, "NUMBER": 119, "TITLE": "DoneQ", "READING": 1, "ORG": "PFM"},
+        {"id": 3, "NUMBER": 120, "TITLE": "DraftQ", "READING": 1, "ORG": "PFM"},
+        {"id": 4, "NUMBER": 121, "TITLE": "ControlQ", "READING": 1, "ORG": "PFM"},
+    ]
+    data = [
+        {"QUESTION_ID": 1, "READING": 1, "UUID": "u1", "TELEGRAM_LINK": "https://t.me/c/1863399780/1",
+         "BODY": "<p>x</p>", "STATUS": "❗️ #active", "CREATED_BY": "@x", "ORG": "PFM"},
+        {"QUESTION_ID": 2, "READING": 1, "UUID": "u2", "TELEGRAM_LINK": "https://t.me/c/1863399780/2",
+         "BODY": "<p>y</p>", "STATUS": "✅ #done", "CREATED_BY": "@x", "ORG": "PFM"},
+        {"QUESTION_ID": 3, "READING": 1, "UUID": "u3", "TELEGRAM_LINK": "",
+         "BODY": "<p>draft</p>", "STATUS": "❗️ #active", "CREATED_BY": "@x", "ORG": "PFM"},
+        {"QUESTION_ID": 4, "READING": 1, "UUID": "u4", "TELEGRAM_LINK": "https://t.me/c/1863399780/4",
+         "BODY": "<p>z</p>", "STATUS": "‼️ #control", "CREATED_BY": "@x", "ORG": "PFM"},
+    ]
+    return questions, data
+
+@pytest.mark.asyncio
+async def test_attention_filter(client):
+    """«Требует внимания»: active + control (draft тоже active — попадает)."""
+    async with client.session_transaction() as s:
+        s["userdata"] = {"id": SECRETARY_ID, "username": "itolstov"}
+        s["user_id"] = SECRETARY_ID
+        s["d2_org"] = "PFM"
+    questions, data = _seed()
+    with ExitStack() as stack:
+        for cm in (
+            _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
+            _user_org_names_mock({"PFM"}),
+            _tables_mock(D2_QUESTIONS=questions, D2_QUESTION_DATA=data),
+        ):
+            stack.enter_context(cm)
+        resp = await client.get("/d2/fragment/edit?status=active")
+    body = (await resp.get_data()).decode()
+    assert resp.status_code == 200
+    assert "ActiveQ" in body and "ControlQ" in body and "DraftQ" in body
+    assert "DoneQ" not in body
+
+@pytest.mark.asyncio
+async def test_drafts_filter(client):
+    """«Черновики»: только вопросы без TELEGRAM_LINK."""
+    async with client.session_transaction() as s:
+        s["userdata"] = {"id": SECRETARY_ID, "username": "itolstov"}
+        s["user_id"] = SECRETARY_ID
+        s["d2_org"] = "PFM"
+    questions, data = _seed()
+    with ExitStack() as stack:
+        for cm in (
+            _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
+            _user_org_names_mock({"PFM"}),
+            _tables_mock(D2_QUESTIONS=questions, D2_QUESTION_DATA=data),
+        ):
+            stack.enter_context(cm)
+        resp = await client.get("/d2/fragment/edit?status=drafts")
+    body = (await resp.get_data()).decode()
+    assert resp.status_code == 200
+    assert "DraftQ" in body
+    assert "ActiveQ" not in body and "DoneQ" not in body and "ControlQ" not in body
+
+@pytest.mark.asyncio
+async def test_all_filter(client):
+    async with client.session_transaction() as s:
+        s["userdata"] = {"id": SECRETARY_ID, "username": "itolstov"}
+        s["user_id"] = SECRETARY_ID
+        s["d2_org"] = "PFM"
+    questions, data = _seed()
+    with ExitStack() as stack:
+        for cm in (
+            _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
+            _user_org_names_mock({"PFM"}),
+            _tables_mock(D2_QUESTIONS=questions, D2_QUESTION_DATA=data),
+        ):
+            stack.enter_context(cm)
+        resp = await client.get("/d2/fragment/edit?status=all")
+    body = (await resp.get_data()).decode()
+    assert resp.status_code == 200
+    for t in ("ActiveQ", "DoneQ", "DraftQ", "ControlQ"):
+        assert t in body
+
+@pytest.mark.asyncio
+async def test_default_view_is_attention_selected(client):
+    async with client.session_transaction() as s:
+        s["userdata"] = {"id": SECRETARY_ID, "username": "itolstov"}
+        s["user_id"] = SECRETARY_ID
+        s["d2_org"] = "PFM"
+    questions, data = _seed()
+    with ExitStack() as stack:
+        for cm in (
+            _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
+            _user_org_names_mock({"PFM"}),
+            _tables_mock(D2_QUESTIONS=questions, D2_QUESTION_DATA=data),
+        ):
+            stack.enter_context(cm)
+        resp = await client.get("/d2/fragment/edit")
+    body = (await resp.get_data()).decode()
+    assert 'value="active" selected' in body
+    assert "Требует внимания" in body
