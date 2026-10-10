@@ -569,3 +569,63 @@ async def test_publish_rejected_for_signer_without_secretary_role(client):
     async with client.session_transaction() as session:
         flashes = dict(session.get("_flashes", []))
     assert any("только секретари" in str(m) for m in flashes.values())
+
+
+@pytest.mark.asyncio
+async def test_next_number_is_per_org(client):
+    """Per-org нумерация: max(NUMBER)+1 внутри орги, чужие номера не мешают."""
+    from other.orgs_config import DEFAULT_ORG_NAME
+    from routers.decision import _org_next_number
+
+    questions = [
+        {"id": 1, "NUMBER": 4, "ORG": "PFM"},
+        {"id": 2, "NUMBER": 7, "ORG": "PFM"},
+        {"id": 3, "NUMBER": 1, "ORG": "GORA"},
+    ]
+    assert _org_next_number(questions, "PFM") == 8   # только PFM-вопросы
+    assert _org_next_number(questions, "GORA") == 2  # только GORA-вопросы
+    assert _org_next_number(questions, "USDMM") == 1  # пусто — начинаем с 1
+    assert _org_next_number(questions, DEFAULT_ORG_NAME) == 8
+
+
+@pytest.mark.asyncio
+async def test_add_same_number_in_other_org_allowed(client):
+    """Номер, занятый в чужой орге, в этой орге свободен (per-org нумерация)."""
+    await _login(client)
+    await _set_org(client, "GORA")
+    questions = [
+        {"id": 1, "NUMBER": 1, "ORG": "PFM", "TITLE": "PFM one", "READING": 1},
+    ]
+    question_data = [
+        {"QUESTION_ID": 1, "READING": "1", "UUID": "pfm1", "TELEGRAM_LINK": "https://t.me/c/1863399780/1"},
+    ]
+    with (
+        patch("routers.decision.check_user_weight", new=AsyncMock(return_value=1)),
+        _secretaries_mock({GORA_ADDRESS: {SECRETARY_ID}}),
+        _user_org_names_mock({"GORA"}),
+        _tables_mock(
+            QUESTIONS=questions,
+            QUESTION_DATA=question_data,
+        ),
+        patch(
+            "other.grist_tools.grist_manager.post_data", new=AsyncMock()
+        ) as post_mock,
+        patch("routers.decision.skynet_bot.send_message", new=AsyncMock()) as send_mock,
+    ):
+        response = await client.post(
+            "/d2/add",
+            form={
+                "question_number": "1",
+                "short_subject": "GORA two",
+                "inquiry": "<p>x</p>",
+                "status": "❗️ #active",
+                "reading": "1",
+            },
+        )
+    # 302 на новый вопрос, а не flash «уже существует».
+    assert response.status_code == 302
+    flashes = {}
+    async with client.session_transaction() as session:
+        flashes = dict(session.get("_flashes", []))
+    assert not any("уже существует" in str(m) for m in flashes.values())
+    assert send_mock.await_count == 1

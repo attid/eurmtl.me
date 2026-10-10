@@ -324,6 +324,17 @@ async def cmd_add_decision():
     )
 
 
+def _org_next_number(questions: list, org: str) -> int:
+    """Следующий номер вопроса: max(NUMBER)+1 внутри орги (per-org нумерация
+    с 1 — решение владельца 2026-10-09), номера разных орг независимы."""
+    numbers = [
+        q.get("NUMBER")
+        for q in questions
+        if (q.get("ORG") or DEFAULT_ORG_NAME) == org and q.get("NUMBER") is not None
+    ]
+    return max(numbers, default=0) + 1
+
+
 @blueprint.route("/d2", methods=("GET",))
 async def cmd_d2_index():
     session_org = await _d2_session_org()
@@ -719,8 +730,7 @@ async def cmd_d2_form():
     from other.grist_tools import grist_manager, MTLGrist
 
     questions = await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
-    numbers = [q.get("NUMBER") for q in questions if q.get("NUMBER") is not None]
-    next_number = max(numbers, default=0) + 1
+    next_number = _org_next_number(questions, org)
 
     return await render_template(
         "d2_form.html",
@@ -740,9 +750,11 @@ async def cmd_d2_form():
 async def cmd_d2_get_number():
     from other.grist_tools import grist_manager, MTLGrist
 
+    org = await _d2_session_org()
+    if not org:
+        return jsonify({"number": "1"})
     questions = await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
-    numbers = [q.get("NUMBER") for q in questions if q.get("NUMBER") is not None]
-    return jsonify({"number": str(max(numbers, default=0) + 1)})
+    return jsonify({"number": str(_org_next_number(questions, org))})
 
 
 @blueprint.route("/d2/add", methods=("POST",))
@@ -769,17 +781,24 @@ async def cmd_d2_add():
     from other.grist_tools import grist_manager, MTLGrist
 
     questions, question_data, _ = await _load_question_tables()
-    if any(str(q.get("NUMBER")) == str(question_number) for q in questions):
+    # Номер уникален внутри орги (per-org нумерация); совпадение в чужой
+    # орге не конфликт.
+    if any(
+        str(q.get("NUMBER")) == str(question_number)
+        and (q.get("ORG") or DEFAULT_ORG_NAME) == org
+        for q in questions
+    ):
+        same_org_ids = {
+            q["id"]
+            for q in questions
+            if str(q.get("NUMBER")) == str(question_number)
+            and (q.get("ORG") or DEFAULT_ORG_NAME) == org
+        }
         existing = next(
             (
                 r
                 for r in question_data
-                if r.get("QUESTION_ID")
-                == next(
-                    q["id"]
-                    for q in questions
-                    if str(q.get("NUMBER")) == str(question_number)
-                )
+                if r.get("QUESTION_ID") in same_org_ids
             ),
             None,
         )
@@ -875,8 +894,8 @@ async def cmd_d2_copy():
     from other.grist_tools import grist_manager, MTLGrist
 
     questions = await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
-    numbers = [q.get("NUMBER") for q in questions if q.get("NUMBER") is not None]
-    next_number = max(numbers, default=0) + 1
+    # Копия живёт в орге исходного вопроса — номер следующий в этой орге.
+    next_number = _org_next_number(questions, org)
 
     return await render_template(
         "d2_form.html",
