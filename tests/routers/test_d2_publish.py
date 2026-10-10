@@ -161,7 +161,11 @@ async def test_add_publish_still_sends_message(client):
     rich_kwargs = rich_mock.await_args.kwargs
     assert rich_kwargs["chat_id"] == -1001863399780
     blocks = rich_kwargs["rich_message"]["blocks"]
-    assert blocks == [{"type": "paragraph", "text": "Body"}]
+    assert blocks[0] == {
+        "type": "paragraph",
+        "text": {"type": "bold", "text": "❗️ #active"},
+    }
+    assert {"type": "paragraph", "text": "Body"} in blocks
     fields = post_mock.await_args_list[-1].args[1]["records"][0]["fields"]
     # Воркспейс PFM: канал первого чтения из orgs_config.
     assert fields["TELEGRAM_LINK"] == "https://t.me/c/1863399780/4242"
@@ -292,7 +296,8 @@ async def test_publish_draft_by_secretary(client):
     rich_kwargs = rich_mock.await_args.kwargs
     assert rich_kwargs["chat_id"] == -10084131737
     assert rich_kwargs["rich_message"]["blocks"] == [
-        {"type": "paragraph", "text": "Body"}
+        {"type": "paragraph", "text": {"type": "bold", "text": "✅ #done"}},
+        {"type": "paragraph", "text": "Body"},
     ]
     patched = patch_mock.await_args.args[1]
     # GORA: канал орги вопроса из orgs_config (один канал на все чтения).
@@ -346,16 +351,15 @@ async def test_republish_dead_post_sends_new_message(client):
                 "CREATED_BY": "@itolstov",
             }
         ]
-        # /d2/publish: _find_question_row (3) + _load_question_tables (3).
-        # Доступ — секретарство PFM из _secretaries_mock.
-        load_mock.side_effect = [
-            questions,
-            data,
-            [],
-            questions,
-            data,
-            [],
-        ]
+        # /d2/publish: кеш таблиц делает число лоадов неважным —
+        # мок по имени таблицы (как в _tables_mock).
+        async def fake_load(table, *a, **k):
+            return {
+                "D2_QUESTIONS": questions,
+                "D2_QUESTION_DATA": data,
+            }.get(table.table_name, [])
+
+        load_mock.side_effect = fake_load
         response = await client.post(f"/d2/{PUBLISHED_UUID}/publish")
 
     assert response.status_code == 302
@@ -363,7 +367,8 @@ async def test_republish_dead_post_sends_new_message(client):
     assert edit_mock.await_args.kwargs["message_id"] == 100
     assert send_mock.assert_not_awaited() is None
     assert rich_mock.await_args.kwargs["rich_message"]["blocks"] == [
-        {"type": "paragraph", "text": "Body"}
+        {"type": "paragraph", "text": {"type": "bold", "text": "❗️ #active"}},
+        {"type": "paragraph", "text": "Body"},
     ]
     patched = patch_mock.await_args.args[1]
     # PFM: канал первого чтения орги вопроса из orgs_config.
