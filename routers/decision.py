@@ -1209,14 +1209,21 @@ async def cmd_d2_img(row_id: int):
         logger.info(f"D2 image lookup error: {e}")
         return abort(404)
     record = next((r for r in records if r.get("id") == row_id), None)
+    # Attachment-поле Grist приходит в разных формах: 4, [4], {"id": 4} или
+    # ['L', 4] (внутренний формат CelldRef: 'L' — тип, далее число).
     file_ref = (record or {}).get("FILE")
-    # Attachment-поле Grist может прийти числом, списком [id] или словарём.
-    if isinstance(file_ref, dict):
-        file_ref = file_ref.get("id")
-    if isinstance(file_ref, (list, tuple)):
-        file_ref = file_ref[0] if file_ref else None
-    if isinstance(file_ref, dict):
-        file_ref = file_ref.get("id")
+
+    def _extract_int(ref):
+        if isinstance(ref, int):
+            return ref
+        if isinstance(ref, dict):
+            return ref.get("id")
+        if isinstance(ref, (list, tuple)):
+            ints = [x for x in ref if isinstance(x, int)]
+            return ints[0] if ints else None
+        return None
+
+    file_ref = _extract_int(file_ref)
     if not isinstance(file_ref, int):
         return abort(404)
 

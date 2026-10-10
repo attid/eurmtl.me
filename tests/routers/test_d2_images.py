@@ -321,3 +321,20 @@ async def test_img_attachment_download_failure_404(client):
     ):
         response = await client.get("/d2/img/103")
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_img_file_as_celldref_list(client):
+    """Реальный Grist отдаёт FILE как ['L', 4] (CelldRef: тип + число).
+    Регрессия-2026-10-11: file_ref[0]='L' давал 404 при живой картинке."""
+    rows = [{"id": 105, "FILE": ["L", 88], "ORG": "GORA"}]
+    with (
+        _d2_images_rows(rows),
+        patch(
+            "other.grist_tools.grist_manager.get_attachment",
+            new=AsyncMock(return_value=PNG_BYTES),
+        ) as get_mock,
+    ):
+        response = await client.get("/d2/img/105")
+    assert response.status_code == 200
+    assert get_mock.await_args.args[1] == 88
