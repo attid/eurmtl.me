@@ -13,6 +13,7 @@ from quart import (
     session,
     redirect,
     abort,
+    Response,
     current_app,
 )
 from sulguk import SULGUK_PARSE_MODE
@@ -115,9 +116,7 @@ def _org_readings(org: str) -> int:
     """Число чтений орги (0 = чтений нет, один вопрос-пост)."""
     from other import orgs_config
 
-    return next(
-        (o.readings for o in orgs_config.ORGS if o.name == org), 0
-    )
+    return next((o.readings for o in orgs_config.ORGS if o.name == org), 0)
 
 
 async def _is_org_secretary(org: str) -> bool:
@@ -521,7 +520,9 @@ async def cmd_d2_show(question_uuid):
                 else:
                     try:
                         await skynet_bot.edit_message_text(
-                            chat_id=int(f"-100{await resolve_channel(org, new_reading)}"),
+                            chat_id=int(
+                                f"-100{await resolve_channel(org, new_reading)}"
+                            ),
                             text=text,
                             parse_mode=SULGUK_PARSE_MODE,
                             disable_web_page_preview=True,
@@ -801,11 +802,7 @@ async def cmd_d2_add():
             and (q.get("ORG") or DEFAULT_ORG_NAME) == org
         }
         existing = next(
-            (
-                r
-                for r in question_data
-                if r.get("QUESTION_ID") in same_org_ids
-            ),
+            (r for r in question_data if r.get("QUESTION_ID") in same_org_ids),
             None,
         )
         link = f"/d2/{existing['UUID']}" if existing else "/d2"
@@ -883,6 +880,109 @@ async def cmd_d2_add():
     else:
         await flash("Вопрос успешно добавлен.", "good")
     return redirect(f"/d2/{d_uuid}")
+
+
+D2_IMAGE_MAX_SIZE = 5 * 1024 * 1024  # 5 МБ
+D2_IMAGE_TYPES = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+# Магические байты: content-type клиенту не доверяем, но расширение/тип
+# определяем по заголовку файла (sniffing).
+D2_IMAGE_MAGIC = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+)
+
+
+def _d2_sniff_image_type(data: bytes) -> str | None:
+    """MIME по магическим байтам; webp определяется по RIFF-контейнеру."""
+    for magic, mime in D2_IMAGE_MAGIC:
+        if data.startswith(magic):
+            return mime
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+@blueprint.route("/d2/upload_image", methods=("POST",))
+async def cmd_d2_upload_image():
+    org = await _d2_session_org()
+    if not org or not await _d2_edit_allowed(org):
+        return jsonify({"error": "forbidden"}), 403
+
+    files = await request.files
+    upload = files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify({"error": "no file"}), 400
+
+    content_type = (upload.content_type or "").split(";")[0].strip().lower()
+    if content_type not in D2_IMAGE_TYPES:
+        return jsonify({"error": "unsupported type"}), 400
+
+    data = upload.read()
+    if len(data) > D2_IMAGE_MAX_SIZE:
+        return jsonify({"error": "too large"}), 413
+    if _d2_sniff_image_type(data) is None:
+        return jsonify({"error": "not an image"}), 400
+
+    from other.grist_tools import grist_manager, MTLGrist
+
+    try:
+        row_id = await grist_manager.post_attachment(
+            MTLGrist.D2_IMAGES,
+            data,
+            upload.filename,
+            {
+                "ORG": org,
+                "UPLOADED_BY": "@" + session["userdata"]["username"],
+                "CREATED_AT": datetime.now().isoformat(),
+            },
+        )
+    except Exception as e:
+        logger.info(f"D2 image upload error: {e}")
+        return jsonify({"error": "upload failed"}), 502
+    return jsonify({"url": f"/d2/img/{row_id}"})
+
+
+@blueprint.route("/d2/img/<int:row_id>", methods=("GET",))
+async def cmd_d2_img(row_id: int):
+    """Публичная отдача картинки (анонимы из TG-поста); прокси к Grist."""
+    from other.grist_tools import grist_manager, MTLGrist
+
+    try:
+        records = await grist_manager.load_table_data(MTLGrist.D2_IMAGES) or []
+    except Exception as e:
+        logger.info(f"D2 image lookup error: {e}")
+        return abort(404)
+    record = next((r for r in records if r.get("id") == row_id), None)
+    file_ref = (record or {}).get("FILE")
+    # Attachment-поле Grist может прийти числом, списком [id] или словарём.
+    if isinstance(file_ref, dict):
+        file_ref = file_ref.get("id")
+    if isinstance(file_ref, (list, tuple)):
+        file_ref = file_ref[0] if file_ref else None
+    if isinstance(file_ref, dict):
+        file_ref = file_ref.get("id")
+    if not isinstance(file_ref, int):
+        return abort(404)
+
+    try:
+        data = await grist_manager.get_attachment(MTLGrist.D2_IMAGES, file_ref)
+    except Exception as e:
+        logger.info(f"D2 image fetch error: {e}")
+        return abort(404)
+
+    media_type = _d2_sniff_image_type(data) or "application/octet-stream"
+    return Response(
+        data,
+        mimetype=media_type,
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @blueprint.route("/d2/copy", methods=("GET",))

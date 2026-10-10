@@ -3,6 +3,8 @@ import json
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
+
+import aiohttp
 from loguru import logger
 from stellar_sdk import StrKey, ServerAsync
 from stellar_sdk.client.aiohttp_client import AiohttpClient
@@ -43,6 +45,9 @@ class MTLGrist:
     QUESTION_TEMPLATES = GristTableConfig(
         "3Fk4hjCv847GBx8ZTCPN2Y", "QUESTION_TEMPLATES"
     )
+    # Картинки d2-вопросов: FILE — attachment, схему/таблицу создаёт владелец
+    # руками в UI (сайт никогда не создаёт схему Grist).
+    D2_IMAGES = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "D2_IMAGES")
 
     MAIN_CHAT_INCOME = GristTableConfig("khWn5KMRbfUQQoaPydjhGt", "Main_chat_income")
     MAIN_CHAT_OUTCOME = GristTableConfig("khWn5KMRbfUQQoaPydjhGt", "Main_chat_outcome")
@@ -191,6 +196,104 @@ class GristAPI:
         match response.status:
             case 200:
                 return True
+            case _:
+                raise Exception(f"Ошибка запроса: Статус {response.status}")
+
+    async def post_attachment(
+        self,
+        table: GristTableConfig,
+        file_bytes: bytes,
+        filename: str,
+        fields: Dict[str, Any],
+    ) -> int:
+        """
+        Загружает файл как Grist attachment и создаёт запись в таблице.
+
+        1. POST /docs/{docId}/attachments (multipart/form-data) → {"id": N}.
+        2. POST records в таблицу с fields {"FILE": attachment_id, ...};
+           id созданной строки берём из ответа (Grist возвращает records).
+
+        Args:
+            table: Конфигурация таблицы (док + имя)
+            file_bytes: Содержимое файла
+            filename: Имя файла (для multipart)
+            fields: Остальные поля записи (ORG, UPLOADED_BY, ...)
+
+        Returns:
+            row_id: id созданной записи в таблице.
+        """
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {self.token}",
+        }
+        attachments_url = f"{table.base_url}/{table.access_id}/attachments"
+        form = aiohttp.FormData()
+        form.add_field(
+            "upload",
+            file_bytes,
+            filename=filename,
+            content_type="application/octet-stream",
+        )
+        response = await self.session_manager.get_web_request(
+            method="POST", url=attachments_url, headers=headers, data=form
+        )
+        match response.status:
+            case 200 if isinstance(response.data, list) and response.data:
+                attachment_id = response.data[0].get("id")
+            case _:
+                raise Exception(f"Ошибка загрузки attachment: Статус {response.status}")
+        if attachment_id is None:
+            raise Exception("Grist не вернул id attachment")
+
+        records_url = (
+            f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
+        )
+        records_response = await self.session_manager.get_web_request(
+            method="POST",
+            url=records_url,
+            headers=headers,
+            json={"records": [{"fields": {"FILE": attachment_id, **fields}}]},
+        )
+        match records_response.status:
+            case 200 if isinstance(
+                records_response.data, dict
+            ) and records_response.data.get("records"):
+                row_id = records_response.data["records"][0].get("id")
+                if row_id is not None:
+                    return int(row_id)
+                raise Exception("Grist не вернул id созданной записи")
+            case _:
+                raise Exception(
+                    f"Ошибка создания записи {table.table_name}: "
+                    f"Статус {records_response.status}"
+                )
+
+    async def get_attachment(
+        self, table: GristTableConfig, attachment_id: int
+    ) -> bytes:
+        """
+        Скачивает содержимое attachment из дока.
+
+        GET /docs/{docId}/attachments/{attachmentId} → bytes.
+
+        Args:
+            table: Конфигурация таблицы (используется access_id = docId)
+            attachment_id: id attachment в доке
+
+        Returns:
+            Содержимое файла (bytes).
+        """
+        headers = {
+            "accept": "application/octet-stream",
+            "Authorization": f"Bearer {self.token}",
+        }
+        url = f"{table.base_url}/{table.access_id}/attachments/{attachment_id}/download"
+        response = await self.session_manager.get_web_request(
+            method="GET", url=url, headers=headers, return_type="bytes"
+        )
+        match response.status:
+            case 200 if isinstance(response.data, bytes):
+                return response.data
             case _:
                 raise Exception(f"Ошибка запроса: Статус {response.status}")
 

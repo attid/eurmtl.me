@@ -1,6 +1,5 @@
-{# Инициализация quill-редактора #editor-container.
-   Подключать после CDN-скриптов quill. #}
-<script src="/static/js/quill-emoji.js"></script>
+{# Инициализация quill-редактора #editor-container (Quill 2, локальные статики).
+   Подключать после скрипта /static/js/quill2/quill.js. #}
 <script>
     function d2InitQuill() {
         var editorContainer = document.getElementById('editor-container');
@@ -10,19 +9,20 @@
         var toolbarOptions = {
             container: [
                 ['bold', 'italic', 'underline', 'strike', 'code'],
-                ['link'],
-                ['clean'],
-                ['emoji']
+                ['link', 'image'],
+                ['clean']
             ],
             handlers: {
-                'emoji': function () {}
+                // Кастомная загрузка: файл → POST /d2/upload_image → Grist
+                // Attachments → <img src="/d2/img/<row_id>">.
+                'image': function () {
+                    d2PickImage(this.quill);
+                }
             }
         };
         var quill = new Quill(editorContainer, {
             modules: {
-                "toolbar": toolbarOptions,
-                "emoji-toolbar": true,
-                "emoji-shortname": true
+                "toolbar": toolbarOptions
             },
             theme: 'snow',
         });
@@ -36,5 +36,48 @@
             };
         }
     }
+
+    function d2PickImage(quill) {
+        var input = document.getElementById('d2-image-input');
+        if (!input) {
+            return;
+        }
+        input.value = '';
+        input.onchange = function() {
+            var file = input.files && input.files[0];
+            if (!file) {
+                return;
+            }
+            var range = quill.getSelection(true);
+            var formData = new FormData();
+            formData.append('file', file);
+            fetch('/d2/upload_image', {
+                method: 'POST',
+                credentials: 'same-origin',
+                body: formData
+            })
+                .then(function(response) {
+                    if (!response.ok) {
+                        return response.json().catch(function() { return {}; }).then(function(err) {
+                            throw new Error(err.error || ('Upload failed: ' + response.status));
+                        });
+                    }
+                    return response.json();
+                })
+                .then(function(data) {
+                    if (!data.url) {
+                        throw new Error('No url in response');
+                    }
+                    quill.insertEmbed(range ? range.index : quill.getLength(), 'image', data.url, 'user');
+                })
+                .catch(function(err) {
+                    console.log('Image upload failed:', err.message);
+                    alert('Не удалось загрузить картинку: ' + err.message);
+                });
+        };
+        input.click();
+    }
+
     d2InitQuill();
 </script>
+<input type="file" id="d2-image-input" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
