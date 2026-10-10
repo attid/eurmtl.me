@@ -2,19 +2,32 @@
 {% block head_scripts %}
 <script src="/static/js/quill2/quill.js"></script>
 <link rel="stylesheet" href="/static/css/quill2.snow.css">
+<style>
+    /* Обёртка редактора: обычный блочный поток внутри card-body,
+       Quill считает ширину от неё и не вылезает за карточку. */
+    .d2-editor-wrap {
+        width: 100%;
+        min-width: 0;
+        overflow: hidden;
+    }
+</style>
 {% endblock %}
 {% block content %}
 
 {% set disable_fields = user_weight < 1 %}
 <div>
     {% include 'd2_header_buttons.html' %}
+</div>
+
+<div class="container-xl">
     <div class="mb-1"><a href="/d2/fragment/edit?status=active">← К списку вопросов</a></div>
     <h2 class="page-title">Вопрос №{{ question_number }} <span class="badge bg-secondary-lt">{{ org }}</span></h2>
     <div class="text-secondary">
         {% if readings_total > 0 %}Чтение {{ reading }} из {{ readings_total }} · {% endif %}UUID {{ row_uuid }}
     </div>
+
     {% if readings_nav | length > 1 %}
-    <div class="mb-1">
+    <div class="mb-2">
         {% for nav_reading, nav_uuid in readings_nav %}
         {% if nav_uuid %}
         <a href="/d2/{{ nav_uuid }}" class="btn btn-sm {{ 'btn-primary' if nav_uuid == row_uuid else 'btn-outline-secondary' }}">
@@ -24,9 +37,6 @@
         {% endfor %}
     </div>
     {% endif %}
-</div>
-
-<div class="container-xl">
 
     {% if links_url %}
     <div class="mb-3">
@@ -109,8 +119,10 @@
                     <div>
                         <h5 class="card-title">Вопрос (Идет в канал без темы как написано ниже)</h5>
                     </div>
-                    <div id="editor-container" {% if disable_fields %}data-disabled="true"{% endif %}>
-                        {{ inquiry|safe }}
+                    <div class="d2-editor-wrap">
+                        <div id="editor-container" {% if disable_fields %}data-disabled="true"{% endif %}>
+                            {{ inquiry|safe }}
+                        </div>
                     </div>
                 </div>
             </div>

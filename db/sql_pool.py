@@ -30,13 +30,11 @@ def create_async_pool(db_dsn: str):
     # But usually async engines need `+async` or specific driver name.
     # I'll stick to generic implementation first.
 
-    engine = create_async_engine(
-        db_dsn,
-        pool_pre_ping=True,
-        pool_size=10,
-        max_overflow=50,
-        pool_timeout=10,
-    )
+    engine_kwargs = {"pool_pre_ping": True}
+    if not db_dsn.startswith("sqlite"):
+        # SQLite (StaticPool) не принимает пул-параметры — локальный стенд.
+        engine_kwargs.update(pool_size=10, max_overflow=50, pool_timeout=10)
+    engine = create_async_engine(db_dsn, **engine_kwargs)
 
     db_pool = async_sessionmaker(
         bind=engine, class_=AsyncSession, expire_on_commit=False
