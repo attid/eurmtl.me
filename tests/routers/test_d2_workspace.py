@@ -6,6 +6,7 @@
 """
 
 import pytest
+from contextlib import ExitStack
 from unittest.mock import AsyncMock, patch
 
 PFM_ADDRESS = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
@@ -305,8 +306,10 @@ async def test_add_uses_session_org_not_form(client):
     await _login(client)
     await _set_org(client, "GORA")
     # POST создаёт вопрос №10: 1-я загрузка QUESTIONS — номера нет,
-    # 2-я (после post_data) — появился.
-    questions = [{"id": 50, "NUMBER": 10, "TITLE": "GORA topic", "READING": 1}]
+    # 2-я (после post_data) — появился (орг-скоуп: строка с ORG=GORA).
+    questions = [
+        {"id": 50, "NUMBER": 10, "TITLE": "GORA topic", "READING": 1, "ORG": "GORA"}
+    ]
     calls = {"questions": 0}
 
     async def fake(table, *a, **k):
@@ -454,7 +457,15 @@ async def test_gora_signer_creates_question_published_to_gora_channel(client):
             return (
                 []
                 if calls["questions"] < 2
-                else [{"id": 50, "NUMBER": 11, "TITLE": "GORA topic", "READING": 1}]
+                else [
+                    {
+                        "id": 50,
+                        "NUMBER": 11,
+                        "TITLE": "GORA topic",
+                        "READING": 1,
+                        "ORG": "GORA",
+                    }
+                ]
             )
         return []
 
@@ -599,6 +610,13 @@ async def test_add_same_number_in_other_org_allowed(client):
     question_data = [
         {"QUESTION_ID": 1, "READING": "1", "UUID": "pfm1", "TELEGRAM_LINK": "https://t.me/c/1863399780/1"},
     ]
+    # post_data «создаёт» строку: орг-скоуп next() после POST найдёт GORA №1.
+    async def fake_post(table, json_data):
+        if table.table_name == "D2_QUESTIONS":
+            for rec in json_data["records"]:
+                questions.append({"id": 200, **rec["fields"]})
+        return True
+
     with (
         patch("routers.decision.check_user_weight", new=AsyncMock(return_value=1)),
         _secretaries_mock({GORA_ADDRESS: {SECRETARY_ID}}),
@@ -608,7 +626,8 @@ async def test_add_same_number_in_other_org_allowed(client):
             QUESTION_DATA=question_data,
         ),
         patch(
-            "other.grist_tools.grist_manager.post_data", new=AsyncMock()
+            "other.grist_tools.grist_manager.post_data",
+            new=AsyncMock(side_effect=fake_post),
         ) as post_mock,
         patch("routers.decision.skynet_bot.send_message", new=AsyncMock()) as send_mock,
     ):
@@ -687,3 +706,29 @@ def _clear_question_tables_cache():
     question_tables_cache.cache.clear()
     yield
     question_tables_cache.cache.clear()
+
+
+@pytest.mark.asyncio
+async def test_d2_trailing_slash_ok(client):
+    """/d2/ (слеш, напр. от логотипа href="." на /d2/<uuid>) — не 404.
+    Без воркспейса рендерится пикер (200), с воркспейсом — редирект в список."""
+    await _login(client)
+    with ExitStack() as stack:
+        for cm in (
+            _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
+            _user_org_names_mock({"PFM"}),
+        ):
+            stack.enter_context(cm)
+        resp = await client.get("/d2/")
+    assert resp.status_code == 200  # пикер воркспейса, не 404
+
+    await _set_org(client, "PFM")
+    with ExitStack() as stack:
+        for cm in (
+            _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
+            _user_org_names_mock({"PFM"}),
+        ):
+            stack.enter_context(cm)
+        resp = await client.get("/d2/")
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/d2/fragment/edit?status=active")

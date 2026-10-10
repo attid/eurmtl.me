@@ -288,9 +288,16 @@ async def _d2_send_rich(channel: str, status: str, inquiry: str,
             chat_id=int(f"-100{channel}"),
             rich_message={"blocks": blocks},
         )
+        logger.info(
+            f"D2 TG rich OK: chat=-100{channel} message_id={msg.message_id} "
+            f"[{org}] №{question_number} r{reading} status={status!r}"
+        )
         return msg.message_id
     except Exception as e:
-        logger.warning(f"D2 sendRichMessage failed, fallback to sulguk: {e}")
+        logger.warning(
+            f"D2 TG rich FAIL: chat=-100{channel} [{org}] №{question_number} "
+            f"r{reading}: {e}"
+        )
         return None
 
 
@@ -310,9 +317,16 @@ async def _d2_edit_rich(channel: str, message_id, status: str, inquiry: str,
             message_id=int(message_id),
             rich_message={"blocks": blocks},
         )
+        logger.info(
+            f"D2 TG edit OK: chat=-100{channel} message_id={message_id} "
+            f"[{org}] №{question_number} r{reading}"
+        )
         return True
     except Exception as e:
-        logger.warning(f"D2 editMessageText(rich) failed: {e}")
+        logger.warning(
+            f"D2 TG edit FAIL: chat=-100{channel} message_id={message_id} "
+            f"[{org}] №{question_number} r{reading}: {e}"
+        )
         return False
 
 
@@ -325,9 +339,10 @@ async def _d2_send_legacy(channel: str, text: str):
             parse_mode=SULGUK_PARSE_MODE,
             disable_web_page_preview=True,
         )
+        logger.info(f"D2 TG legacy OK: chat=-100{channel} message_id={msg.message_id}")
         return msg.message_id
     except Exception as e:
-        logger.info(f"Error with telegram publishing: {e}")
+        logger.warning(f"D2 TG legacy FAIL: chat=-100{channel}: {e}")
         return None
 
 
@@ -435,7 +450,7 @@ def _org_next_number(questions: list, org: str) -> int:
     return max(numbers, default=0) + 1
 
 
-@blueprint.route("/d2", methods=("GET",))
+@blueprint.route("/d2", methods=("GET",), strict_slashes=False)
 async def cmd_d2_index():
     session_org = await _d2_session_org()
     if session_org:
@@ -683,6 +698,10 @@ async def cmd_d2_show(question_uuid):
                             ]
                         },
                     )
+                    logger.info(
+                        f"D2 reading change: autostatus id={data_row['id']} "
+                        f"[{org}] №{question.get('NUMBER')} ❗️ #active -> ☑️ #next"
+                    )
                     _d2_invalidate_cache()
                 # Смена чтения: новая строка QUESTION_DATA + новое сообщение.
                 new_uuid = uuid.uuid4().hex
@@ -714,6 +733,11 @@ async def cmd_d2_show(question_uuid):
                     MTLGrist.QUESTION_DATA, {"records": [{"fields": fields}]}
                 )
                 _d2_invalidate_cache()
+                logger.info(
+                    f"D2 reading change: новое чтение r={new_reading} "
+                    f"uuid={new_uuid} QUESTION_ID={question['id']} [{org}] "
+                    f"№{question.get('NUMBER')}, link={fields.get('TELEGRAM_LINK')!r}"
+                )
                 if question.get("TITLE") != short_subject:
                     await grist_manager.patch_data(
                         MTLGrist.QUESTIONS,
@@ -795,6 +819,11 @@ async def cmd_d2_publish(question_uuid):
 
     telegram_link = data_row.get("TELEGRAM_LINK") or ""
     channel = await resolve_channel(org, reading)
+    logger.info(
+        f"D2 publish: uuid={question_uuid} [{org}] №{question.get('NUMBER')} "
+        f"r{reading} channel={channel} old_link={telegram_link!r} "
+        f"status={status!r} by={username or '?'}"
+    )
     published = False
     if telegram_link and channel is not None:
         # Републикация: сначала пробуем поправить существующий пост rich'ем.
@@ -832,6 +861,10 @@ async def cmd_d2_publish(question_uuid):
                 },
             )
             _d2_invalidate_cache()
+            logger.info(
+                f"D2 publish: TELEGRAM_LINK обновлён id={data_row['id']}: "
+                f"{telegram_link!r} -> {new_link!r}"
+            )
         if telegram_link:
             await flash("Пост был удалён в Telegram — опубликован заново.", "good")
         else:
@@ -971,7 +1004,14 @@ async def cmd_d2_add():
     _d2_invalidate_cache()
     questions, _, _ = await _load_question_tables()
     question_id = next(
-        q["id"] for q in questions if str(q.get("NUMBER")) == str(question_number)
+        q["id"]
+        for q in questions
+        if str(q.get("NUMBER")) == str(question_number)
+        and (q.get("ORG") or DEFAULT_ORG_NAME) == org
+    )
+    logger.info(
+        f"D2 add: вопрос №{question_number} [{org}] создан, "
+        f"QUESTION_ID={question_id}, draft={bool(as_draft)}"
     )
 
     # 2. Сообщение в Telegram (кроме черновика): sendRichMessage, фолбэк —
@@ -1006,6 +1046,10 @@ async def cmd_d2_add():
         MTLGrist.QUESTION_DATA, {"records": [{"fields": fields}]}
     )
     _d2_invalidate_cache()
+    logger.info(
+        f"D2 add: чтение reading={reading} uuid={d_uuid} "
+        f"QUESTION_ID={question_id} [{org}], telegram_link={fields.get('TELEGRAM_LINK')!r}"
+    )
 
     if as_draft:
         await flash("Черновик сохранён без публикации в Telegram.", "good")

@@ -656,3 +656,62 @@ def _clear_question_tables_cache():
     question_tables_cache.cache.clear()
     yield
     question_tables_cache.cache.clear()
+
+
+@pytest.mark.asyncio
+async def test_add_same_number_other_org_links_correct_question(client):
+    """Регрессия-2026-10-10: №1 уже есть в MTLA, создаём №1 в GORA —
+    чтение должно прицепиться к GORA-вопросу, не к первому №1 в таблице.
+    Баг: question_id искался по номеру без орга — GORA-чтение прицепилось
+    к MTLA №1 и публикавало в канал MTLA."""
+    async with client.session_transaction() as session:
+        session["userdata"] = SECRETARY_SESSION
+        session["user_id"] = SECRETARY_SESSION["id"]
+        session["d2_org"] = "GORA"
+
+    questions = [
+        {"id": 154, "NUMBER": 1, "TITLE": "MTLA q", "READING": 3, "ORG": "MTLA"},
+    ]
+    calls = {"questions": 0}
+
+    async def fake(table, *a, **k):
+        name = table.table_name
+        if name == "D2_QUESTIONS":
+            calls["questions"] += 1
+            # 1-й вызов — дубликат-чек (GORA №1 нет), 2-й — поиск id после
+            # POST: GORA №1 уже создан.
+            if calls["questions"] >= 2:
+                return questions + [
+                    {"id": 200, "NUMBER": 1, "TITLE": "GORA q", "READING": 1, "ORG": "GORA"}
+                ]
+            return questions
+        return []
+
+    with (
+        _secretaries_mock({GORA_ADDRESS: {1837984392}}),
+        _signer_mock(GORA_ADDRESS, 1837984392),
+        patch(
+            "other.grist_tools.grist_manager.load_table_data",
+            new=AsyncMock(side_effect=fake),
+        ),
+        patch(
+            "other.grist_tools.grist_manager.post_data", new=AsyncMock()
+        ) as post_mock,
+        patch("routers.decision.skynet_bot.send_message", new=AsyncMock()),
+    ):
+        response = await client.post(
+            "/d2/add",
+            form={
+                "question_number": "1",
+                "short_subject": "GORA question",
+                "inquiry": "<p>Body</p>",
+                "status": "❗️ #active",
+                "reading": "1",
+                "as_draft": "on",
+            },
+        )
+
+    assert response.status_code == 302
+    data_payload = post_mock.await_args_list[-1].args[1]
+    fields = data_payload["records"][0]["fields"]
+    assert fields["QUESTION_ID"] == 200  # GORA-вопрос, не MTLA id=154
