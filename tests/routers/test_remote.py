@@ -63,6 +63,7 @@ async def test_remote_get_xdr(client):
     """Test /remote/get_xdr/<hash>"""
     mock_tx = AsyncMock()
     mock_tx.body = "AAAA..."
+    mock_tx.description = "Test description"
 
     with patch("routers.remote.TransactionService") as MockService:
         mock_instance = MockService.return_value
@@ -74,6 +75,7 @@ async def test_remote_get_xdr(client):
         assert response.status_code == 200
         data = await response.get_json()
         assert data["xdr"] == "AAAA..."
+        assert data["description"] == "Test description"
 
 
 @pytest.mark.asyncio

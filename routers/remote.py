@@ -89,7 +89,9 @@ async def remote_get_xdr(tr_hash):
     if transaction is None:
         return "Transaction not exist =("
 
-    return jsonify({"xdr": transaction.body}), 200
+    return jsonify(
+        {"xdr": transaction.body, "description": transaction.description}
+    ), 200
 
 
 @blueprint.route("/remote/get_new_pin_id")

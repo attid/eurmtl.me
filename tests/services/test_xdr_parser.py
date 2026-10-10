@@ -1324,3 +1324,65 @@ async def test_render_sub_invocation_summary_formats_burn_and_generic_nested_cal
     assert "Burn 14.2949196 stPool (142949196 raw)" in burn_line
     assert "Nested call:" in approve_line
     assert ".approve(" in approve_line
+
+
+@pytest.mark.asyncio
+async def test_decode_xdr_to_text_marks_source_only_for_explicit_op_source():
+    """Regression: '*** для аккаунта' печатается только если у операции свой сурс."""
+    source_kp = Keypair.random()
+    op_source_kp = Keypair.random()
+    signer_kp = Keypair.random()
+
+    transaction = (
+        TransactionBuilder(
+            source_account=Account(source_kp.public_key, 10),
+            network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+            base_fee=10000,
+        )
+        .append_set_options_op(master_weight=0)
+        .append_set_options_op(
+            signer=Signer.ed25519_public_key(signer_kp.public_key, 1),
+            source=op_source_kp.public_key,
+        )
+        .set_timeout(300)
+        .build()
+    )
+
+    repo = SimpleNamespace(get_by_sequence=AsyncMock(return_value=[]))
+
+    with (
+        patch("services.xdr_parser.current_app", _mock_current_app()),
+        patch("services.xdr_parser.TransactionRepository", return_value=repo),
+        patch(
+            "services.xdr_parser.get_available_balance_str",
+            AsyncMock(return_value="(bal)"),
+        ),
+        patch(
+            "services.xdr_parser.get_account_fresh",
+            AsyncMock(
+                return_value={
+                    "id": source_kp.public_key,
+                    "sequence": "9",
+                    "balances": [],
+                }
+            ),
+        ),
+        patch(
+            "services.xdr_parser.get_account",
+            AsyncMock(
+                side_effect=lambda account_id: {"id": account_id, "balances": []}
+            ),
+        ),
+    ):
+        result = await decode_xdr_to_text(transaction.to_xdr())
+
+    text = "\n".join(result)
+    marker_lines = [line for line in text.splitlines() if "*** для аккаунта" in line]
+    assert len(marker_lines) == 1
+    assert op_source_kp.public_key in marker_lines[0]
+    assert source_kp.public_key not in marker_lines[0]
+
+    assert "Операция 0 - SetOptions" in text
+    assert "Установка master_weight 0" in text
+    assert "Изменяем подписанта" in text
+    assert "Операции с аккаунта" in text

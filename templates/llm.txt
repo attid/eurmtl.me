@@ -18,7 +18,7 @@ Useful machine routes:
 - POST /remote/decode : decode Stellar XDR from JSON body {"xdr": "<base64 xdr>"}
 - POST /remote/update_signature : submit signed XDR from JSON body {"xdr": "<base64 xdr>"}
 - GET /remote/need_sign/<public_key> : list pending transactions for signer
-- GET /remote/get_xdr/<hash> : fetch stored XDR by transaction hash
+- GET /remote/get_xdr/<hash> : fetch stored XDR by transaction hash, JSON response {"xdr": "...", "description": "..."}
 - POST /remote/add_transaction : add transaction, requires Authorization Bearer token, JSON body {"tx_body": "...", "tx_description": "..."}
 
 SEP-7 routes:
