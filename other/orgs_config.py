@@ -15,6 +15,9 @@ class Org:
     main_address: str  # "" = заглушка: не видна никому, кроме секретарей
     channels: tuple[str, ...]  # числовые chat_id строками (без префикса -100)
     readings: int  # 0 = одно чтение, один канал на любое
+    hash_position: str = "suffix"  # где статус+теги чтения в TG-посте:
+    # "suffix" (PFM/USDMM/GORA): первая строка "❗️ #active", ссылки чтений внизу
+    # "prefix" (MTLA): первая строка "☑️ #next #first_reading", вопрос ниже
 
 
 ORGS: tuple[Org, ...] = (
@@ -41,6 +44,7 @@ ORGS: tuple[Org, ...] = (
         "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA",
         ("2042260878",),  # канал -1002042260878, Council Announcements
         3,
+        hash_position="prefix",
     ),
     Org(
         "TFM",
