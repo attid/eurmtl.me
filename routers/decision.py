@@ -513,17 +513,23 @@ async def cmd_d2_show(question_uuid):
                 text = get_full_text(
                     status, inquiry, links_url, question_uuid, username
                 )
-                try:
-                    await skynet_bot.edit_message_text(
-                        chat_id=int(f"-100{await resolve_channel(org, new_reading)}"),
-                        text=text,
-                        parse_mode=SULGUK_PARSE_MODE,
-                        disable_web_page_preview=True,
-                        message_id=data_row["TELEGRAM_LINK"].split("/")[-1],
-                    )
-                except Exception as e:
-                    logger.info(f"Error with telegram publishing: {e}")
-                    await flash("Вопрос сохранён, но правка в Telegram не прошла.")
+                telegram_link = data_row.get("TELEGRAM_LINK") or ""
+                if not telegram_link:
+                    # Черновик: Telegram не трогаем — публикация кнопкой
+                    # «Опубликовать», править там нечего.
+                    pass
+                else:
+                    try:
+                        await skynet_bot.edit_message_text(
+                            chat_id=int(f"-100{await resolve_channel(org, new_reading)}"),
+                            text=text,
+                            parse_mode=SULGUK_PARSE_MODE,
+                            disable_web_page_preview=True,
+                            message_id=telegram_link.split("/")[-1],
+                        )
+                    except Exception as e:
+                        logger.info(f"Error with telegram publishing: {e}")
+                        await flash("Вопрос сохранён, но правка в Telegram не прошла.")
                 await flash("Вопрос успешно обновлён.", "good")
                 return redirect(f"/d2/{question_uuid}")
             else:

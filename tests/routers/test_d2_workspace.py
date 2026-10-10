@@ -629,3 +629,53 @@ async def test_add_same_number_in_other_org_allowed(client):
         flashes = dict(session.get("_flashes", []))
     assert not any("уже существует" in str(m) for m in flashes.values())
     assert send_mock.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_save_draft_does_not_touch_telegram(client):
+    """Сохранение черновика (пустой TELEGRAM_LINK) — Grist да, Telegram нет,
+    один зелёный флеш без «правка не прошла»."""
+    await _login(client)
+    await _set_org(client, "GORA")
+    questions = [{"id": 5, "NUMBER": 1, "ORG": "GORA", "TITLE": "GORA q", "READING": 1}]
+    question_data = [
+        {
+            "id": 6,
+            "QUESTION_ID": 5,
+            "READING": "1",
+            "UUID": "draft42",
+            "TELEGRAM_LINK": "",
+            "BODY": "<p>old</p>",
+            "STATUS": "❗️ #active",
+            "CREATED_BY": "@itolstov",
+        }
+    ]
+    with (
+        _secretaries_mock({GORA_ADDRESS: {SECRETARY_ID}}),
+        _user_org_names_mock({"GORA"}),
+        _tables_mock(QUESTIONS=questions, QUESTION_DATA=question_data),
+        patch(
+            "other.grist_tools.grist_manager.patch_data", new=AsyncMock()
+        ) as patch_mock,
+        patch(
+            "routers.decision.skynet_bot.edit_message_text", new=AsyncMock()
+        ) as edit_mock,
+    ):
+        response = await client.post(
+            "/d2/draft42",
+            form={
+                "short_subject": "GORA q",
+                "inquiry": "<p>new body</p>",
+                "status": "❗️ #active",
+                "reading": "1",
+            },
+        )
+
+    assert response.status_code == 302
+    edit_mock.assert_not_awaited()  # Telegram не тронут
+    flashes = {}
+    async with client.session_transaction() as session:
+        flashes = dict(session.get("_flashes", []))
+    texts = [str(m) for m in flashes.values()]
+    assert not any("не прошла" in t for t in texts)
+    assert any("успешно обновлён" in t for t in texts)
