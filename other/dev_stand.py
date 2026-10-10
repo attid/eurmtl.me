@@ -64,10 +64,13 @@ async def grist_post(doc_id: str, table_name: str):
     doc_tables = _TABLES.setdefault(doc_id, {})
     rows = doc_tables.setdefault(table_name, [])
     next_id = max((r["id"] for r in rows), default=0) + 1
+    created = []
     for record in payload.get("records", []):
         rows.append({"id": next_id, "fields": dict(record.get("fields", {}))})
+        created.append({"id": next_id})
         next_id += 1
-    return jsonify({}), 200
+    # Grist отвечает {"records": [{"id": N}, ...]} — этим пользуются клиенты.
+    return jsonify({"records": created}), 200
 
 
 def _apply_updates(rows: list[dict], payload: dict, with_fields: bool) -> None:
@@ -101,6 +104,42 @@ async def grist_put(doc_id: str, table_name: str):
     rows = _TABLES.get(doc_id, {}).get(table_name, [])
     _apply_updates(rows, payload, with_fields=False)
     return jsonify({}), 200
+
+
+# in-memory аттачменты двойника: {doc_id: {attachment_id: (bytes, filename)}}
+_ATTACHMENTS: dict[str, dict[int, tuple[bytes, str]]] = {}
+_ATTACHMENTS_NEXT_ID = {"n": 1}
+
+
+@blueprint.route("/api/docs/<doc_id>/attachments", methods=("POST",))
+async def grist_attachments_post(doc_id: str):
+    """Grist-совместимая загрузка вложений: multipart "upload" -> [{"id": N}]."""
+    files = await request.files
+    uploads = files.getlist("upload")
+    if not uploads:
+        return jsonify({"error": "no file"}), 400
+    doc = _ATTACHMENTS.setdefault(doc_id, {})
+    ids = []
+    for f in uploads:
+        att_id = _ATTACHMENTS_NEXT_ID["n"]
+        _ATTACHMENTS_NEXT_ID["n"] += 1
+        doc[att_id] = (f.read(), f.filename or "upload.bin")
+        ids.append({"id": att_id})
+    return jsonify(ids)
+
+
+@blueprint.route("/api/docs/<doc_id>/attachments/<int:attachment_id>/download",
+                 methods=("GET",))
+async def grist_attachment_download(doc_id: str, attachment_id: int):
+    entry = _ATTACHMENTS.get(doc_id, {}).get(attachment_id)
+    if entry is None:
+        return jsonify({"error": "not found"}), 404
+    data, filename = entry
+    from quart import Response
+
+    return Response(data, mimetype="application/octet-stream", headers={
+        "Content-Disposition": f'attachment; filename="{filename}"',
+    })
 
 
 @blueprint.route("/dev/tg-log", methods=("GET",))
