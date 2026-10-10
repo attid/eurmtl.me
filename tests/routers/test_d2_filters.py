@@ -52,7 +52,7 @@ async def test_attention_filter(client):
             _tables_mock(D2_QUESTIONS=questions, D2_QUESTION_DATA=data),
         ):
             stack.enter_context(cm)
-        resp = await client.get("/d2/fragment/edit?status=active")
+        resp = await client.get("/d2/fragment/edit?status=active&status_changed=1")
     body = (await resp.get_data()).decode()
     assert resp.status_code == 200
     assert "ActiveQ" in body and "ControlQ" in body and "DraftQ" in body
@@ -73,7 +73,7 @@ async def test_drafts_filter(client):
             _tables_mock(D2_QUESTIONS=questions, D2_QUESTION_DATA=data),
         ):
             stack.enter_context(cm)
-        resp = await client.get("/d2/fragment/edit?status=drafts")
+        resp = await client.get("/d2/fragment/edit?status=drafts&status_changed=1")
     body = (await resp.get_data()).decode()
     assert resp.status_code == 200
     assert "DraftQ" in body
@@ -93,7 +93,7 @@ async def test_all_filter(client):
             _tables_mock(D2_QUESTIONS=questions, D2_QUESTION_DATA=data),
         ):
             stack.enter_context(cm)
-        resp = await client.get("/d2/fragment/edit?status=all")
+        resp = await client.get("/d2/fragment/edit?status=all&status_changed=1")
     body = (await resp.get_data()).decode()
     assert resp.status_code == 200
     for t in ("ActiveQ", "DoneQ", "DraftQ", "ControlQ"):
@@ -117,3 +117,88 @@ async def test_default_view_is_attention_selected(client):
     body = (await resp.get_data()).decode()
     assert 'value="active" selected' in body
     assert "Требует внимания" in body
+    # Дефолт — не только вид, но и ПРИМЕНЁННЫЙ фильтр: в таблице только
+    # active/control (регрессия: вид «Требует внимания», данные — все).
+    assert "ActiveQ" in body
+    assert "ControlQ" in body
+    assert "DraftQ" in body  # драфт со статусом active тоже виден
+    assert "DoneQ" not in body
+
+
+@pytest.mark.asyncio
+async def test_search_without_status_finds_all(client):
+    """Поиск без статуса ищет по всем (в т.ч. done): регрессия №695 —
+    вопрос не теряется в «Требует внимания»."""
+    async with client.session_transaction() as s:
+        s["userdata"] = {"id": SECRETARY_ID, "username": "itolstov"}
+        s["user_id"] = SECRETARY_ID
+        s["d2_org"] = "PFM"
+    questions, data = _seed()
+    with ExitStack() as stack:
+        for cm in (
+            _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
+            _user_org_names_mock({"PFM"}),
+            _tables_mock(D2_QUESTIONS=questions, D2_QUESTION_DATA=data),
+        ):
+            stack.enter_context(cm)
+        resp = await client.get("/d2/fragment/edit?q=119")
+    body = (await resp.get_data()).decode()
+    assert resp.status_code == 200
+    assert "DoneQ" in body
+    # Комбобокс на «Все» — статус не применялся.
+    assert 'value="all" selected' in body
+
+
+@pytest.mark.asyncio
+async def test_search_plus_explicit_status_narrows(client):
+    """Решение владельца 2026-10-11 (вариант 2): поиск ищет по всем, ЯВНЫЙ
+    статус поверх поиска сужает найденное (119 done + status=active → пусто)."""
+    async with client.session_transaction() as s:
+        s["userdata"] = {"id": SECRETARY_ID, "username": "itolstov"}
+        s["user_id"] = SECRETARY_ID
+        s["d2_org"] = "PFM"
+    questions, data = _seed()
+    with ExitStack() as stack:
+        for cm in (
+            _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
+            _user_org_names_mock({"PFM"}),
+            _tables_mock(D2_QUESTIONS=questions, D2_QUESTION_DATA=data),
+        ):
+            stack.enter_context(cm)
+        resp = await client.get("/d2/fragment/edit?q=11&status=active&status_changed=1")
+    body = (await resp.get_data()).decode()
+    assert resp.status_code == 200
+    # q=11 матчит 118/119 (подстрока номера); active из них — 118.
+    assert "ActiveQ" in body
+    assert "DoneQ" not in body
+    # Выбранный статус отображается как есть.
+    assert 'value="active" selected' in body
+
+
+
+
+
+@pytest.mark.asyncio
+async def test_search_enter_ignores_rendered_status(client):
+    """Enter в поиске сабмитит форму с отрисованным селектом (status=active
+    с дефолтного экрана), но БЕЗ status_changed — сервер ищет по всем.
+    Регрессия: q=1 (#next) с дефолтного экрана давал пусто."""
+    async with client.session_transaction() as s:
+        s["userdata"] = {"id": SECRETARY_ID, "username": "itolstov"}
+        s["user_id"] = SECRETARY_ID
+        s["d2_org"] = "PFM"
+    questions, data = _seed()
+    with ExitStack() as stack:
+        for cm in (
+            _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
+            _user_org_names_mock({"PFM"}),
+            _tables_mock(D2_QUESTIONS=questions, D2_QUESTION_DATA=data),
+        ):
+            stack.enter_context(cm)
+        # Как браузер: q=1 + просочившийся status=active, флага нет.
+        resp = await client.get("/d2/fragment/edit?q=1&status=active")
+    body = (await resp.get_data()).decode()
+    assert resp.status_code == 200
+    # q=1 матчит 118/121 (подстрока номера «1»), не только active.
+    assert "ActiveQ" in body
+    assert "DoneQ" in body  # done-вопрос НЕ выфильтрован

@@ -665,7 +665,7 @@ async def test_edit_list_marks_draft_questions(client):
             ),
         ),
     ):
-        response = await client.get("/d2/fragment/edit?status=all")
+        response = await client.get("/d2/fragment/edit?status=all&status_changed=1")
 
     body = await response.get_data(as_text=True)
     assert response.status_code == 200

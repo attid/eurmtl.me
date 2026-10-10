@@ -104,7 +104,7 @@ async def test_decision_fragment_edit_renders_sorted_items(client):
             new=AsyncMock(return_value={"PFM"}),
         ),
     ):
-        response = await client.get("/d2/fragment/edit?status=all")
+        response = await client.get("/d2/fragment/edit?status=all&status_changed=1")
 
     body = await response.get_data(as_text=True)
     assert response.status_code == 200
