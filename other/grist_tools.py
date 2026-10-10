@@ -24,6 +24,38 @@ class GristTableConfig:
     base_url: str = "https://grist.eurmtl.me/api/docs"
 
 
+# Аудит мутаций Grist: каждое изменение — одна строка в логе. Требование
+# владельца (2026-10-10): «ни одного байта изменения в d2 не должно быть
+# незамеченным». Шум сократим, когда всё отработает без ошибок.
+_BRIEF_MAX = 120
+
+
+def _brief(value: Any) -> Any:
+    """Короткое представление значения поля для лога."""
+    if isinstance(value, str) and len(value) > _BRIEF_MAX:
+        return value[:_BRIEF_MAX] + f"…({len(value)} chars)"
+    return value
+
+
+def _recordsBrief(json_data: Dict[str, Any]) -> str:
+    """records payload одной строкой: [{id: N, field: value, ...}, ...]."""
+    records = json_data.get("records", []) if isinstance(json_data, dict) else []
+    parts = []
+    for record in records[:5]:  # больше 5 записей за раз d2 не пишет
+        fields = record.get("fields", {})
+        brief = {k: _brief(v) for k, v in fields.items()}
+        row_id = record.get("id")
+        prefix = f"id={row_id} " if row_id is not None else ""
+        parts.append(f"[{prefix}{brief}]")
+    if len(records) > 5:
+        parts.append(f"…+{len(records) - 5} more")
+    return " ".join(parts) if parts else str(json_data)[:_BRIEF_MAX]
+
+
+def _log_mutation(method: str, table: GristTableConfig, json_data: Dict[str, Any]) -> None:
+    logger.info(f"Grist {method} {table.table_name}: {_recordsBrief(json_data)}")
+
+
 # Enum для таблиц
 @dataclass
 class MTLGrist:
@@ -139,14 +171,22 @@ class GristAPI:
             "Authorization": f"Bearer {self.token}",
         }
         url = f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
+        _log_mutation("PUT", table, json_data)
         response = await self.session_manager.get_web_request(
             method="PUT", url=url, headers=headers, json=json_data
         )
 
         match response.status:
             case 200:
+                logger.info(
+                    f"Grist OK: PUT {table.table_name} {_recordsBrief(json_data)}"
+                )
                 return True
             case _:
+                logger.error(
+                    f"Grist FAIL: PUT {table.table_name} "
+                    f"{_recordsBrief(json_data)} -> {response.status}"
+                )
                 raise Exception(f"Ошибка запроса: Статус {response.status}")
 
     async def patch_data(
@@ -164,14 +204,23 @@ class GristAPI:
             "Authorization": f"Bearer {self.token}",
         }
         url = f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
+        _log_mutation("PATCH", table, json_data)
         response = await self.session_manager.get_web_request(
             method="PATCH", url=url, headers=headers, json=json_data
         )
 
         match response.status:
             case 200:
+                logger.info(
+                    f"Grist OK: PATCH {table.table_name} "
+                    f"{_recordsBrief(json_data)}"
+                )
                 return True
             case _:
+                logger.error(
+                    f"Grist FAIL: PATCH {table.table_name} "
+                    f"{_recordsBrief(json_data)} -> {response.status}"
+                )
                 raise Exception(f"Ошибка запроса: Статус {response.status}")
 
     async def post_data(
@@ -189,14 +238,22 @@ class GristAPI:
             "Authorization": f"Bearer {self.token}",
         }
         url = f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
+        _log_mutation("POST", table, json_data)
         response = await self.session_manager.get_web_request(
             method="POST", url=url, headers=headers, json=json_data
         )
 
         match response.status:
             case 200:
+                logger.info(
+                    f"Grist OK: POST {table.table_name} {_recordsBrief(json_data)}"
+                )
                 return True
             case _:
+                logger.error(
+                    f"Grist FAIL: POST {table.table_name} "
+                    f"{_recordsBrief(json_data)} -> {response.status}"
+                )
                 raise Exception(f"Ошибка запроса: Статус {response.status}")
 
     async def post_attachment(
@@ -253,6 +310,10 @@ class GristAPI:
             url=records_url,
             headers=headers,
             json={"records": [{"fields": {"FILE": attachment_id, **fields}}]},
+        )
+        logger.info(
+            f"Grist: attachment {attachment_id} ({filename}, "
+            f"{len(file_bytes)}b) -> {table.table_name} {fields}"
         )
         match records_response.status:
             case 200 if isinstance(
