@@ -33,12 +33,15 @@ class MTLGrist:
     MTLA_CHATS = GristTableConfig("x4r7WiFKsJREzXS4vowwqj", "MTLA_CHATS")
     MTLA_COUNCILS = GristTableConfig("x4r7WiFKsJREzXS4vowwqj", "MTLA_COUNCILS")
 
+    # SP_USERS/SP_CHATS — старый док (одноразовая миграция D1 их читает);
+    # десижены с 2026-10-09 живут в eurmtlme-доке (решение владельца),
+    # таблицы создаются автоматически при первом post_data.
     SP_USERS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "SP_USERS")
     SP_CHATS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "SP_CHATS")
-    QUESTIONS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "QUESTIONS")
-    QUESTION_DATA = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "QUESTION_DATA")
+    QUESTIONS = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "QUESTIONS")
+    QUESTION_DATA = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "QUESTION_DATA")
     QUESTION_TEMPLATES = GristTableConfig(
-        "hpZWKq729vw2D5AkG7oYYz", "QUESTION_TEMPLATES"
+        "3Fk4hjCv847GBx8ZTCPN2Y", "QUESTION_TEMPLATES"
     )
 
     MAIN_CHAT_INCOME = GristTableConfig("khWn5KMRbfUQQoaPydjhGt", "Main_chat_income")
