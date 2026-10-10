@@ -646,6 +646,24 @@ async def cmd_d2_show(question_uuid):
                 await flash("Вопрос успешно обновлён.", "good")
                 return redirect(f"/d2/{question_uuid}")
             else:
+                # Смена чтения (решение владельца 2026-10-10): в чтениях 1-2
+                # #done не ставится никогда. Прошлое чтение: ❗️ #active →
+                # ☑️ #next (работа по нему окончена); 🔇 #canceled и
+                # 🔂 #resign не трогаем. ✅ #done возможен только в финальном
+                # чтении и ставится человеком вручную.
+                if data_row.get("STATUS") == "❗️ #active":
+                    await grist_manager.patch_data(
+                        MTLGrist.QUESTION_DATA,
+                        {
+                            "records": [
+                                {
+                                    "id": data_row["id"],
+                                    "fields": {"STATUS": "☑️ #next"},
+                                }
+                            ]
+                        },
+                    )
+                    _d2_invalidate_cache()
                 # Смена чтения: новая строка QUESTION_DATA + новое сообщение.
                 new_uuid = uuid.uuid4().hex
                 text = get_full_text(status, inquiry, links_url, new_uuid, username)
