@@ -1377,26 +1377,55 @@ async def cmd_d2_edit():
     status_param = request.args.get("status")
     query = (request.args.get("q") or "").strip().lower()
     explicit_status = bool(status_param)  # владелец сам выбрал статус
-    # Явный выбор статуса — уважается всегда. Поиск без явного статуса ищет по всем
-    # (решение владельца 2026-10-09/10).
-    if status_param == "active":
-        # «Требует внимания»: активные + контроль (решение владельца
-        # 2026-10-10; ☑️ #next — конечный статус, в агрегат не входит).
-        filtered = [
-            row for row in items
-            if row["status"] in ("❗️ #active", "‼️ #control")
-        ]
-    elif status_param == "drafts":
-        # Черновики: все чтения без TELEGRAM_LINK.
-        filtered = [row for row in items if row["is_draft"]]
-    elif not explicit_status and query:
+    # Статус применяется только если юзер ВЫБРАЛ его в комбобоксе
+    # (onchange ставит status_changed=1). Enter в поле поиска сабмитит
+    # форму без флага — тогда q ищет по всем, что бы ни было отрисовано
+    # в селекте (иначе дефолтный «Требует внимания» тащился бы в каждый
+    # поиск; решение владельца 2026-10-11).
+    status_selected = request.args.get("status_changed") == "1"
+    if not status_selected:
+        status_param = None
+        explicit_status = False
+    # Поиск (решение владельца 2026-10-11): ищем по всем вопросам всех
+    # статусов. Явный статус ПОВЕРХ поиска сужает найденное (выбрал
+    # «Требует внимания» после поиска → из найденных только active/control).
+    # Поиск без явного статуса — просто по всем.
+    if query:
         filtered = items
-    elif status_param == "all" or not explicit_status:
-        filtered = items
-    elif status_param in statuses:
-        filtered = [row for row in items if row["status"] == status_param]
+        if explicit_status:
+            if status_param == "active":
+                filtered = [
+                    row for row in items
+                    if row["status"] in ("❗️ #active", "‼️ #control")
+                ]
+            elif status_param == "drafts":
+                filtered = [row for row in items if row["is_draft"]]
+            elif status_param == "all":
+                pass
+            elif status_param in statuses:
+                filtered = [
+                    row for row in items if row["status"] == status_param
+                ]
     else:
-        filtered = items
+        # Явный выбор статуса — уважается всегда. Без параметров — дефолт
+        # вида «Требует внимания» с ПРИМЕНЁННЫМ фильтром (active+control),
+        # иначе вид показывает один статус, а данные — все.
+        if status_param == "active" or not status_param:
+            # «Требует внимания»: активные + контроль (решение владельца
+            # 2026-10-10; ☑️ #next — конечный статус, в агрегат не входит).
+            filtered = [
+                row for row in items
+                if row["status"] in ("❗️ #active", "‼️ #control")
+            ]
+        elif status_param == "drafts":
+            # Черновики: все чтения без TELEGRAM_LINK.
+            filtered = [row for row in items if row["is_draft"]]
+        elif status_param == "all":
+            filtered = items
+        elif status_param in statuses:
+            filtered = [row for row in items if row["status"] == status_param]
+        else:
+            filtered = items
 
     if query:
         filtered = [
@@ -1418,12 +1447,15 @@ async def cmd_d2_edit():
     page = min(page, total_pages)
     page_items = filtered[(page - 1) * per_page : page * per_page]
 
-    if status_param == "drafts":
+    if query and not explicit_status:
+        # Поиск без явного статуса: комбобокс на «Все» (фильтр не применён).
+        status_filter = "all"
+    elif status_param == "drafts":
         status_filter = "drafts"
     elif not explicit_status:
         # Нет явного выбора: дефолт вида «Активные», но фильтр статуса не применён
         # (поиск без статуса ищет по всем).
-        status_filter = "all" if query else "active"
+        status_filter = "active"
     else:
         status_filter = status_param
 

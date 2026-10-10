@@ -229,7 +229,7 @@ async def test_edit_list_scoped_to_session_org(client):
         _secretaries_mock({GORA_ADDRESS: {SECRETARY_ID}}),
         _tables_mock(QUESTIONS=questions, QUESTION_DATA=question_data),
     ):
-        response = await client.get("/d2/fragment/edit?status=all")
+        response = await client.get("/d2/fragment/edit?status=all&status_changed=1")
 
     body = await response.get_data(as_text=True)
     assert response.status_code == 200
@@ -244,7 +244,7 @@ async def test_edit_list_scoped_to_session_org(client):
 async def test_edit_list_redirects_without_workspace(client):
     await _login(client)
     with _secretaries_mock({GORA_ADDRESS: {SECRETARY_ID}}):
-        response = await client.get("/d2/fragment/edit?status=all")
+        response = await client.get("/d2/fragment/edit?status=all&status_changed=1")
     assert response.status_code == 302
     assert response.headers["location"] == "/d2"
 
@@ -436,7 +436,7 @@ async def test_gora_signer_does_not_see_pfm_questions_in_list(client):
         _user_org_names_mock({"GORA"}),
         _tables_mock(QUESTIONS=questions, QUESTION_DATA=question_data),
     ):
-        response = await client.get("/d2/fragment/edit?status=all")
+        response = await client.get("/d2/fragment/edit?status=all&status_changed=1")
 
     body = await response.get_data(as_text=True)
     assert response.status_code == 200
@@ -518,7 +518,7 @@ async def test_gora_secretary_sees_gora_publishes_ok_and_pfm_hidden(client):
         _tables_mock(QUESTIONS=questions, QUESTION_DATA=question_data),
     ):
         # Список: GORA виден, PFM скрыт.
-        response = await client.get("/d2/fragment/edit?status=all")
+        response = await client.get("/d2/fragment/edit?status=all&status_changed=1")
         body = await response.get_data(as_text=True)
         assert response.status_code == 200
         assert "Купить сервер для ноды" in body

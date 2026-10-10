@@ -4,11 +4,20 @@
             {% if current_uuid %}
             <input type="hidden" name="uuid" value="{{ current_uuid }}">
             {% endif %}
+            <!-- Флаг «статус выбран руками»: Enter в поиске сабмитит форму
+                 без него — сервер игнорирует status при q и ищет по всем.
+                 onchange селекта ставит флаг — статус применяется к поиску
+                 (вариант 2, решение владельца 2026-10-11). -->
+            <input type="hidden" name="status_changed" value="">
             <div class="col-auto">
                 <input type="text" class="form-control" name="q" value="{{ query }}" placeholder="Поиск по номеру или теме">
+                <!-- Enter в поле поиска: без явной submit-кнопки часть браузеров
+                     не сабмитит одноинпутную форму. Кнопка скрыта, вне табуляции. -->
+                <button type="submit" class="visually-hidden" tabindex="-1">Найти</button>
             </div>
             <div class="col-auto">
-                <select name="status" class="form-select" onchange="this.form.submit()">
+                <select name="status" class="form-select"
+                        onchange="this.form.status_changed.value='1'; this.form.submit()">
                     <option value="active" {% if status_filter == 'active' %}selected{% endif %}>Требует внимания</option>
                     <option value="drafts" {% if status_filter == 'drafts' %}selected{% endif %}>Черновики</option>
                     <option value="all" {% if status_filter == 'all' %}selected{% endif %}>Все</option>
