@@ -3,6 +3,8 @@ import json
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
+
+import aiohttp
 from loguru import logger
 from stellar_sdk import StrKey, ServerAsync
 from stellar_sdk.client.aiohttp_client import AiohttpClient
@@ -33,13 +35,19 @@ class MTLGrist:
     MTLA_CHATS = GristTableConfig("x4r7WiFKsJREzXS4vowwqj", "MTLA_CHATS")
     MTLA_COUNCILS = GristTableConfig("x4r7WiFKsJREzXS4vowwqj", "MTLA_COUNCILS")
 
+    # SP_USERS/SP_CHATS — старый док (одноразовая миграция D1 их читает);
+    # десижены с 2026-10-09 живут в eurmtlme-доке (решение владельца),
+    # таблицы создаются автоматически при первом post_data.
     SP_USERS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "SP_USERS")
     SP_CHATS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "SP_CHATS")
-    QUESTIONS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "QUESTIONS")
-    QUESTION_DATA = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "QUESTION_DATA")
+    QUESTIONS = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "D2_QUESTIONS")
+    QUESTION_DATA = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "D2_QUESTION_DATA")
     QUESTION_TEMPLATES = GristTableConfig(
-        "hpZWKq729vw2D5AkG7oYYz", "QUESTION_TEMPLATES"
+        "3Fk4hjCv847GBx8ZTCPN2Y", "D2_QUESTION_TEMPLATES"
     )
+    # Картинки d2-вопросов: FILE — attachment, схему/таблицу создаёт владелец
+    # руками в UI (сайт никогда не создаёт схему Grist).
+    D2_IMAGES = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "D2_IMAGES")
 
     MAIN_CHAT_INCOME = GristTableConfig("khWn5KMRbfUQQoaPydjhGt", "Main_chat_income")
     MAIN_CHAT_OUTCOME = GristTableConfig("khWn5KMRbfUQQoaPydjhGt", "Main_chat_outcome")
@@ -188,6 +196,104 @@ class GristAPI:
         match response.status:
             case 200:
                 return True
+            case _:
+                raise Exception(f"Ошибка запроса: Статус {response.status}")
+
+    async def post_attachment(
+        self,
+        table: GristTableConfig,
+        file_bytes: bytes,
+        filename: str,
+        fields: Dict[str, Any],
+    ) -> int:
+        """
+        Загружает файл как Grist attachment и создаёт запись в таблице.
+
+        1. POST /docs/{docId}/attachments (multipart/form-data) → {"id": N}.
+        2. POST records в таблицу с fields {"FILE": attachment_id, ...};
+           id созданной строки берём из ответа (Grist возвращает records).
+
+        Args:
+            table: Конфигурация таблицы (док + имя)
+            file_bytes: Содержимое файла
+            filename: Имя файла (для multipart)
+            fields: Остальные поля записи (ORG, UPLOADED_BY, ...)
+
+        Returns:
+            row_id: id созданной записи в таблице.
+        """
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {self.token}",
+        }
+        attachments_url = f"{table.base_url}/{table.access_id}/attachments"
+        form = aiohttp.FormData()
+        form.add_field(
+            "upload",
+            file_bytes,
+            filename=filename,
+            content_type="application/octet-stream",
+        )
+        response = await self.session_manager.get_web_request(
+            method="POST", url=attachments_url, headers=headers, data=form
+        )
+        match response.status:
+            case 200 if isinstance(response.data, list) and response.data:
+                attachment_id = response.data[0].get("id")
+            case _:
+                raise Exception(f"Ошибка загрузки attachment: Статус {response.status}")
+        if attachment_id is None:
+            raise Exception("Grist не вернул id attachment")
+
+        records_url = (
+            f"{table.base_url}/{table.access_id}/tables/{table.table_name}/records"
+        )
+        records_response = await self.session_manager.get_web_request(
+            method="POST",
+            url=records_url,
+            headers=headers,
+            json={"records": [{"fields": {"FILE": attachment_id, **fields}}]},
+        )
+        match records_response.status:
+            case 200 if isinstance(
+                records_response.data, dict
+            ) and records_response.data.get("records"):
+                row_id = records_response.data["records"][0].get("id")
+                if row_id is not None:
+                    return int(row_id)
+                raise Exception("Grist не вернул id созданной записи")
+            case _:
+                raise Exception(
+                    f"Ошибка создания записи {table.table_name}: "
+                    f"Статус {records_response.status}"
+                )
+
+    async def get_attachment(
+        self, table: GristTableConfig, attachment_id: int
+    ) -> bytes:
+        """
+        Скачивает содержимое attachment из дока.
+
+        GET /docs/{docId}/attachments/{attachmentId} → bytes.
+
+        Args:
+            table: Конфигурация таблицы (используется access_id = docId)
+            attachment_id: id attachment в доке
+
+        Returns:
+            Содержимое файла (bytes).
+        """
+        headers = {
+            "accept": "application/octet-stream",
+            "Authorization": f"Bearer {self.token}",
+        }
+        url = f"{table.base_url}/{table.access_id}/attachments/{attachment_id}/download"
+        response = await self.session_manager.get_web_request(
+            method="GET", url=url, headers=headers, return_type="bytes"
+        )
+        match response.status:
+            case 200 if isinstance(response.data, bytes):
+                return response.data
             case _:
                 raise Exception(f"Ошибка запроса: Статус {response.status}")
 
@@ -380,6 +486,54 @@ async def update_mtl_shareholders_balance():
 # Конфигурация
 grist_session_manager = HTTPSessionManager()
 grist_manager = GristAPI(grist_session_manager)
+
+# Канал фонда по умолчанию (fallback, если организация не найдена в конфиге).
+# Прод: (0, 1863399780, 1652080456, 1649743884); тест: (0, 1837984392, ...).
+DEFAULT_FUND_CHAT_IDS = (0, 1863399780, 1652080456, 1649743884)
+DEFAULT_FUND_TEST_CHAT_IDS = (0, 1837984392, 1837984392, 1837984392)
+# Реэкспорт из orgs_config: существующие импорты (decision.py) не ломаются.
+from other.orgs_config import DEFAULT_ORG_NAME as DEFAULT_ORG_NAME  # noqa: E402
+
+
+def _fallback_fund_channel(reading: int) -> str | None:
+    from other.config_reader import config
+
+    chat_ids = DEFAULT_FUND_TEST_CHAT_IDS if config.test_mode else DEFAULT_FUND_CHAT_IDS
+    if reading <= 0 or reading >= len(chat_ids):
+        return None
+    return str(chat_ids[reading])
+
+
+def resolve_org_channel(org_name: str | None, reading: int) -> str | None:
+    """Канал публикации: чтение N организации из orgs_config.ORGS.
+
+    readings>0: чтение N идёт в channels[min(N, len)-1] (нумерация чтений с 1).
+    readings=0: у организации один канал — любой запрос уходит в channels[0].
+    Нет организации: fallback на хардкод фонда; вне 1..3 — None.
+    Возвращает числовой chat_id строкой (без префикса -100) или None.
+    """
+    from other import orgs_config
+
+    org = None
+    if org_name:
+        org = next(
+            (o for o in orgs_config.ORGS if (o.name or "") == org_name),
+            None,
+        )
+    if org is None:
+        return _fallback_fund_channel(reading)
+
+    channels = org.channels
+    if not channels:
+        return None
+    readings = int(org.readings)
+    if readings <= 0:
+        return channels[0]
+    if reading <= 0:
+        return None
+    return channels[min(reading, len(channels)) - 1]
+
+
 grist_cash = AsyncTTLCache(
     ttl_seconds=86400
 )  # Кеш для найденных пользователей на 24 часа
@@ -390,6 +544,116 @@ assets_cache = AsyncTTLCache(ttl_seconds=86400)  # Кеш для найденн�
 assets_not_found_cache = AsyncTTLCache(
     ttl_seconds=3600
 )  # Кеш для ненайденных активов на 1 час
+
+org_signers_cache = AsyncTTLCache(
+    ttl_seconds=300
+)  # Подписанты MAIN_ADDRESS организаций на 5 минут
+
+HORIZON_URL = "https://horizon.stellar.org"
+
+
+async def _org_main_address_signers(main_address: str) -> list[str]:
+    """Публичные ключи подписантов счёта организации через Horizon.
+
+    Ошибка сети/счёта — пустой список (организация просто не видна).
+    """
+    from other.web_tools import http_session_manager
+
+    try:
+        response = await http_session_manager.get_web_request(
+            "GET",
+            f"{HORIZON_URL}/accounts/{main_address}",
+            return_type="json",
+        )
+    except Exception as e:
+        logger.warning(f"Error loading signers for {main_address}: {e}")
+        return []
+    if response.status != 200:
+        logger.warning(f"Horizon returned {response.status} for {main_address} signers")
+        return []
+    signers = (response.data or {}).get("signers", [])
+    return [
+        signer["key"]
+        for signer in signers
+        if signer.get("key") and int(signer.get("weight", 0)) > 0
+    ]
+
+
+async def load_org_signers(main_addresses: List[str]) -> Dict[str, set]:
+    """Подписанты нескольких MAIN_ADDRESS; Horizon дергается параллельно."""
+    unique_addresses = list(dict.fromkeys(addr for addr in main_addresses if addr))
+    signer_lists = await asyncio.gather(
+        *(_org_main_address_signers(addr) for addr in unique_addresses)
+    )
+    return dict(zip(unique_addresses, signer_lists))
+
+
+async def user_org_names(user_telegram_id: int) -> set:
+    """Имена организаций, видимых пользователю: он подписант MAIN_ADDRESS.
+
+    Тест-режим: Horizon не дергается — подписанты берутся из grist_cache
+    (EURMTL_users/account_id), как для прода, только источник счётов другой.
+    activate_stand мокает stellar_client.get_fund_signers; здесь свой путь.
+    """
+    from other import orgs_config
+
+    cache_key = f"org_names:{user_telegram_id}"
+    cached = await org_signers_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    org_addresses = {o.name: o.main_address for o in orgs_config.ORGS if o.main_address}
+
+    if config.test_mode:
+        # Стенд: вместо Horizon — таблицы двойника. Подписант счёта =
+        # пользователь, чей account_id совпадает с MAIN_ADDRESS.
+        signers_by_address: Dict[str, set] = {}
+        for address in org_addresses.values():
+            if not address:
+                continue
+            signers_by_address[address] = {address}
+        users_map = {}
+        for address in signers_by_address:
+            account_user = await grist_cash.get(address)
+            if account_user is not None:
+                users_map[address] = account_user
+        if not users_map:
+            from other.grist_cache import grist_cache
+
+            for address in signers_by_address:
+                user_record = grist_cache.find_by_index("EURMTL_users", address)
+                if user_record:
+                    users_map[address] = User(
+                        telegram_id=user_record["telegram_id"],
+                        account_id=user_record["account_id"],
+                        username=user_record.get("username"),
+                    )
+    else:
+        signers_by_address = await load_org_signers(list(org_addresses.values()))
+
+        signer_account_ids = {
+            signer_key
+            for signer_keys in signers_by_address.values()
+            for signer_key in signer_keys
+        }
+        users_map = await load_users_from_grist(list(signer_account_ids))
+
+    visible: set = set()
+    for org_name, address in org_addresses.items():
+        if not address:
+            continue
+        for signer_key in signers_by_address.get(address, []):
+            user = users_map.get(signer_key)
+            if (
+                user
+                and user.telegram_id
+                and int(user.telegram_id) == int(user_telegram_id)
+            ):
+                visible.add(org_name)
+                break
+
+    await org_signers_cache.set(cache_key, visible)
+    return visible
 
 
 async def get_grist_asset_by_code(asset_code: str) -> Optional[Dict[str, Any]]:

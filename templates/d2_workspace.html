@@ -1,0 +1,34 @@
+{% extends 'tabler_base.html' %}{% block page_title %}D2: Рабочее пространство{% endblock %}
+{% block content %}
+<div class="container-xl">
+    {% if no_orgs %}
+    <div class="empty">
+        <div class="empty-header">D2</div>
+        <p class="empty-title">У вас нет организаций</p>
+        <p class="empty-subtitle text-secondary">
+            Вы не подписант и не секретарь ни одной организации.
+        </p>
+    </div>
+    {% else %}
+    <div class="empty">
+        <div class="empty-header">D2</div>
+        <p class="empty-title">Выберите рабочее пространство</p>
+        <p class="empty-subtitle text-secondary">
+            Вопросы и шаблоны скоупятся к выбранной организации.
+        </p>
+        <div class="row mt-3">
+            {% for name in org_names %}
+            <div class="col-12 col-sm-6 col-md-4 mb-3">
+                <form method="post" action="/d2/workspace">
+                    <input type="hidden" name="org" value="{{ name }}">
+                    <button type="submit" class="btn btn-outline-primary w-100 py-3">
+                        {{ name }}
+                    </button>
+                </form>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

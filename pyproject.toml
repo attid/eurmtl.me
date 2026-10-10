@@ -14,7 +14,7 @@ dependencies = [
     "loguru",
     "cachetools",
     "sqlalchemy",
-    "aiogram",
+    "aiogram==3.31.0",
     "sulguk",
     "aiohttp",
     "asyncpg",
@@ -40,6 +40,7 @@ dependencies = [
     "quart-cors>=0.8.0",
     "sqlalchemy-firebird-async>=0.2.2",
     "pyjwt[crypto]>=2.12.1",
+    "beautifulsoup4>=4.15.0",
 ]
 
 [project.optional-dependencies]
