@@ -489,7 +489,7 @@ async def test_gora_signer_creates_question_published_to_gora_channel(client):
     send_mock.assert_awaited_once()
     assert send_mock.await_args.kwargs["chat_id"] == -10084131737
     fields = post_mock.await_args_list[-1].args[1]["records"][0]["fields"]
-    assert fields["ORG"] == "GORA"
+    assert "ORG" not in fields  # в D2_QUESTION_DATA нет колонки ORG (прод-схема)
     assert fields["TELEGRAM_LINK"] == "https://t.me/c/84131737/888"
 
 

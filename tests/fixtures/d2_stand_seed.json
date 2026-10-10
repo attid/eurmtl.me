@@ -123,8 +123,7 @@
     "EXTRA": "",
     "STATUS": "❗️ #active",
     "CREATED_BY": "itolstov",
-    "CREATED_AT": "2026-10-07 22:00:00",
-    "ORG": "PFM"
+    "CREATED_AT": "2026-10-07 22:00:00"
    },
    {
     "QUESTION_ID": 1,
@@ -135,8 +134,7 @@
     "EXTRA": "",
     "STATUS": "☑️ #next",
     "CREATED_BY": "itolstov",
-    "CREATED_AT": "2026-10-07 22:05:00",
-    "ORG": "PFM"
+    "CREATED_AT": "2026-10-07 22:05:00"
    },
    {
     "QUESTION_ID": 2,
@@ -147,8 +145,7 @@
     "EXTRA": "",
     "STATUS": "❗️ #active",
     "CREATED_BY": "itolstov",
-    "CREATED_AT": "2026-10-08 10:00:00",
-    "ORG": "PFM"
+    "CREATED_AT": "2026-10-08 10:00:00"
    },
    {
     "QUESTION_ID": 3,
@@ -159,8 +156,7 @@
     "EXTRA": "",
     "STATUS": "‼️ #control",
     "CREATED_BY": "itolstov",
-    "CREATED_AT": "2026-10-08 12:00:00",
-    "ORG": "PFM"
+    "CREATED_AT": "2026-10-08 12:00:00"
    },
    {
     "QUESTION_ID": 4,
@@ -171,8 +167,7 @@
     "EXTRA": "",
     "STATUS": "✅ #done",
     "CREATED_BY": "itolstov",
-    "CREATED_AT": "2026-10-08 15:00:00",
-    "ORG": "GORA"
+    "CREATED_AT": "2026-10-08 15:00:00"
    },
    {
     "QUESTION_ID": 5,
@@ -183,8 +178,7 @@
     "EXTRA": "",
     "STATUS": "❗️ #active",
     "CREATED_BY": "itolstov",
-    "CREATED_AT": "2026-10-09 09:00:00",
-    "ORG": "GORA"
+    "CREATED_AT": "2026-10-09 09:00:00"
    },
    {
     "QUESTION_ID": 6,
@@ -195,8 +189,7 @@
     "EXTRA": "",
     "STATUS": "❗️ #active",
     "CREATED_BY": "itolstov",
-    "CREATED_AT": "2026-10-09 11:00:00",
-    "ORG": "USDMM"
+    "CREATED_AT": "2026-10-09 11:00:00"
    },
    {
     "QUESTION_ID": 7,
@@ -207,8 +200,7 @@
     "EXTRA": "",
     "STATUS": "❗️ #active",
     "CREATED_BY": "itolstov",
-    "CREATED_AT": "2026-10-09 13:00:00",
-    "ORG": "USDMM"
+    "CREATED_AT": "2026-10-09 13:00:00"
    },
    {
     "QUESTION_ID": 8,
@@ -219,8 +211,7 @@
     "EXTRA": "",
     "STATUS": "❗️ #active",
     "CREATED_BY": "itolstov",
-    "CREATED_AT": "2026-10-09 14:00:00",
-    "ORG": "TFM"
+    "CREATED_AT": "2026-10-09 14:00:00"
    }
   ],
   "D2_QUESTION_TEMPLATES": [
