@@ -679,3 +679,11 @@ async def test_save_draft_does_not_touch_telegram(client):
     texts = [str(m) for m in flashes.values()]
     assert not any("не прошла" in t for t in texts)
     assert any("успешно обновлён" in t for t in texts)
+
+@pytest.fixture(autouse=True)
+def _clear_question_tables_cache():
+    """Кеш D2_* таблиц (TTL 5с) переживает тесты — чистим как остальные кеши."""
+    from routers.decision import question_tables_cache
+    question_tables_cache.cache.clear()
+    yield
+    question_tables_cache.cache.clear()
