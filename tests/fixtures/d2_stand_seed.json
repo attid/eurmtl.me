@@ -63,7 +63,7 @@
    }
   ],
   "D2_IMAGES": [],
-  "QUESTIONS": [
+  "D2_QUESTIONS": [
    {
     "NUMBER": 1,
     "TITLE": "Принять отчёт казначея",
@@ -113,7 +113,7 @@
     "ORG": "TFM"
    }
   ],
-  "QUESTION_DATA": [
+  "D2_QUESTION_DATA": [
    {
     "QUESTION_ID": 1,
     "READING": 1,
@@ -223,7 +223,7 @@
     "ORG": "TFM"
    }
   ],
-  "QUESTION_TEMPLATES": [
+  "D2_QUESTION_TEMPLATES": [
    {
     "TITLE": "Простой вопрос",
     "BODY": "<p>Текст простого вопроса</p>",

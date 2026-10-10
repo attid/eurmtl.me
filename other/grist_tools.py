@@ -40,10 +40,10 @@ class MTLGrist:
     # таблицы создаются автоматически при первом post_data.
     SP_USERS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "SP_USERS")
     SP_CHATS = GristTableConfig("hpZWKq729vw2D5AkG7oYYz", "SP_CHATS")
-    QUESTIONS = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "QUESTIONS")
-    QUESTION_DATA = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "QUESTION_DATA")
+    QUESTIONS = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "D2_QUESTIONS")
+    QUESTION_DATA = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "D2_QUESTION_DATA")
     QUESTION_TEMPLATES = GristTableConfig(
-        "3Fk4hjCv847GBx8ZTCPN2Y", "QUESTION_TEMPLATES"
+        "3Fk4hjCv847GBx8ZTCPN2Y", "D2_QUESTION_TEMPLATES"
     )
     # Картинки d2-вопросов: FILE — attachment, схему/таблицу создаёт владелец
     # руками в UI (сайт никогда не создаёт схему Grist).

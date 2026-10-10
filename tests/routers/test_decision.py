@@ -88,9 +88,9 @@ async def test_decision_fragment_edit_renders_sorted_items(client):
 
     async def fake(table, *a, **k):
         name = table.table_name
-        if name == "QUESTIONS":
+        if name == "D2_QUESTIONS":
             return questions
-        if name == "QUESTION_DATA":
+        if name == "D2_QUESTION_DATA":
             return question_data
         return []
 
