@@ -352,8 +352,8 @@ async def test_add_uses_session_org_not_form(client):
     assert questions_payload["records"][0]["fields"]["ORG"] == "GORA"
     data_payload = post_mock.await_args_list[-1].args[1]
     fields = data_payload["records"][0]["fields"]
-    # GORA: один канал 84131737 на все чтения.
-    assert fields["TELEGRAM_LINK"] == "https://t.me/c/84131737/777"
+    # GORA: один канал 1767165598 на все чтения.
+    assert fields["TELEGRAM_LINK"] == "https://t.me/c/1767165598/777"
 
 
 @pytest.mark.asyncio
@@ -446,7 +446,7 @@ async def test_gora_signer_does_not_see_pfm_questions_in_list(client):
 
 @pytest.mark.asyncio
 async def test_gora_signer_creates_question_published_to_gora_channel(client):
-    """Подписант GORA создаёт вопрос: публикация уходит в канал GORA 84131737."""
+    """Подписант GORA создаёт вопрос: публикация уходит в канал GORA 1767165598."""
     await _login(client, telegram_id=GORA_SIGNER_ID, username="gora")
     await _set_org(client, "GORA")
     calls = {"questions": 0}
@@ -498,10 +498,10 @@ async def test_gora_signer_creates_question_published_to_gora_channel(client):
 
     assert response.status_code == 302
     send_mock.assert_awaited_once()
-    assert send_mock.await_args.kwargs["chat_id"] == -10084131737
+    assert send_mock.await_args.kwargs["chat_id"] == -1001767165598
     fields = post_mock.await_args_list[-1].args[1]["records"][0]["fields"]
     assert "ORG" not in fields  # в D2_QUESTION_DATA нет колонки ORG (прод-схема)
-    assert fields["TELEGRAM_LINK"] == "https://t.me/c/84131737/888"
+    assert fields["TELEGRAM_LINK"] == "https://t.me/c/1767165598/888"
 
 
 @pytest.mark.asyncio
@@ -540,10 +540,10 @@ async def test_gora_secretary_sees_gora_publishes_ok_and_pfm_hidden(client):
 
         assert response.status_code == 302
         send_mock.assert_awaited_once()
-        assert send_mock.await_args.kwargs["chat_id"] == -10084131737
+        assert send_mock.await_args.kwargs["chat_id"] == -1001767165598
         patched = patch_mock.await_args.args[1]
         assert patched["records"][0]["fields"]["TELEGRAM_LINK"] == (
-            "https://t.me/c/84131737/999"
+            "https://t.me/c/1767165598/999"
         )
 
 

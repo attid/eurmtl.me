@@ -30,7 +30,7 @@ ORGS: tuple[Org, ...] = (
     Org(
         "GORA",
         "GCVTXUMIUAENJH2XY4AOVGTJKPSCOXW3746PUH7QFGPBDOPPHYLIGORA",
-        ("84131737",),
+        ("1767165598",),  # канал -1001767165598 (старая группа 84131737 была без -100)
         3,  # один канал на 3 чтения
     ),
     Org(
