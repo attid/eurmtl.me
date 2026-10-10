@@ -14,7 +14,7 @@ dependencies = [
     "loguru",
     "cachetools",
     "sqlalchemy",
-    "aiogram",
+    "aiogram==3.31.0",
     "sulguk",
     "aiohttp",
     "asyncpg",
