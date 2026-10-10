@@ -25,6 +25,37 @@ _TABLES: dict[str, dict[str, list[dict]]] = {}
 # URL, который пропишем таблицам MTLGrist в тест-режиме.
 LOCAL_BASE_URL = "http://localhost:8000/api/docs"
 
+# Схема колонок продового Grist-дока 3Fk4hjCv847GBx8ZTCPN2Y: дабл отвергает
+# неизвестные поля, как реальный Grist (400), чтобы расхождение код↔схема
+# ловилось тестами, а не продой. Д2-таблицы поддерживать при изменении схемы.
+_D2_SCHEMAS: dict[str, set[str]] = {
+    "D2_QUESTIONS": {"NUMBER", "TITLE", "READING", "ORG"},
+    "D2_QUESTION_DATA": {
+        "QUESTION_ID",
+        "READING",
+        "UUID",
+        "TELEGRAM_LINK",
+        "BODY",
+        "STATUS",
+        "EXTRA",
+        "CREATED_BY",
+        "CREATED_AT",
+    },
+    "D2_QUESTION_TEMPLATES": {"TITLE", "BODY", "ORG"},
+    "D2_IMAGES": {"FILE", "ORG", "UPLOADED_BY", "CREATED_AT"},
+}
+
+
+def _unknown_columns(table_name: str, payload: dict) -> list[str]:
+    """Поля POST-записей, которых нет в продовой схеме таблицы."""
+    known = _D2_SCHEMAS.get(table_name)
+    if known is None:
+        return []
+    unknown = set()
+    for record in payload.get("records", []):
+        unknown |= set(record.get("fields", {})) - known
+    return sorted(unknown)
+
 
 def load_seed(path: str) -> None:
     """Загружает сид-данные из JSON: {doc_id: {table: [ {field: value} ]}}."""
@@ -61,6 +92,10 @@ async def grist_fetch(doc_id: str, table_name: str):
 @blueprint.route("/api/docs/<doc_id>/tables/<table_name>/records", methods=("POST",))
 async def grist_post(doc_id: str, table_name: str):
     payload = await request.get_json()
+    unknown = _unknown_columns(table_name, payload)
+    if unknown:
+        # Реальный Grist тоже отвечает 400 на несуществующие колонки.
+        return jsonify({"error": f"Invalid fields: {', '.join(unknown)}"}), 400
     doc_tables = _TABLES.setdefault(doc_id, {})
     rows = doc_tables.setdefault(table_name, [])
     next_id = max((r["id"] for r in rows), default=0) + 1

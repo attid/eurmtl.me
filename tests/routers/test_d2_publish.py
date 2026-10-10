@@ -107,6 +107,41 @@ async def test_add_draft_creates_question_without_tg(client):
     data_payload = post_mock.await_args_list[-1].args[1]
     fields = data_payload["records"][0]["fields"]
     assert "TELEGRAM_LINK" not in fields  # черновик = пустой TELEGRAM_LINK
+    assert "ORG" not in fields  # в D2_QUESTION_DATA нет колонки ORG (прод-схема)
+
+
+@pytest.mark.asyncio
+async def test_dev_stand_rejects_unknown_columns(client):
+    """Дабл Grist валидирует схему: неизвестное поле = 400, как реальный Grist.
+
+    Регрессия-2026-10-10: post ORG в D2_QUESTION_DATA падал 400 на проде,
+    тесты проходили, потому что дабл принимал любые поля.
+    """
+    from quart import Quart
+
+    from other.dev_stand import _TABLES, blueprint as stand
+    from other.grist_tools import MTLGrist
+
+    doc = MTLGrist.QUESTION_DATA.access_id
+    table = MTLGrist.QUESTION_DATA.table_name
+    _TABLES.pop(doc, None)  # чистый стенд для детерминизма
+    known = {"UUID": "x", "BODY": "b", "STATUS": "❗️ #active"}
+    bad = dict(known, ORG="PFM")  # колонки нет в продовой схеме
+
+    app = Quart(__name__)
+    app.register_blueprint(stand)
+    test_client = app.test_client()
+    ok = await test_client.post(
+        f"/api/docs/{doc}/tables/{table}/records",
+        json={"records": [{"fields": known}]},
+    )
+    assert ok.status_code == 200
+    bad_resp = await test_client.post(
+        f"/api/docs/{doc}/tables/{table}/records",
+        json={"records": [{"fields": bad}]},
+    )
+    assert bad_resp.status_code == 400
+    assert _TABLES[doc][table][-1]["fields"] == known  # битая запись не попала
 
 
 @pytest.mark.asyncio

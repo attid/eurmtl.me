@@ -707,7 +707,6 @@ async def cmd_d2_show(question_uuid):
                     "STATUS": status,
                     "CREATED_BY": username,
                     "CREATED_AT": datetime.now().isoformat(),
-                    "ORG": org,
                 }
                 if message_id is not None and channel is not None:
                     fields["TELEGRAM_LINK"] = f"https://t.me/c/{channel}/{message_id}"
@@ -999,7 +998,6 @@ async def cmd_d2_add():
         "STATUS": status,
         "CREATED_BY": username,
         "CREATED_AT": datetime.now().isoformat(),
-        "ORG": org,
     }
     if message_id is not None and channel is not None:
         fields["TELEGRAM_LINK"] = f"https://t.me/c/{channel}/{message_id}"
