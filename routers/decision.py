@@ -25,10 +25,20 @@ from other.cache_tools import AsyncTTLCache
 from db.sql_models import Decisions
 from other.gspread_tools import gs_update_decision, gs_get_last_id, gs_save_new_decision
 from services.stellar_client import check_user_weight
+from services.rich_converter import html_to_rich_message
 from other.telegram_tools import skynet_bot
 from other.grist_tools import DEFAULT_ORG_NAME
 
 blueprint = Blueprint("decision", __name__)
+
+
+def _d2_base_url() -> str:
+    """Origin сайта для абсолютных URL картинок в rich-посте
+    (Telegram скачивает /d2/img/<id> сам): request.host текущего запроса."""
+    scheme = request.scheme if request else "https"
+    host = request.host if request else "eurmtl.me"
+    return f"{scheme}://{host}"
+
 
 D2_PAGE_SIZE = 20
 D2_PAGER_WINDOW = 5
@@ -228,6 +238,77 @@ def get_full_text(status, start_text, links_url, uuid_url, username):
     full_text.append(f'<a href="http://eurmtl.me/d/{uuid_url}">Edit on eurmtl.me</a>')
     full_text.append(f"Added by {username}")
     return "<br>".join(full_text)
+
+
+D2_RICH_ENABLED = True  # kill-switch пилота rich-постов
+
+
+def _d2_rich_blocks(inquiry: str):
+    """Блоки InputRichMessage из HTML тела вопроса; None — конвертация не
+    удалась (публикатор уйдёт в фолбэк sendMessage+SULGUK)."""
+    if not D2_RICH_ENABLED:
+        return None
+    try:
+        blocks = html_to_rich_message(inquiry, _d2_base_url())["blocks"]
+    except Exception as e:
+        logger.warning(f"D2 rich convert failed, fallback to sulguk: {e}")
+        return None
+    if not blocks:
+        logger.warning("D2 rich convert produced no blocks, fallback to sulguk")
+        return None
+    return blocks
+
+
+async def _d2_send_rich(channel: str, inquiry: str):
+    """sendRichMessage в канал. Возвращает message_id или None (ошибка уже
+    залогирована warning'ом — вызывающий решает про фолбэк)."""
+    blocks = _d2_rich_blocks(inquiry)
+    if blocks is None:
+        return None
+    try:
+        msg = await skynet_bot.send_rich_message(
+            chat_id=int(f"-100{channel}"),
+            rich_message={"blocks": blocks},
+        )
+        return msg.message_id
+    except Exception as e:
+        logger.warning(f"D2 sendRichMessage failed, fallback to sulguk: {e}")
+        return None
+
+
+async def _d2_edit_rich(channel: str, message_id, inquiry: str) -> bool:
+    """editMessageText(rich_message=...) опубликованного поста. message_id
+    передаётся строкой как есть (из TELEGRAM_LINK), приводим к int.
+    False — не получилось (включая «старый пост был не rich»): вызывающий
+    републикует или падает в фолбэк."""
+    blocks = _d2_rich_blocks(inquiry)
+    if blocks is None:
+        return False
+    try:
+        await skynet_bot.edit_message_text(
+            chat_id=int(f"-100{channel}"),
+            message_id=int(message_id),
+            rich_message={"blocks": blocks},
+        )
+        return True
+    except Exception as e:
+        logger.warning(f"D2 editMessageText(rich) failed: {e}")
+        return False
+
+
+async def _d2_send_legacy(channel: str, text: str):
+    """Старый путь: sendMessage + SULGUK. Возвращает message_id или None."""
+    try:
+        msg = await skynet_bot.send_message(
+            chat_id=int(f"-100{channel}"),
+            text=text,
+            parse_mode=SULGUK_PARSE_MODE,
+            disable_web_page_preview=True,
+        )
+        return msg.message_id
+    except Exception as e:
+        logger.info(f"Error with telegram publishing: {e}")
+        return None
 
 
 @blueprint.route("/decision", methods=("GET", "POST"))
@@ -518,18 +599,27 @@ async def cmd_d2_show(question_uuid):
                     # «Опубликовать», править там нечего.
                     pass
                 else:
-                    try:
-                        await skynet_bot.edit_message_text(
-                            chat_id=int(
-                                f"-100{await resolve_channel(org, new_reading)}"
-                            ),
-                            text=text,
-                            parse_mode=SULGUK_PARSE_MODE,
-                            disable_web_page_preview=True,
-                            message_id=telegram_link.split("/")[-1],
+                    channel = await resolve_channel(org, new_reading)
+                    edited = False
+                    if channel is not None:
+                        edited = await _d2_edit_rich(
+                            channel, telegram_link.split("/")[-1], inquiry
                         )
-                    except Exception as e:
-                        logger.info(f"Error with telegram publishing: {e}")
+                        if not edited:
+                            # Пост мог быть не rich (старые публикации) —
+                            # правим как раньше, обычным сообщением.
+                            try:
+                                await skynet_bot.edit_message_text(
+                                    chat_id=int(f"-100{channel}"),
+                                    text=text,
+                                    parse_mode=SULGUK_PARSE_MODE,
+                                    disable_web_page_preview=True,
+                                    message_id=int(telegram_link.split("/")[-1]),
+                                )
+                                edited = True
+                            except Exception as e:
+                                logger.info(f"Error with telegram publishing: {e}")
+                    if not edited:
                         await flash("Вопрос сохранён, но правка в Telegram не прошла.")
                 await flash("Вопрос успешно обновлён.", "good")
                 return redirect(f"/d2/{question_uuid}")
@@ -538,17 +628,11 @@ async def cmd_d2_show(question_uuid):
                 new_uuid = uuid.uuid4().hex
                 text = get_full_text(status, inquiry, links_url, new_uuid, username)
                 channel = await resolve_channel(org, new_reading)
-                try:
-                    msg = await skynet_bot.send_message(
-                        chat_id=int(f"-100{channel}"),
-                        text=text,
-                        parse_mode=SULGUK_PARSE_MODE,
-                        disable_web_page_preview=True,
-                    )
-                    message_id = msg.message_id
-                except Exception as e:
-                    logger.info(f"Error with telegram publishing: {e}")
-                    message_id = None
+                message_id = None
+                if channel is not None:
+                    message_id = await _d2_send_rich(channel, inquiry)
+                    if message_id is None:
+                        message_id = await _d2_send_legacy(channel, text)
 
                 fields = {
                     "QUESTION_ID": question["id"],
@@ -620,12 +704,6 @@ async def cmd_d2_show(question_uuid):
     )
 
 
-D2_EDIT_NOT_FOUND_MARKERS = (
-    "message to edit not found",
-    "message to republish not found",
-)
-
-
 @blueprint.route("/d2/<question_uuid>/publish", methods=("POST",))
 async def cmd_d2_publish(question_uuid):
     session["return_to"] = request.url
@@ -648,45 +726,28 @@ async def cmd_d2_publish(question_uuid):
     inquiry = data_row.get("BODY") or ""
     reading = _readings_int(data_row) or 1
     username = data_row.get("CREATED_BY") or ""
-    text = get_full_text(status, inquiry, links_url, question_uuid, username)
 
     telegram_link = data_row.get("TELEGRAM_LINK") or ""
     channel = await resolve_channel(org, reading)
     published = False
-    if telegram_link:
-        # Републикация: сначала пробуем поправить существующий пост.
-        try:
-            await skynet_bot.edit_message_text(
-                chat_id=int(f"-100{channel}"),
-                text=text,
-                parse_mode=SULGUK_PARSE_MODE,
-                disable_web_page_preview=True,
-                message_id=telegram_link.split("/")[-1],
-            )
-            published = True
+    if telegram_link and channel is not None:
+        # Републикация: сначала пробуем поправить существующий пост rich'ем.
+        # Не вышло (пост мёртв или был не rich) — уходим на ветку публикации
+        # ниже.
+        published = await _d2_edit_rich(channel, telegram_link.split("/")[-1], inquiry)
+        if published:
             await flash("Пост в Telegram обновлён.", "good")
-        except Exception as e:
-            if not any(
-                marker in str(e).lower() for marker in D2_EDIT_NOT_FOUND_MARKERS
-            ):
-                logger.info(f"Error with telegram publishing: {e}")
-                await flash("Не удалось обновить пост в Telegram.")
-                return redirect(f"/d2/{question_uuid}")
-            # Пост мёртв — уходим на ветку send_message ниже.
 
-    if not published:
-        try:
-            msg = await skynet_bot.send_message(
-                chat_id=int(f"-100{channel}"),
-                text=text,
-                parse_mode=SULGUK_PARSE_MODE,
-                disable_web_page_preview=True,
-            )
-        except Exception as e:
-            logger.info(f"Error with telegram publishing: {e}")
+    if not published and channel is not None:
+        # Публикация (в т.ч. републикация мёртвого/не-rich поста).
+        message_id = await _d2_send_rich(channel, inquiry)
+        if message_id is None:
+            text = get_full_text(status, inquiry, links_url, question_uuid, username)
+            message_id = await _d2_send_legacy(channel, text)
+        if message_id is None:
             await flash("Публикация в Telegram не прошла.")
             return redirect(f"/d2/{question_uuid}")
-        new_link = f"https://t.me/c/{channel}/{msg.message_id}"
+        new_link = f"https://t.me/c/{channel}/{message_id}"
         if new_link != telegram_link:
             await grist_manager.patch_data(
                 MTLGrist.QUESTION_DATA,
@@ -837,23 +898,17 @@ async def cmd_d2_add():
         q["id"] for q in questions if str(q.get("NUMBER")) == str(question_number)
     )
 
-    # 2. Сообщение в Telegram (кроме черновика).
+    # 2. Сообщение в Telegram (кроме черновика): sendRichMessage, фолбэк —
+    # sendMessage+SULGUK.
     message_id = None
     channel = None
     if not as_draft:
-        text = get_full_text(status, inquiry, [[], [], []], d_uuid, username)
         channel = await resolve_channel(org, reading)
-        try:
-            msg = await skynet_bot.send_message(
-                chat_id=int(f"-100{channel}"),
-                text=text,
-                parse_mode=SULGUK_PARSE_MODE,
-                disable_web_page_preview=True,
-            )
-            message_id = msg.message_id
-        except Exception as e:
-            logger.info(f"Error with telegram publishing: {e}")
-            message_id = None
+        if channel is not None:
+            message_id = await _d2_send_rich(channel, inquiry)
+            if message_id is None:
+                text = get_full_text(status, inquiry, [[], [], []], d_uuid, username)
+                message_id = await _d2_send_legacy(channel, text)
 
     fields = {
         "QUESTION_ID": question_id,

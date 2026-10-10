@@ -128,8 +128,9 @@ async def grist_attachments_post(doc_id: str):
     return jsonify(ids)
 
 
-@blueprint.route("/api/docs/<doc_id>/attachments/<int:attachment_id>/download",
-                 methods=("GET",))
+@blueprint.route(
+    "/api/docs/<doc_id>/attachments/<int:attachment_id>/download", methods=("GET",)
+)
 async def grist_attachment_download(doc_id: str, attachment_id: int):
     entry = _ATTACHMENTS.get(doc_id, {}).get(attachment_id)
     if entry is None:
@@ -137,9 +138,13 @@ async def grist_attachment_download(doc_id: str, attachment_id: int):
     data, filename = entry
     from quart import Response
 
-    return Response(data, mimetype="application/octet-stream", headers={
-        "Content-Disposition": f'attachment; filename="{filename}"',
-    })
+    return Response(
+        data,
+        mimetype="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 @blueprint.route("/dev/tg-log", methods=("GET",))
@@ -167,7 +172,8 @@ def tg_mock_record(method: str, payload: dict) -> dict:
         "payload": json.dumps(payload, ensure_ascii=False),
     }
     TG_CALL_LOG.append(entry)
-    # aiogram шлёт camelCase-имена методов API: sendMessage, editMessageText.
+    # aiogram шлёт camelCase-имена методов API: sendMessage, editMessageText,
+    # sendRichMessage.
     if method in ("sendMessage", "editMessageText"):
         # Поля ровно те, что требует pydantic-схема aiogram Message.
         return {
@@ -176,7 +182,26 @@ def tg_mock_record(method: str, payload: dict) -> dict:
                 "message_id": payload.get("message_id", 1000 + len(TG_CALL_LOG)),
                 "date": int(time.time()),
                 "chat": {"id": payload.get("chat_id", 0), "type": "private"},
-                "text": payload.get("text", ""),
+                "text": payload.get(
+                    "text", "rich" if payload.get("rich_message") else ""
+                ),
+            },
+        }
+    if method == "sendRichMessage":
+        # rich_message приходит строкой (JSON) в multipart-форме; Message
+        # требует message_id/date/chat — text фиктивный.
+        rich = payload.get("rich_message", "")
+        try:
+            blocks = len(json.loads(rich).get("blocks", [])) if rich else 0
+        except ValueError:
+            blocks = 0
+        return {
+            "ok": True,
+            "result": {
+                "message_id": 1000 + len(TG_CALL_LOG),
+                "date": int(time.time()),
+                "chat": {"id": payload.get("chat_id", 0), "type": "private"},
+                "text": f"rich ({blocks} blocks)",
             },
         }
     return {"ok": True, "result": True}
