@@ -618,7 +618,6 @@ async def test_add_same_number_in_other_org_allowed(client):
         return True
 
     with (
-        patch("routers.decision.check_user_weight", new=AsyncMock(return_value=1)),
         _secretaries_mock({GORA_ADDRESS: {SECRETARY_ID}}),
         _user_org_names_mock({"GORA"}),
         _tables_mock(
