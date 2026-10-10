@@ -11,13 +11,43 @@
     "NUMBER": 2,
     "TITLE": "Купить сервер для ноды",
     "READING": 2,
-    "ORG": "GORA"
+    "ORG": "PFM"
    },
    {
     "NUMBER": 3,
-    "TITLE": "Спорный вопрос без чтений",
+    "TITLE": "Обновить сайт фонда",
+    "READING": 1,
+    "ORG": "PFM"
+   },
+   {
+    "NUMBER": 1,
+    "TITLE": "Купить сервер для ноды",
+    "READING": 2,
+    "ORG": "GORA"
+   },
+   {
+    "NUMBER": 2,
+    "TITLE": "Зал базе новый бэкап-сервер",
+    "READING": 1,
+    "ORG": "GORA"
+   },
+   {
+    "NUMBER": 1,
+    "TITLE": "Открыть представительство в Дубае",
     "READING": 1,
     "ORG": "USDMM"
+   },
+   {
+    "NUMBER": 2,
+    "TITLE": "Спонсорская помощь шахматному клубу",
+    "READING": 1,
+    "ORG": "USDMM"
+   },
+   {
+    "NUMBER": 1,
+    "TITLE": "Первый вопрос TFM (заглушка)",
+    "READING": 1,
+    "ORG": "TFM"
    }
   ],
   "QUESTION_DATA": [
@@ -48,26 +78,86 @@
    {
     "QUESTION_ID": 2,
     "READING": 1,
-    "UUID": "aaaabbbbccccddddeeeeffff00003333",
-    "TELEGRAM_LINK": "",
-    "BODY": "Вопрос два, только первое чтение.",
+    "UUID": "aaaabbbbccccddddeeeeffff00005555",
+    "TELEGRAM_LINK": "https://t.me/c/1863399780/102",
+    "BODY": "Купить сервер: motherboard + EPYC.",
     "EXTRA": "",
-    "STATUS": "✅ #done",
-    "CREATED_BY": "attid",
-    "CREATED_AT": "2026-10-07 22:10:00",
-    "ORG": "GORA"
+    "STATUS": "❗️ #active",
+    "CREATED_BY": "itolstov",
+    "CREATED_AT": "2026-10-08 10:00:00",
+    "ORG": "PFM"
    },
    {
     "QUESTION_ID": 3,
     "READING": 1,
-    "UUID": "aaaabbbbccccddddeeeeffff00004444",
-    "TELEGRAM_LINK": "https://t.me/c/1789207509/103",
-    "BODY": "Вопрос три, одно чтение, активный.",
+    "UUID": "aaaabbbbccccddddeeeeffff00006666",
+    "TELEGRAM_LINK": "https://t.me/c/1863399780/103",
+    "BODY": "Обновить сайт: дизайн-макет готов.",
+    "EXTRA": "",
+    "STATUS": "‼️ #control",
+    "CREATED_BY": "itolstov",
+    "CREATED_AT": "2026-10-08 12:00:00",
+    "ORG": "PFM"
+   },
+   {
+    "QUESTION_ID": 4,
+    "READING": 1,
+    "UUID": "aaaabbbbccccddddeeeeffff00003333",
+    "TELEGRAM_LINK": "",
+    "BODY": "Купить сервер для GORA-ноды.",
+    "EXTRA": "",
+    "STATUS": "✅ #done",
+    "CREATED_BY": "itolstov",
+    "CREATED_AT": "2026-10-08 15:00:00",
+    "ORG": "GORA"
+   },
+   {
+    "QUESTION_ID": 5,
+    "READING": 1,
+    "UUID": "aaaabbbbccccddddeeeeffff00007777",
+    "TELEGRAM_LINK": "https://t.me/c/84131737/50",
+    "BODY": "Новый бэкап-сервер для зала.",
     "EXTRA": "",
     "STATUS": "❗️ #active",
     "CREATED_BY": "itolstov",
-    "CREATED_AT": "2026-10-07 22:15:00",
+    "CREATED_AT": "2026-10-09 09:00:00",
+    "ORG": "GORA"
+   },
+   {
+    "QUESTION_ID": 6,
+    "READING": 1,
+    "UUID": "aaaabbbbccccddddeeeeffff00004444",
+    "TELEGRAM_LINK": "https://t.me/c/1789207509/103",
+    "BODY": "Открытие представительства: юристы готовы.",
+    "EXTRA": "",
+    "STATUS": "❗️ #active",
+    "CREATED_BY": "itolstov",
+    "CREATED_AT": "2026-10-09 11:00:00",
     "ORG": "USDMM"
+   },
+   {
+    "QUESTION_ID": 7,
+    "READING": 1,
+    "UUID": "aaaabbbbccccddddeeeeffff00008888",
+    "TELEGRAM_LINK": "",
+    "BODY": "Спонсорская помощь: 50 000 руб.",
+    "EXTRA": "",
+    "STATUS": "❗️ #active",
+    "CREATED_BY": "itolstov",
+    "CREATED_AT": "2026-10-09 13:00:00",
+    "ORG": "USDMM"
+   },
+   {
+    "QUESTION_ID": 8,
+    "READING": 1,
+    "UUID": "aaaabbbbccccddddeeeeffff00009999",
+    "TELEGRAM_LINK": "",
+    "BODY": "Заглушка для TFM.",
+    "EXTRA": "",
+    "STATUS": "❗️ #active",
+    "CREATED_BY": "itolstov",
+    "CREATED_AT": "2026-10-09 14:00:00",
+    "ORG": "TFM"
    }
   ],
   "QUESTION_TEMPLATES": [
@@ -84,7 +174,22 @@
    {
     "TITLE": "Заявка на расход",
     "BODY": "<p>Прошу выделить сумму</p>",
+    "ORG": "PFM"
+   },
+   {
+    "TITLE": "Заявка на расход",
+    "BODY": "<p>Прошу выделить сумму для GORA</p>",
     "ORG": "GORA"
+   },
+   {
+    "TITLE": "Решение совета",
+    "BODY": "<p>Текст решения совета GORA</p>",
+    "ORG": "GORA"
+   },
+   {
+    "TITLE": "Уведомление",
+    "BODY": "<p>Уведомление партнёрам USDMM</p>",
+    "ORG": "USDMM"
    }
   ],
   "SP_USERS": [
