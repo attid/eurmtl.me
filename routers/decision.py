@@ -243,13 +243,15 @@ def get_full_text(status, start_text, links_url, uuid_url, username):
 D2_RICH_ENABLED = True  # kill-switch пилота rich-постов
 
 
-def _d2_rich_blocks(inquiry: str):
-    """Блоки InputRichMessage из HTML тела вопроса; None — конвертация не
-    удалась (публикатор уйдёт в фолбэк sendMessage+SULGUK)."""
+def _d2_rich_blocks(status: str, inquiry: str):
+    """Блоки InputRichMessage: статус (жирной первой строкой, как в легаси-
+    постах) + тело вопроса; None — конвертация не удалась (публикатор уйдёт
+    в фолбэк sendMessage+SULGUK)."""
     if not D2_RICH_ENABLED:
         return None
+    html = f"<p><b>{status}</b></p>{inquiry}"
     try:
-        blocks = html_to_rich_message(inquiry, _d2_base_url())["blocks"]
+        blocks = html_to_rich_message(html, _d2_base_url())["blocks"]
     except Exception as e:
         logger.warning(f"D2 rich convert failed, fallback to sulguk: {e}")
         return None
@@ -259,10 +261,10 @@ def _d2_rich_blocks(inquiry: str):
     return blocks
 
 
-async def _d2_send_rich(channel: str, inquiry: str):
+async def _d2_send_rich(channel: str, status: str, inquiry: str):
     """sendRichMessage в канал. Возвращает message_id или None (ошибка уже
     залогирована warning'ом — вызывающий решает про фолбэк)."""
-    blocks = _d2_rich_blocks(inquiry)
+    blocks = _d2_rich_blocks(status, inquiry)
     if blocks is None:
         return None
     try:
@@ -276,12 +278,12 @@ async def _d2_send_rich(channel: str, inquiry: str):
         return None
 
 
-async def _d2_edit_rich(channel: str, message_id, inquiry: str) -> bool:
+async def _d2_edit_rich(channel: str, message_id, status: str, inquiry: str) -> bool:
     """editMessageText(rich_message=...) опубликованного поста. message_id
     передаётся строкой как есть (из TELEGRAM_LINK), приводим к int.
     False — не получилось (включая «старый пост был не rich»): вызывающий
     републикует или падает в фолбэк."""
-    blocks = _d2_rich_blocks(inquiry)
+    blocks = _d2_rich_blocks(status, inquiry)
     if blocks is None:
         return False
     try:
@@ -625,7 +627,7 @@ async def cmd_d2_show(question_uuid):
                     edited = False
                     if channel is not None:
                         edited = await _d2_edit_rich(
-                            channel, telegram_link.split("/")[-1], inquiry
+                            channel, telegram_link.split("/")[-1], status, inquiry
                         )
                         if not edited:
                             # Пост мог быть не rich (старые публикации) —
@@ -670,7 +672,7 @@ async def cmd_d2_show(question_uuid):
                 channel = await resolve_channel(org, new_reading)
                 message_id = None
                 if channel is not None:
-                    message_id = await _d2_send_rich(channel, inquiry)
+                    message_id = await _d2_send_rich(channel, status, inquiry)
                     if message_id is None:
                         message_id = await _d2_send_legacy(channel, text)
 
@@ -777,13 +779,13 @@ async def cmd_d2_publish(question_uuid):
         # Републикация: сначала пробуем поправить существующий пост rich'ем.
         # Не вышло (пост мёртв или был не rich) — уходим на ветку публикации
         # ниже.
-        published = await _d2_edit_rich(channel, telegram_link.split("/")[-1], inquiry)
+        published = await _d2_edit_rich(channel, telegram_link.split("/")[-1], status, inquiry)
         if published:
             await flash("Пост в Telegram обновлён.", "good")
 
     if not published and channel is not None:
         # Публикация (в т.ч. републикация мёртвого/не-rich поста).
-        message_id = await _d2_send_rich(channel, inquiry)
+        message_id = await _d2_send_rich(channel, status, inquiry)
         if message_id is None:
             text = get_full_text(status, inquiry, links_url, question_uuid, username)
             message_id = await _d2_send_legacy(channel, text)
@@ -950,7 +952,7 @@ async def cmd_d2_add():
     if not as_draft:
         channel = await resolve_channel(org, reading)
         if channel is not None:
-            message_id = await _d2_send_rich(channel, inquiry)
+            message_id = await _d2_send_rich(channel, status, inquiry)
             if message_id is None:
                 text = get_full_text(status, inquiry, [[], [], []], d_uuid, username)
                 message_id = await _d2_send_legacy(channel, text)
