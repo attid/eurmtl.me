@@ -111,7 +111,7 @@ async def test_add_draft_creates_question_without_tg(client):
 
 @pytest.mark.asyncio
 async def test_add_publish_still_sends_message(client):
-    """Без чекбокса поведение прежнее: send_message и ссылка."""
+    """Без чекбокса: sendRichMessage с блоками конвертера и ссылка."""
     async with client.session_transaction() as session:
         session["userdata"] = SECRETARY_SESSION
         session["user_id"] = SECRETARY_SESSION["id"]
@@ -140,8 +140,10 @@ async def test_add_publish_still_sends_message(client):
             "other.grist_tools.grist_manager.post_data", new=AsyncMock()
         ) as post_mock,
         patch(
-            "routers.decision.skynet_bot.send_message", new=AsyncMock(return_value=msg)
-        ),
+            "routers.decision.skynet_bot.send_rich_message",
+            new=AsyncMock(return_value=msg),
+        ) as rich_mock,
+        patch("routers.decision.skynet_bot.send_message", new=AsyncMock()) as send_mock,
     ):
         response = await client.post(
             "/d2/add",
@@ -155,9 +157,74 @@ async def test_add_publish_still_sends_message(client):
         )
 
     assert response.status_code == 302
+    send_mock.assert_not_awaited()  # rich прошёл — легаси не нужен
+    rich_kwargs = rich_mock.await_args.kwargs
+    assert rich_kwargs["chat_id"] == -1001863399780
+    blocks = rich_kwargs["rich_message"]["blocks"]
+    assert blocks == [{"type": "paragraph", "text": "Body"}]
     fields = post_mock.await_args_list[-1].args[1]["records"][0]["fields"]
     # Воркспейс PFM: канал первого чтения из orgs_config.
     assert fields["TELEGRAM_LINK"] == "https://t.me/c/1863399780/4242"
+
+
+@pytest.mark.asyncio
+async def test_add_publish_falls_back_to_legacy_on_convert_error(client):
+    """Конвертер упал → sendMessage+SULGUK (пилот не блокируем)."""
+    async with client.session_transaction() as session:
+        session["userdata"] = SECRETARY_SESSION
+        session["user_id"] = SECRETARY_SESSION["id"]
+        session["d2_org"] = "PFM"
+
+    msg = AsyncMock()
+    msg.message_id = 4243
+    questions = [{"id": 9, "NUMBER": 75, "TITLE": "", "READING": 1}]
+    calls = {"questions": 0}
+
+    async def fake(table, *a, **k):
+        name = table.table_name
+        if name == "QUESTIONS":
+            calls["questions"] += 1
+            return questions if calls["questions"] >= 2 else []
+        return []
+
+    with (
+        _secretaries_mock({PFM_ADDRESS: {1837984392}}),
+        patch(
+            "other.grist_tools.grist_manager.load_table_data",
+            new=AsyncMock(side_effect=fake),
+        ),
+        patch(
+            "other.grist_tools.grist_manager.post_data", new=AsyncMock()
+        ) as post_mock,
+        patch(
+            "routers.decision.html_to_rich_message",
+            side_effect=ValueError("boom"),
+        ),
+        patch(
+            "routers.decision.skynet_bot.send_rich_message", new=AsyncMock()
+        ) as rich_mock,
+        patch(
+            "routers.decision.skynet_bot.send_message",
+            new=AsyncMock(return_value=msg),
+        ) as send_mock,
+    ):
+        response = await client.post(
+            "/d2/add",
+            form={
+                "question_number": "75",
+                "short_subject": "Topic",
+                "inquiry": "<p>Body</p>",
+                "status": "❗️ #active",
+                "reading": "1",
+            },
+        )
+
+    assert response.status_code == 302
+    rich_mock.assert_not_awaited()
+    send_mock.assert_awaited_once()
+    assert send_mock.await_args.kwargs["parse_mode"] is not None
+    fields = post_mock.await_args_list[-1].args[1]["records"][0]["fields"]
+    assert fields["TELEGRAM_LINK"] == "https://t.me/c/1863399780/4243"
 
 
 @pytest.mark.asyncio
@@ -178,8 +245,10 @@ async def test_publish_draft_by_secretary(client):
             "other.grist_tools.grist_manager.patch_data", new=AsyncMock()
         ) as patch_mock,
         patch(
-            "routers.decision.skynet_bot.send_message", new=AsyncMock(return_value=msg)
-        ) as send_mock,
+            "routers.decision.skynet_bot.send_rich_message",
+            new=AsyncMock(return_value=msg),
+        ) as rich_mock,
+        patch("routers.decision.skynet_bot.send_message", new=AsyncMock()) as send_mock,
         patch(
             "routers.decision.skynet_bot.edit_message_text", new=AsyncMock()
         ) as edit_mock,
@@ -218,8 +287,13 @@ async def test_publish_draft_by_secretary(client):
         response = await client.post(f"/d2/{DRAFT_UUID}/publish")
 
     assert response.status_code == 302
-    assert send_mock.await_count == 1
+    send_mock.assert_not_awaited()
     edit_mock.assert_not_awaited()
+    rich_kwargs = rich_mock.await_args.kwargs
+    assert rich_kwargs["chat_id"] == -10084131737
+    assert rich_kwargs["rich_message"]["blocks"] == [
+        {"type": "paragraph", "text": "Body"}
+    ]
     patched = patch_mock.await_args.args[1]
     # GORA: канал орги вопроса из orgs_config (один канал на все чтения).
     assert patched["records"][0]["fields"]["TELEGRAM_LINK"] == (
@@ -229,7 +303,7 @@ async def test_publish_draft_by_secretary(client):
 
 @pytest.mark.asyncio
 async def test_republish_dead_post_sends_new_message(client):
-    """edit_message_text по мёртвому посту → send_message + новая ссылка."""
+    """edit(rich) по мёртвому посту → sendRichMessage + новая ссылка."""
     async with client.session_transaction() as session:
         session["userdata"] = SECRETARY_SESSION
         session["user_id"] = SECRETARY_SESSION["id"]
@@ -246,8 +320,10 @@ async def test_republish_dead_post_sends_new_message(client):
             "other.grist_tools.grist_manager.patch_data", new=AsyncMock()
         ) as patch_mock,
         patch(
-            "routers.decision.skynet_bot.send_message", new=AsyncMock(return_value=msg)
-        ) as send_mock,
+            "routers.decision.skynet_bot.send_rich_message",
+            new=AsyncMock(return_value=msg),
+        ) as rich_mock,
+        patch("routers.decision.skynet_bot.send_message", new=AsyncMock()) as send_mock,
         patch(
             "routers.decision.skynet_bot.edit_message_text",
             new=AsyncMock(
@@ -284,12 +360,75 @@ async def test_republish_dead_post_sends_new_message(client):
 
     assert response.status_code == 302
     edit_mock.assert_awaited_once()
-    assert edit_mock.await_args.kwargs["message_id"] == "100"
-    assert send_mock.await_count == 1
+    assert edit_mock.await_args.kwargs["message_id"] == 100
+    assert send_mock.assert_not_awaited() is None
+    assert rich_mock.await_args.kwargs["rich_message"]["blocks"] == [
+        {"type": "paragraph", "text": "Body"}
+    ]
     patched = patch_mock.await_args.args[1]
     # PFM: канал первого чтения орги вопроса из orgs_config.
     assert patched["records"][0]["fields"]["TELEGRAM_LINK"] == (
         "https://t.me/c/1863399780/6000"
+    )
+
+
+@pytest.mark.asyncio
+async def test_republish_dead_post_falls_back_to_legacy(client):
+    """sendRichMessage тоже упал → sendMessage+SULGUK как финальный фолбэк."""
+    async with client.session_transaction() as session:
+        session["userdata"] = SECRETARY_SESSION
+        session["user_id"] = SECRETARY_SESSION["id"]
+
+    msg = AsyncMock()
+    msg.message_id = 6001
+    with (
+        _secretaries_mock({PFM_ADDRESS: {1837984392}}),
+        patch(
+            "other.grist_tools.grist_manager.load_table_data",
+            new=AsyncMock(return_value=[]),
+        ) as load_mock,
+        patch(
+            "other.grist_tools.grist_manager.patch_data", new=AsyncMock()
+        ) as patch_mock,
+        patch(
+            "routers.decision.skynet_bot.send_rich_message",
+            new=AsyncMock(side_effect=Exception("Bad Request: chat not found")),
+        ),
+        patch(
+            "routers.decision.skynet_bot.send_message",
+            new=AsyncMock(return_value=msg),
+        ) as send_mock,
+        patch(
+            "routers.decision.skynet_bot.edit_message_text",
+            new=AsyncMock(
+                side_effect=Exception("Bad Request: message to edit not found")
+            ),
+        ),
+    ):
+        questions = [
+            {"id": 1, "NUMBER": 1, "TITLE": "Принять отчёт", "READING": 1, "ORG": "PFM"}
+        ]
+        data = [
+            {
+                "id": 1,
+                "QUESTION_ID": 1,
+                "READING": 1,
+                "UUID": PUBLISHED_UUID,
+                "TELEGRAM_LINK": "https://t.me/c/1837984392/100",
+                "BODY": "<p>Body</p>",
+                "STATUS": "❗️ #active",
+                "CREATED_BY": "@itolstov",
+            }
+        ]
+        load_mock.side_effect = [questions, data, [], questions, data, []]
+        response = await client.post(f"/d2/{PUBLISHED_UUID}/publish")
+
+    assert response.status_code == 302
+    send_mock.assert_awaited_once()
+    assert send_mock.await_args.kwargs["parse_mode"] is not None
+    patched = patch_mock.await_args.args[1]
+    assert patched["records"][0]["fields"]["TELEGRAM_LINK"] == (
+        "https://t.me/c/1863399780/6001"
     )
 
 
