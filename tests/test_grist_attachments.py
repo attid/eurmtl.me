@@ -1,7 +1,7 @@
 """GristAPI.post_attachment / get_attachment — контракты Grist Attachments API.
 
 post_attachment:
-  1) POST /docs/{docId}/attachments (multipart) → [{"id": N}];
+  1) POST /docs/{docId}/attachments (multipart) → [N] или [{"id": N}];
   2) POST records → {"records": [{"id": row_id, ...}]}.
 get_attachment:
   GET /docs/{docId}/attachments/{id}/download → bytes.
@@ -20,7 +20,8 @@ async def test_post_attachment_uploads_and_creates_record():
     session_manager = SimpleNamespace(
         get_web_request=AsyncMock(
             side_effect=[
-                SimpleNamespace(status=200, data=[{"id": 55}]),
+                # Реальный Grist отвечает просто числом в списке: [55].
+                SimpleNamespace(status=200, data=[55]),
                 SimpleNamespace(
                     status=200,
                     data={"records": [{"id": 101, "fields": {"FILE": [55]}}]},
@@ -45,14 +46,37 @@ async def test_post_attachment_uploads_and_creates_record():
     )
     assert upload_call.kwargs["method"] == "POST"
     assert upload_call.kwargs["data"] is not None  # multipart FormData
-    assert record_call.kwargs["url"] == (
-        "https://grist.eurmtl.me/api/docs/doc/tables/D2_IMAGES/records"
-    )
-    payload = record_call.kwargs["json"]
-    fields = payload["records"][0]["fields"]
+    record_payload = record_call.kwargs["json"]
+    fields = record_payload["records"][0]["fields"]
     assert fields["FILE"] == 55
     assert fields["ORG"] == "GORA"
     assert fields["UPLOADED_BY"] == "@itolstov"
+
+
+@pytest.mark.asyncio
+async def test_post_attachment_accepts_dict_id_shape():
+    """Документированная форма [{"id": N}] тоже разбирается."""
+    session_manager = SimpleNamespace(
+        get_web_request=AsyncMock(
+            side_effect=[
+                SimpleNamespace(status=200, data=[{"id": 66}]),
+                SimpleNamespace(
+                    status=200,
+                    data={"records": [{"id": 102, "fields": {"FILE": [66]}}]},
+                ),
+            ]
+        )
+    )
+    api = GristAPI(session_manager=session_manager)
+    row_id = await api.post_attachment(
+        GristTableConfig("doc", "D2_IMAGES"),
+        b"data",
+        "pic.png",
+        {"ORG": "GORA"},
+    )
+    assert row_id == 102
+    record_call = session_manager.get_web_request.await_args_list[1]
+    assert record_call.kwargs["json"]["records"][0]["fields"]["FILE"] == 66
 
 
 @pytest.mark.asyncio
