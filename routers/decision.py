@@ -247,12 +247,15 @@ _READING_TAG = {1: "first_reading", 2: "second_reading", 3: "third_reading"}
 
 
 def _d2_rich_blocks(status: str, inquiry: str, org: str = "", reading: int = 1,
-                    question_number=None, title: str = ""):
+                    question_number=None, title: str = "",
+                    links_url=([], [], []), uuid_url: str = "",
+                    username: str = ""):
     """Блоки InputRichMessage. Формат зависит от org.hash_position:
     - suffix (PFM/USDMM/GORA): жирная строка статуса, затем тело, ссылки внизу.
     - prefix (MTLA): первая строка "<статус> #<N>_reading", затем "Вопрос N:
       <тема>" и тело (формат канала MTLA Council, решение владельца 2026-10-10).
-    None — конвертация не удалась (фолбэк sendMessage+SULGUK)."""
+    Внизу всегда подвал как в legacy: ссылки на чтения, Edit on eurmtl.me,
+    Added by. None — конвертация не удалась (фолбэк sendMessage+SULGUK)."""
     if not D2_RICH_ENABLED:
         return None
     from other import orgs_config
@@ -264,6 +267,19 @@ def _d2_rich_blocks(status: str, inquiry: str, org: str = "", reading: int = 1,
         html = f"<p><b>{status} #{tag}</b></p><p><b>{num}{title}</b>{inquiry}</p>"
     else:
         html = f"<p><b>{status}</b></p>{inquiry}"
+    html += "<p>---</p>"
+    for label, link in zip(
+        ("Первое чтение", "Второе чтение", "Третье чтение"), links_url
+    ):
+        if link:
+            html += f'<p><a href="{link[0]}">{label}</a></p>'
+    html += "<p>-</p>"
+    if uuid_url:
+        # /d/<uuid> — целевой URL навсегда: после cutover'а (вырезание d1)
+        # этот роут станет d2-механизмом, посты править не придётся.
+        html += f'<p><a href="{_d2_base_url()}/d/{uuid_url}">Edit on eurmtl.me</a></p>'
+    if username:
+        html += f"<p>Added by {username}</p>"
     try:
         blocks = html_to_rich_message(html, _d2_base_url())["blocks"]
     except Exception as e:
@@ -277,10 +293,14 @@ def _d2_rich_blocks(status: str, inquiry: str, org: str = "", reading: int = 1,
 
 async def _d2_send_rich(channel: str, status: str, inquiry: str,
                         org: str = "", reading: int = 1,
-                        question_number=None, title: str = ""):
+                        question_number=None, title: str = "",
+                        links_url=([], [], []), uuid_url: str = "",
+                        username: str = ""):
     """sendRichMessage в канал. Возвращает message_id или None (ошибка уже
     залогирована warning'ом — вызывающий решает про фолбэк)."""
-    blocks = _d2_rich_blocks(status, inquiry, org, reading, question_number, title)
+    blocks = _d2_rich_blocks(status, inquiry, org, reading, question_number,
+                             title, links_url=links_url, uuid_url=uuid_url,
+                             username=username)
     if blocks is None:
         return None
     try:
@@ -303,12 +323,16 @@ async def _d2_send_rich(channel: str, status: str, inquiry: str,
 
 async def _d2_edit_rich(channel: str, message_id, status: str, inquiry: str,
                         org: str = "", reading: int = 1,
-                        question_number=None, title: str = "") -> bool:
+                        question_number=None, title: str = "",
+                        links_url=([], [], []), uuid_url: str = "",
+                        username: str = "") -> bool:
     """editMessageText(rich_message=...) опубликованного поста. message_id
     передаётся строкой как есть (из TELEGRAM_LINK), приводим к int.
     False — не получилось (включая «старый пост был не rich»): вызывающий
     републикует или падает в фолбэк."""
-    blocks = _d2_rich_blocks(status, inquiry, org, reading, question_number, title)
+    blocks = _d2_rich_blocks(status, inquiry, org, reading, question_number,
+                             title, links_url=links_url, uuid_url=uuid_url,
+                             username=username)
     if blocks is None:
         return False
     try:
@@ -575,6 +599,13 @@ async def cmd_d2_show(question_uuid):
 
     questions, question_data, _ = await _load_question_tables()
     links_url = _question_links(question["id"], question_data)
+    # Все чтения вопроса для навигации на экране: [(reading, uuid), ...].
+    readings_nav = sorted(
+        (int(r.get("READING")), r.get("UUID") or "")
+        for r in question_data
+        if r.get("QUESTION_ID") == question["id"]
+        and str(r.get("READING") or "").isdigit()
+    )
 
     question_number = question.get("NUMBER")
     short_subject = question.get("TITLE") or ""
@@ -660,7 +691,11 @@ async def cmd_d2_show(question_uuid):
                     edited = False
                     if channel is not None:
                         edited = await _d2_edit_rich(
-                            channel, telegram_link.split("/")[-1], status, inquiry
+                            channel, telegram_link.split("/")[-1], status, inquiry,
+                            org=org, reading=new_reading,
+                            question_number=question.get("NUMBER"),
+                            title=short_subject, links_url=links_url,
+                            uuid_url=question_uuid, username=username,
                         )
                         if not edited:
                             # Пост мог быть не rich (старые публикации) —
@@ -681,29 +716,10 @@ async def cmd_d2_show(question_uuid):
                 await flash("Вопрос успешно обновлён.", "good")
                 return redirect(f"/d2/{question_uuid}")
             else:
-                # Смена чтения (решение владельца 2026-10-10): в чтениях 1-2
-                # #done не ставится никогда. Прошлое чтение: ❗️ #active →
-                # ☑️ #next (работа по нему окончена); 🔇 #canceled и
-                # 🔂 #resign не трогаем. ✅ #done возможен только в финальном
-                # чтении и ставится человеком вручную.
-                if data_row.get("STATUS") == "❗️ #active":
-                    await grist_manager.patch_data(
-                        MTLGrist.QUESTION_DATA,
-                        {
-                            "records": [
-                                {
-                                    "id": data_row["id"],
-                                    "fields": {"STATUS": "☑️ #next"},
-                                }
-                            ]
-                        },
-                    )
-                    logger.info(
-                        f"D2 reading change: autostatus id={data_row['id']} "
-                        f"[{org}] №{question.get('NUMBER')} ❗️ #active -> ☑️ #next"
-                    )
-                    _d2_invalidate_cache()
-                # Смена чтения: новая строка QUESTION_DATA + новое сообщение.
+                # Смена чтения: сначала публикуем новое чтение (пост+ссылка),
+                # потом правим пост прошлого (статус -> #next + ссылка на
+                # новое чтение в подвале) — порядок определил владелец
+                # 2026-10-10.
                 new_uuid = uuid.uuid4().hex
                 text = get_full_text(status, inquiry, links_url, new_uuid, username)
                 channel = await resolve_channel(org, new_reading)
@@ -738,6 +754,57 @@ async def cmd_d2_show(question_uuid):
                     f"uuid={new_uuid} QUESTION_ID={question['id']} [{org}] "
                     f"№{question.get('NUMBER')}, link={fields.get('TELEGRAM_LINK')!r}"
                 )
+                # Прошлое чтение (решение владельца 2026-10-10): в чтениях 1-2
+                # #done не ставится никогда. ❗️ #active → ☑️ #next (работа по
+                # нему окончена); 🔇 #canceled и 🔂 #resign не трогаем.
+                # ✅ #done возможен только в финальном чтении и ставится
+                # человеком вручную. Правим и Grist, и пост прошлого чтения:
+                # сначала новое чтение опубликовано (выше), теперь его ссылка
+                # известна — уходит в подвал правимого поста.
+                if data_row.get("STATUS") == "❗️ #active":
+                    await grist_manager.patch_data(
+                        MTLGrist.QUESTION_DATA,
+                        {
+                            "records": [
+                                {
+                                    "id": data_row["id"],
+                                    "fields": {"STATUS": "☑️ #next"},
+                                }
+                            ]
+                        },
+                    )
+                    _d2_invalidate_cache()
+                    logger.info(
+                        f"D2 reading change: autostatus id={data_row['id']} "
+                        f"[{org}] №{question.get('NUMBER')} ❗️ #active -> ☑️ #next"
+                    )
+                old_link = data_row.get("TELEGRAM_LINK") or ""
+                if old_link and message_id is not None and channel is not None:
+                    updated_links = list(links_url)
+                    updated_links[new_reading - 1] = (
+                        f"https://t.me/c/{channel}/{message_id}",
+                    )
+                    edited = await _d2_edit_rich(
+                        await resolve_channel(org, reading),
+                        old_link.split("/")[-1],
+                        "☑️ #next",
+                        data_row.get("BODY") or "",
+                        org=org, reading=reading,
+                        question_number=question.get("NUMBER"),
+                        title=short_subject,
+                        links_url=updated_links,
+                        uuid_url=question_uuid, username=username,
+                    )
+                    logger.info(
+                        f"D2 reading change: правка поста прошлого чтения "
+                        f"r={reading} message_id={old_link.split('/')[-1]} -> "
+                        f"☑️ #next, ok={edited}"
+                    )
+                    if not edited:
+                        await flash(
+                            "Чтение переключено, но статус в старом посте "
+                            "Telegram обновить не удалось."
+                        )
                 if question.get("TITLE") != short_subject:
                     await grist_manager.patch_data(
                         MTLGrist.QUESTIONS,
@@ -788,6 +855,7 @@ async def cmd_d2_show(question_uuid):
         inquiry=inquiry,
         reading=reading,
         readings_total=readings_total,
+        readings_nav=readings_nav,
         links_url=links_url,
         can_publish=can_publish,
         **await _d2_workspace_context(),
@@ -832,7 +900,8 @@ async def cmd_d2_publish(question_uuid):
         published = await _d2_edit_rich(
             channel, telegram_link.split("/")[-1], status, inquiry,
             org=org, reading=reading, question_number=question.get("NUMBER"),
-            title=question.get("TITLE") or "",
+            title=question.get("TITLE") or "", links_url=links_url,
+            uuid_url=question_uuid, username=username,
         )
         if published:
             await flash("Пост в Telegram обновлён.", "good")
@@ -842,7 +911,8 @@ async def cmd_d2_publish(question_uuid):
         message_id = await _d2_send_rich(
             channel, status, inquiry, org=org, reading=reading,
             question_number=question.get("NUMBER"),
-            title=question.get("TITLE") or "",
+            title=question.get("TITLE") or "", links_url=links_url,
+            uuid_url=question_uuid, username=username,
         )
         if message_id is None:
             text = get_full_text(status, inquiry, links_url, question_uuid, username)
@@ -1024,6 +1094,7 @@ async def cmd_d2_add():
             message_id = await _d2_send_rich(
                 channel, status, inquiry, org=org, reading=reading,
                 question_number=question_number, title=short_subject,
+                uuid_url=d_uuid, username=username,
             )
             if message_id is None:
                 text = get_full_text(status, inquiry, [[], [], []], d_uuid, username)
@@ -1280,8 +1351,11 @@ async def cmd_d2_edit():
                 "org": org,
                 "readings_count": len(readings),
                 "uuids": [r["uuid"] for r in data_by_question.get(question_id, [])],
-                "first_uuid": data_by_question.get(question_id, [{}])[0].get(
-                    "uuid", ""
+                # Клик по теме — на последнее чтение (текущая работа).
+                "first_uuid": (
+                    sorted(readings, key=lambda r: r["reading"])[-1]["uuid"]
+                    if readings
+                    else ""
                 ),
                 "is_draft": bool(readings)
                 and all(not r["telegram_link"] for r in readings),

@@ -330,10 +330,19 @@ async def test_publish_draft_by_secretary(client):
     edit_mock.assert_not_awaited()
     rich_kwargs = rich_mock.await_args.kwargs
     assert rich_kwargs["chat_id"] == -1001767165598
-    assert rich_kwargs["rich_message"]["blocks"] == [
-        {"type": "paragraph", "text": {"type": "bold", "text": "✅ #done"}},
-        {"type": "paragraph", "text": "Body"},
-    ]
+    blocks = rich_kwargs["rich_message"]["blocks"]
+    # Шапка + подвал: статус, тело, разделитель, ссылка на редактирование.
+    assert blocks[0] == {
+        "type": "paragraph",
+        "text": {"type": "bold", "text": "✅ #done"},
+    }
+    assert {"type": "paragraph", "text": "Body"} in blocks
+    texts = [b.get("text") for b in blocks if b.get("type") == "paragraph"]
+    assert "---" in texts and "-" in texts
+    assert any(
+        isinstance(t, dict) and t.get("text") == "Edit on eurmtl.me" for t in texts
+    )
+    assert any(t == "Added by @attid" for t in texts)
     patched = patch_mock.await_args.args[1]
     # GORA: канал орги вопроса из orgs_config (один канал на все чтения).
     assert patched["records"][0]["fields"]["TELEGRAM_LINK"] == (
@@ -401,10 +410,23 @@ async def test_republish_dead_post_sends_new_message(client):
     edit_mock.assert_awaited_once()
     assert edit_mock.await_args.kwargs["message_id"] == 100
     assert send_mock.assert_not_awaited() is None
-    assert rich_mock.await_args.kwargs["rich_message"]["blocks"] == [
-        {"type": "paragraph", "text": {"type": "bold", "text": "❗️ #active"}},
-        {"type": "paragraph", "text": "Body"},
+    rich_blocks = rich_mock.await_args.kwargs["rich_message"]["blocks"]
+    assert rich_blocks[0] == {
+        "type": "paragraph",
+        "text": {"type": "bold", "text": "❗️ #active"},
+    }
+    assert {"type": "paragraph", "text": "Body"} in rich_blocks
+    # Подвал: ссылка на редактирование ведёт на /d/<uuid> (целевой URL
+    # навсегда, переживёт cutover).
+    url_nodes = [
+        b["text"] for b in rich_blocks
+        if b.get("type") == "paragraph" and isinstance(b.get("text"), dict)
+        and b["text"].get("type") == "url"
     ]
+    assert any(
+        n["url"].endswith(f"/d/{PUBLISHED_UUID}") and n["text"] == "Edit on eurmtl.me"
+        for n in url_nodes
+    ), url_nodes
     patched = patch_mock.await_args.args[1]
     # PFM: канал первого чтения орги вопроса из orgs_config.
     assert patched["records"][0]["fields"]["TELEGRAM_LINK"] == (
