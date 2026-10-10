@@ -73,7 +73,7 @@ async def test_add_draft_creates_question_without_tg(client):
     async def fake(table, *a, **k):
         """QUESTIONS: 1-я проверка номера — 76 ещё нет, после post — появился."""
         name = table.table_name
-        if name == "QUESTIONS":
+        if name == "D2_QUESTIONS":
             calls["questions"] += 1
             return questions if calls["questions"] >= 2 else []
         return []
@@ -125,7 +125,7 @@ async def test_add_publish_still_sends_message(client):
     async def fake(table, *a, **k):
         """QUESTIONS: 1-я проверка номера — 75 ещё нет, после post — появился."""
         name = table.table_name
-        if name == "QUESTIONS":
+        if name == "D2_QUESTIONS":
             calls["questions"] += 1
             return questions if calls["questions"] >= 2 else []
         return []
@@ -182,7 +182,7 @@ async def test_add_publish_falls_back_to_legacy_on_convert_error(client):
 
     async def fake(table, *a, **k):
         name = table.table_name
-        if name == "QUESTIONS":
+        if name == "D2_QUESTIONS":
             calls["questions"] += 1
             return questions if calls["questions"] >= 2 else []
         return []

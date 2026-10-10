@@ -310,7 +310,7 @@ async def test_add_uses_session_org_not_form(client):
     calls = {"questions": 0}
 
     async def fake(table, *a, **k):
-        if table.table_name == "QUESTIONS":
+        if table.table_name == "D2_QUESTIONS":
             calls["questions"] += 1
             return questions if calls["questions"] >= 2 else []
         return []
@@ -449,7 +449,7 @@ async def test_gora_signer_creates_question_published_to_gora_channel(client):
     calls = {"questions": 0}
 
     async def fake(table, *a, **k):
-        if table.table_name == "QUESTIONS":
+        if table.table_name == "D2_QUESTIONS":
             calls["questions"] += 1
             return (
                 []
