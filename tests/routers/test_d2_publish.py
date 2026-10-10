@@ -608,3 +608,11 @@ async def test_edit_list_marks_draft_questions(client):
     body = await response.get_data(as_text=True)
     assert response.status_code == 200
     assert "черновик" in body
+
+@pytest.fixture(autouse=True)
+def _clear_question_tables_cache():
+    """Кеш D2_* таблиц (TTL 5с) переживает тесты — чистим как остальные кеши."""
+    from routers.decision import question_tables_cache
+    question_tables_cache.cache.clear()
+    yield
+    question_tables_cache.cache.clear()

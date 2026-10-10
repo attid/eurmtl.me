@@ -456,14 +456,33 @@ async def cmd_d2_workspace():
     return redirect("/d2")
 
 
+question_tables_cache = AsyncTTLCache(ttl_seconds=5)
+
+
 async def _load_question_tables():
-    """Возвращает (questions, question_data, templates) из Grist."""
+    """Возвращает (questions, question_data, templates) из Grist.
+
+    Кеш 5 секунд: один пользовательский проход (список → вопрос → сохранение)
+    не дёргает Grist по несколько раз. После записи сбрасывается
+    (_d2_invalidate_cache), свои правки видны сразу.
+    """
+    cached = await question_tables_cache.get("tables")
+    if cached is not None:
+        return cached
     from other.grist_tools import grist_manager, MTLGrist
 
-    questions = await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
-    question_data = await grist_manager.load_table_data(MTLGrist.QUESTION_DATA) or []
-    templates = await grist_manager.load_table_data(MTLGrist.QUESTION_TEMPLATES) or []
-    return questions, question_data, templates
+    tables = (
+        await grist_manager.load_table_data(MTLGrist.QUESTIONS) or [],
+        await grist_manager.load_table_data(MTLGrist.QUESTION_DATA) or [],
+        await grist_manager.load_table_data(MTLGrist.QUESTION_TEMPLATES) or [],
+    )
+    await question_tables_cache.set("tables", tables)
+    return tables
+
+
+def _d2_invalidate_cache() -> None:
+    """Сброс кеша после записи в D2_* таблицы."""
+    question_tables_cache.cache.clear()
 
 
 def _readings_int(row) -> int | None:
@@ -563,6 +582,7 @@ async def cmd_d2_show(question_uuid):
                         ]
                     },
                 )
+                _d2_invalidate_cache()
                 if question.get("TITLE") != short_subject:
                     await grist_manager.patch_data(
                         MTLGrist.QUESTIONS,
@@ -577,6 +597,7 @@ async def cmd_d2_show(question_uuid):
                             ]
                         },
                     )
+                    _d2_invalidate_cache()
                 await grist_manager.patch_data(
                     MTLGrist.QUESTIONS,
                     {
@@ -590,6 +611,7 @@ async def cmd_d2_show(question_uuid):
                         ]
                     },
                 )
+                _d2_invalidate_cache()
                 text = get_full_text(
                     status, inquiry, links_url, question_uuid, username
                 )
@@ -650,6 +672,7 @@ async def cmd_d2_show(question_uuid):
                 await grist_manager.post_data(
                     MTLGrist.QUESTION_DATA, {"records": [{"fields": fields}]}
                 )
+                _d2_invalidate_cache()
                 if question.get("TITLE") != short_subject:
                     await grist_manager.patch_data(
                         MTLGrist.QUESTIONS,
@@ -664,6 +687,7 @@ async def cmd_d2_show(question_uuid):
                             ]
                         },
                     )
+                    _d2_invalidate_cache()
                 await grist_manager.patch_data(
                     MTLGrist.QUESTIONS,
                     {
@@ -677,6 +701,7 @@ async def cmd_d2_show(question_uuid):
                         ]
                     },
                 )
+                _d2_invalidate_cache()
                 if message_id is None:
                     await flash("Чтение создано, но публикация в Telegram не прошла.")
                 await flash("Вопрос успешно обновлён.", "good")
@@ -757,6 +782,7 @@ async def cmd_d2_publish(question_uuid):
                     ]
                 },
             )
+            _d2_invalidate_cache()
         if telegram_link:
             await flash("Пост был удалён в Telegram — опубликован заново.", "good")
         else:
@@ -893,6 +919,7 @@ async def cmd_d2_add():
             ]
         },
     )
+    _d2_invalidate_cache()
     questions, _, _ = await _load_question_tables()
     question_id = next(
         q["id"] for q in questions if str(q.get("NUMBER")) == str(question_number)
@@ -927,6 +954,7 @@ async def cmd_d2_add():
     await grist_manager.post_data(
         MTLGrist.QUESTION_DATA, {"records": [{"fields": fields}]}
     )
+    _d2_invalidate_cache()
 
     if as_draft:
         await flash("Черновик сохранён без публикации в Telegram.", "good")
@@ -1099,6 +1127,7 @@ async def cmd_d2_template_from():
             ]
         },
     )
+    _d2_invalidate_cache()
     await flash("Шаблон сохранён.", "good")
     return redirect(f"/d2/{template_uuid}")
 
@@ -1171,14 +1200,19 @@ async def cmd_d2_edit():
 
     status_param = request.args.get("status")
     query = (request.args.get("q") or "").strip().lower()
-    # Непустой поиск ищет по всем статусам (решение владельца 2026-10-09):
-    # поиск + энтер не должен упираться в «Активные».
-    if status_param == "active" and not query:
+    explicit_status = bool(status_param)  # владелец сам выбрал статус
+    # Явный выбор статуса — уважается всегда. Поиск без явного статуса ищет по всем
+    # (решение владельца 2026-10-09/10).
+    if status_param == "active":
         filtered = [row for row in items if row["status"] in D2_ACTIVE_STATUSES]
-    elif status_param in (None, "", "active", "all") or status_param not in statuses:
+    elif not explicit_status and query:
         filtered = items
-    else:
+    elif status_param == "all" or not explicit_status:
+        filtered = items
+    elif status_param in statuses:
         filtered = [row for row in items if row["status"] == status_param]
+    else:
+        filtered = items
 
     if query:
         filtered = [
@@ -1200,9 +1234,10 @@ async def cmd_d2_edit():
     page = min(page, total_pages)
     page_items = filtered[(page - 1) * per_page : page * per_page]
 
-    if status_param in (None, "", "active", "all") or status_param not in statuses:
-        # Поиск идёт по всем статусам — селектор показывает «Все».
-        status_filter = "all"
+    if not explicit_status:
+        # Нет явного выбора: дефолт вида «Активные», но фильтр статуса не применён
+        # (поиск без статуса ищет по всем).
+        status_filter = "all" if query else "active"
     else:
         status_filter = status_param
 
@@ -1511,6 +1546,7 @@ async def migrate_decisions_to_grist():
         await grist_manager.post_data(
             MTLGrist.QUESTIONS, {"records": questions_to_create}
         )
+        _d2_invalidate_cache()
         existing_questions = (
             await grist_manager.load_table_data(MTLGrist.QUESTIONS) or []
         )
@@ -1554,6 +1590,7 @@ async def migrate_decisions_to_grist():
         for i in range(0, len(question_data_to_create), batch_size):
             batch = question_data_to_create[i : i + batch_size]
             await grist_manager.post_data(MTLGrist.QUESTION_DATA, {"records": batch})
+            _d2_invalidate_cache()
         logger.info(
             "Migration completed: %s question rows, %s question_data rows.",
             len(questions_to_create),

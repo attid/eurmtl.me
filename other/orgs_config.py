@@ -37,6 +37,12 @@ ORGS: tuple[Org, ...] = (
         0,  # одно чтение; канал -1001789207509
     ),
     Org(
+        "MTLA",
+        "GCNVDZIHGX473FEI7IXCUAEXUJ4BGCKEMHF36VYP5EMS7PX2QBLAMTLA",
+        ("2042260878",),  # канал -1002042260878, Council Announcements
+        3,
+    ),
+    Org(
         "TFM",
         "",
         (),
