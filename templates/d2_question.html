@@ -10,6 +10,10 @@
         min-width: 0;
         overflow: hidden;
     }
+    /* Черновик-чтение в навигации: пунктирная жёлтая рамка. */
+    .border-dashed {
+        border-style: dashed !important;
+    }
 </style>
 {% endblock %}
 {% block content %}
@@ -28,10 +32,11 @@
 
     {% if readings_nav | length > 1 %}
     <div class="mb-2">
-        {% for nav_reading, nav_uuid in readings_nav %}
+        {% for nav_reading, nav_uuid, nav_draft in readings_nav %}
         {% if nav_uuid %}
-        <a href="/d2/{{ nav_uuid }}" class="btn btn-sm {{ 'btn-primary' if nav_uuid == row_uuid else 'btn-outline-secondary' }}">
-            Чтение {{ nav_reading }}
+        <a href="/d2/{{ nav_uuid }}"
+           class="btn btn-sm {{ 'btn-primary' if nav_uuid == row_uuid else 'btn-outline-secondary' }} {{ 'border-dashed text-warning' if nav_draft and nav_uuid != row_uuid else '' }}">
+            Чтение {{ nav_reading }}{% if nav_draft %} <span class="badge bg-warning-lt text-dark">черновик</span>{% endif %}
         </a>
         {% endif %}
         {% endfor %}
@@ -141,6 +146,15 @@
                     </label>
                 </div>
                 {% endfor %}
+                {# Черновик-чтение: только когда выбрано ДРУГОЕ чтение (смена);
+                   сервер применяет лишь при реальной смене. #}
+                <div class="form-check" id="d2-as-draft-row" style="display:none">
+                    <input type="checkbox" id="as_draft" name="as_draft" class="form-check-input">
+                    <label for="as_draft" class="form-check-label">
+                        Сохранить новое чтение как черновик
+                        <span class="text-secondary">(без публикации, прошлый статус не меняется)</span>
+                    </label>
+                </div>
                 {% else %}
                 {# У орги нет чтений (readings=0): поле не показываем, всегда 1. #}
                 <input type="hidden" name="reading" value="{{ reading if reading > 0 else 1 }}">
@@ -148,9 +162,15 @@
             </div>
 
             <div class="col-12">
+                {% if is_draft %}
                 <button type="submit" class="btn btn-primary w-100" {% if disable_fields %}disabled{% endif %}>
-                    Сохранить<i class="ti ti-send ms-2"></i>
+                    Сохранить черновик<i class="ti ti-device-floppy ms-2"></i>
                 </button>
+                {% else %}
+                <button type="submit" class="btn btn-primary w-100" {% if disable_fields %}disabled{% endif %}>
+                    Сохранить и обновить в Telegram<i class="ti ti-brand-telegram ms-2"></i>
+                </button>
+                {% endif %}
             </div>
         </div>
     </form>
@@ -159,4 +179,28 @@
 
 {% block bottom_scripts %}
 {% include 'd2_quill_include.html' %}
+<script>
+    // Чекбокс «черновик» виден только при выбранном ДРУГОМ чтении (смена).
+    (function () {
+        var form = document.getElementById('editor-container');
+        if (!form) return;
+        form = form.closest('form');
+        if (!form) return;
+        var draftRow = document.getElementById('d2-as-draft-row');
+        if (!draftRow) return;
+        function toggleDraftRow() {
+            var checked = form.querySelector('input[name="reading"]:checked');
+            var isChange = checked && checked.value !== '{{ reading }}';
+            draftRow.style.display = isChange ? '' : 'none';
+            if (!isChange) {
+                var box = document.getElementById('as_draft');
+                if (box) box.checked = false;
+            }
+        }
+        form.querySelectorAll('input[name="reading"]').forEach(function (radio) {
+            radio.addEventListener('change', toggleDraftRow);
+        });
+        toggleDraftRow();
+    })();
+</script>
 {% endblock %}

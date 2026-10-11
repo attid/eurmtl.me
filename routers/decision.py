@@ -512,7 +512,11 @@ async def cmd_d2_show(question_uuid):
     links_url = _question_links(question["id"], question_data)
     # Все чтения вопроса для навигации на экране: [(reading, uuid), ...].
     readings_nav = sorted(
-        (int(r.get("READING")), r.get("UUID") or "")
+        (
+            int(r.get("READING")),
+            r.get("UUID") or "",
+            not (r.get("TELEGRAM_LINK") or ""),  # is_draft
+        )
         for r in question_data
         if r.get("QUESTION_ID") == question["id"]
         and str(r.get("READING") or "").isdigit()
@@ -533,13 +537,28 @@ async def cmd_d2_show(question_uuid):
             inquiry = form_data["inquiry"]
             status = form_data["status"]
             new_reading = int(form_data.get("reading", reading))
+            # Чекбокс «новое чтение как черновик»: строка создаётся без
+            # публикации, автостатус прошлого не трогается (решение
+            # владельца 2026-10-11: #next — только при публикации).
+            as_draft = form_data.get("as_draft") == "on"
 
             from other.grist_tools import grist_manager, MTLGrist
 
             same_reading = new_reading == reading
             reading_exists = links_url[new_reading - 1] is not None
+            # Черновик-строка этого чтения (если есть): повторная смена на то
+            # же чтение с черновиком патчит её, а не плодит дубли.
+            draft_row = next(
+                (
+                    r for r in question_data
+                    if r.get("QUESTION_ID") == question["id"]
+                    and _readings_int(r) == new_reading
+                    and not (r.get("TELEGRAM_LINK") or "")
+                ),
+                None,
+            )
 
-            if not same_reading and reading_exists:
+            if not same_reading and reading_exists and not (as_draft and draft_row):
                 await flash(
                     "Такое чтение уже существует, редактировать надо по ссылке из него"
                 )
@@ -630,19 +649,24 @@ async def cmd_d2_show(question_uuid):
                 # Смена чтения: сначала публикуем новое чтение (пост+ссылка),
                 # потом правим пост прошлого (статус -> #next + ссылка на
                 # новое чтение в подвале) — порядок определил владелец
-                # 2026-10-10.
+                # 2026-10-10. Если «черновик» — строка создаётся без
+                # публикации и БЕЗ автостатуса прошлого: #next ставится
+                # только при публикации нового чтения (решение владельца
+                # 2026-10-11).
                 new_uuid = uuid.uuid4().hex
                 text = get_full_text(status, inquiry, links_url, new_uuid, username)
-                channel = await resolve_channel(org, new_reading)
+                channel = None
                 message_id = None
-                if channel is not None:
-                    message_id = await _d2_send_rich(
-                        channel, status, inquiry, org=org, reading=new_reading,
-                        question_number=question.get("NUMBER"),
-                        title=short_subject,
-                    )
-                    if message_id is None:
-                        message_id = await _d2_send_legacy(channel, text)
+                if not as_draft:
+                    channel = await resolve_channel(org, new_reading)
+                    if channel is not None:
+                        message_id = await _d2_send_rich(
+                            channel, status, inquiry, org=org, reading=new_reading,
+                            question_number=question.get("NUMBER"),
+                            title=short_subject,
+                        )
+                        if message_id is None:
+                            message_id = await _d2_send_legacy(channel, text)
 
                 fields = {
                     "QUESTION_ID": question["id"],
@@ -656,6 +680,33 @@ async def cmd_d2_show(question_uuid):
                 }
                 if message_id is not None and channel is not None:
                     fields["TELEGRAM_LINK"] = f"https://t.me/c/{channel}/{message_id}"
+                if as_draft and draft_row is not None:
+                    # Повторная смена на черновик-чтение: обновляем строку,
+                    # дубль не плодим. UUID остаётся прежним.
+                    await grist_manager.patch_data(
+                        MTLGrist.QUESTION_DATA,
+                        {
+                            "records": [
+                                {
+                                    "id": draft_row["id"],
+                                    "fields": {
+                                        "BODY": inquiry,
+                                        "STATUS": status,
+                                    },
+                                }
+                            ]
+                        },
+                    )
+                    _d2_invalidate_cache()
+                    logger.info(
+                        f"D2 reading change: черновик-чтение r={new_reading} "
+                        f"id={draft_row['id']} обновлено (uuid прежний "
+                        f"{draft_row.get('UUID')}) [{org}] №{question.get('NUMBER')}"
+                    )
+                    await flash(
+                        f"Черновик чтения {new_reading} обновлён.", "good"
+                    )
+                    return redirect(f"/d2/{draft_row.get('UUID')}")
                 await grist_manager.post_data(
                     MTLGrist.QUESTION_DATA, {"records": [{"fields": fields}]}
                 )
@@ -671,8 +722,17 @@ async def cmd_d2_show(question_uuid):
                 # ✅ #done возможен только в финальном чтении и ставится
                 # человеком вручную. Правим и Grist, и пост прошлого чтения:
                 # сначала новое чтение опубликовано (выше), теперь его ссылка
-                # известна — уходит в подвал правимого поста.
-                if data_row.get("STATUS") == "❗️ #active":
+                # известна — уходит в подвал правимого поста. При
+                # «черновик»-смене автостатуса НЕТ: #next — только при
+                # публикации нового чтения (решение владельца 2026-10-11).
+                if as_draft:
+                    logger.info(
+                        f"D2 reading change: новое чтение r={new_reading} "
+                        f"сохранено КАК ЧЕРНОВИК (без публикации, без "
+                        f"автостатуса прошлого) uuid={new_uuid} [{org}] "
+                        f"№{question.get('NUMBER')}"
+                    )
+                elif data_row.get("STATUS") == "❗️ #active":
                     await grist_manager.patch_data(
                         MTLGrist.QUESTION_DATA,
                         {
@@ -745,7 +805,13 @@ async def cmd_d2_show(question_uuid):
                     },
                 )
                 _d2_invalidate_cache()
-                if message_id is None:
+                if as_draft:
+                    await flash(
+                        f"Чтение {new_reading} сохранено как черновик "
+                        f"(без публикации, прошлый статус не менялся).",
+                        "good",
+                    )
+                elif message_id is None:
                     await flash("Чтение создано, но публикация в Telegram не прошла.")
                 await flash("Вопрос успешно обновлён.", "good")
                 return redirect(f"/d2/{new_uuid}")
@@ -768,6 +834,7 @@ async def cmd_d2_show(question_uuid):
         readings_total=readings_total,
         readings_nav=readings_nav,
         links_url=links_url,
+        is_draft=is_draft,
         can_publish=can_publish,
         **await _d2_workspace_context(),
     )
