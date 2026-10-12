@@ -8,24 +8,67 @@
         }
         var toolbarOptions = {
             container: [
+                [{ header: [1, 2, 3, false] }],
                 ['bold', 'italic', 'underline', 'strike', 'code'],
+                ['blockquote', 'code-block'],
                 ['link', 'image'],
-                ['clean']
+                ['clean'],
+                // Кастомные: спойлер и сворачиваемая цитата (TG-форматы).
+                [{ 'd2-spoiler': 'spoiler' }, { 'd2-expand-quote': 'expand' }]
             ],
             handlers: {
                 // Кастомная загрузка: файл → POST /d2/upload_image → Grist
                 // Attachments → <img src="/d2/img/<row_id>">.
                 'image': function () {
                     d2PickImage(this.quill);
+                },
+                'd2-spoiler': function () {
+                    d2ToggleSpoiler(this.quill);
+                },
+                'd2-expand-quote': function () {
+                    d2ToggleExpandQuote(this.quill);
                 }
             }
         };
+        // Кастомные форматы TG: спойлер (<tg-spoiler>, inline) и
+        // сворачиваемая цитата (<blockquote class=d2-expandable>, блок).
+        // Blots регистрируются ДО new Quill — иначе редактор их не знает
+        // и formatText молча игнорирует.
+        // <pre><code> (из сохранённых BODY) → Quill код-блок (div),
+        // иначе Quill теряет <pre> при первом же сохранении.
+        editorContainer.querySelectorAll('pre').forEach(function (preEl) {
+            var container = document.createElement('div');
+            container.className = 'ql-code-block-container';
+            var block = document.createElement('div');
+            block.className = 'ql-code-block';
+            block.setAttribute('data-language', 'plain');
+            block.textContent = preEl.textContent;
+            container.appendChild(block);
+            preEl.replaceWith(container);
+        });
+        var InlineBlot = Quill.import('blots/inline');
+        var BlockBlot = Quill.import('blots/block');
+
+        class D2Spoiler extends InlineBlot {
+            static blotName = 'd2-spoiler';
+            static tagName = 'tg-spoiler';
+        }
+        Quill.register(D2Spoiler, true);
+
+        class D2ExpandQuote extends BlockBlot {
+            static blotName = 'd2-expand-quote';
+            static tagName = 'blockquote';
+            static className = 'd2-expandable';
+        }
+        Quill.register(D2ExpandQuote, true);
+
         var quill = new Quill(editorContainer, {
             modules: {
                 "toolbar": toolbarOptions
             },
             theme: 'snow',
         });
+
         window.d2Quill = quill;
 
         var form = editorContainer.closest('form');
@@ -35,6 +78,27 @@
                 document.getElementById('inquiry').value = quill.root.innerHTML;
             };
         }
+    }
+
+    // Спойлер: формат d2-spoiler на выделении → <tg-spoiler> в HTML.
+    function d2ToggleSpoiler(quill) {
+        var range = quill.getSelection(true);
+        if (!range || range.length === 0) {
+            return;
+        }
+        var current = quill.getFormat(range.index, range.length);
+        quill.formatText(range.index, range.length, 'd2-spoiler', !current['d2-spoiler'], 'user');
+    }
+
+    // Сворачиваемая цитата: блочный формат d2-expand-quote на строках
+    // выделения → <blockquote class="d2-expandable"> в HTML.
+    function d2ToggleExpandQuote(quill) {
+        var range = quill.getSelection(true);
+        if (!range) {
+            return;
+        }
+        var current = quill.getFormat(range.index, 0);
+        quill.formatLine(range.index, range.length, 'd2-expand-quote', !current['d2-expand-quote'], 'user');
     }
 
     function d2PickImage(quill) {

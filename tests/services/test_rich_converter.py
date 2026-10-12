@@ -288,3 +288,58 @@ def test_full_document_smoke():
         "photo",
         "paragraph",
     ]
+
+
+def test_blockquote_becomes_quote_block():
+    result = convert("<blockquote><p>Скрытый текст</p></blockquote>")
+    blocks = result["blocks"]
+    assert blocks[0]["type"] == "blockquote"
+    inner = blocks[0]["blocks"]
+    assert any(b.get("text") == "Скрытый текст" for b in inner if b.get("type") == "paragraph")
+
+
+def test_expandable_blockquote_becomes_expandable():
+    result = convert('<blockquote expandable><p>Длинный текст цитаты</p></blockquote>')
+    blocks = result["blocks"]
+    assert blocks[0]["type"] == "expandable_blockquote"
+    # text — RichText, содержащий текст цитаты
+    text_node = blocks[0]["text"]
+    assert "Длинный текст цитаты" in json.dumps(text_node, ensure_ascii=False)
+
+
+def test_pre_becomes_pre_block():
+    result = convert("<pre><code>SELECT 1;</code></pre>")
+    blocks = result["blocks"]
+    assert blocks[0]["type"] == "pre"
+    assert "SELECT 1;" in str(blocks[0]["text"])
+
+
+def test_tg_spoiler_becomes_spoiler_node():
+    result = convert("<p>обычный <tg-spoiler>секрет</tg-spoiler> текст</p>")
+    dumped = json.dumps(result, ensure_ascii=False)
+    assert '"spoiler"' in dumped
+    assert "секрет" in dumped
+
+
+def test_header_still_heading_size():
+    result = convert("<h2>Заголовок</h2>")
+    assert result["blocks"][0] == {
+        "type": "heading",
+        "size": 2,
+        "text": "Заголовок",
+    }
+
+
+def test_expandable_by_class_blot_form():
+    """Форма Quill-blot: <blockquote class="d2-expandable"> →
+    expandable_blockquote (второй поддерживаемый вид)."""
+    result = convert('<blockquote class="d2-expandable"><p>Свёрнутая</p></blockquote>')
+    assert result["blocks"][0]["type"] == "expandable_blockquote"
+    assert "Свёрнутая" in json.dumps(result["blocks"][0]["text"], ensure_ascii=False)
+
+
+def test_spoiler_by_blot_tag():
+    """tg-spoiler узел (blot d2-spoiler) → inline spoiler."""
+    result = convert("<p>видно <tg-spoiler>скрыто</tg-spoiler></p>")
+    dumped = json.dumps(result, ensure_ascii=False)
+    assert '"spoiler"' in dumped and "скрыто" in dumped

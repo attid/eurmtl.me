@@ -184,19 +184,171 @@ async def grist_attachment_download(doc_id: str, attachment_id: int):
 
 @blueprint.route("/dev/tg-log", methods=("GET",))
 async def tg_log_page():
-    rows = "".join(
-        f"<tr><td>{entry['ts']}</td><td>{entry['method']}</td>"
-        f"<td><code>{entry['payload']}</code></td></tr>"
-        for entry in reversed(TG_CALL_LOG)
-    )
+    """Читаемый журнал: UTF-8 без эскейпов, rich_message раскрыт в
+    структурированный вид (блоки построчно), JSON — с отступами."""
+    rows = []
+    for entry in reversed(TG_CALL_LOG):
+        payload_raw = entry["payload"]
+        try:
+            payload = json.loads(payload_raw)
+        except (ValueError, TypeError):
+            payload = payload_raw
+
+        rich_html = ""
+        if isinstance(payload, dict) and "rich_message" in payload:
+            try:
+                rich = json.loads(payload["rich_message"])
+                blocks = rich.get("blocks", [])
+                parts = [f'<div class="rich-head">rich_message: {len(blocks)} блоков</div>']
+                for i, block in enumerate(blocks):
+                    text = _block_rich_html(block)
+                    btype = block.get("type", "?")
+                    extra = ""
+                    if btype == "photo":
+                        extra = " 🖼"
+                    if block.get("spoiler"):
+                        extra += " (spoiler)"
+                    btype_label = {
+                        "blockquote": "цитата",
+                        "expandable_blockquote": "сворачиваемая цитата",
+                        "pre": "блок кода",
+                        "heading": f"заголовок (size={block.get('size', '?')})",
+                    }.get(btype, btype)
+                    parts.append(
+                        f'<div class="rich-block"><span class="btype">{i + 1}. '
+                        f"{btype_label}{extra}</span>{text}</div>"
+                    )
+                rich_html = "".join(parts)
+            except (ValueError, TypeError):
+                rich_html = f'<div class="rich-head">rich_message (не JSON)</div>'
+            payload_view = _html_escape(
+                json.dumps(
+                    {k: v for k, v in payload.items() if k != "rich_message"},
+                    ensure_ascii=False,
+                )
+            )
+        else:
+            payload_view = _html_escape(
+                json.dumps(payload, ensure_ascii=False, indent=2)
+                if isinstance(payload, dict)
+                else str(payload)
+            )
+
+        rows.append(
+            f'<details class="call"><summary>'
+            f'<span class="ts">{entry["ts"]}</span> '
+            f'<span class="method">{entry["method"]}</span>'
+            f"</summary>"
+            f"{rich_html}"
+            f'<pre class="payload">{payload_view}</pre>'
+            f"</details>"
+        )
+
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <title>TG log</title><style>
-body{{font-family:monospace;margin:1rem}}table{{border-collapse:collapse}}
-td,th{{border:1px solid #999;padding:4px 8px;vertical-align:top}}
+body{{font-family:system-ui,sans-serif;margin:1rem;background:#1a1e25;color:#e6e6e6}}
+h2{{color:#fff}}
+.call{{border:1px solid #3a4048;border-radius:6px;margin:8px 0;background:#232830}}
+summary{{cursor:pointer;padding:8px 12px;font-family:monospace}}
+summary:hover{{background:#2a3038}}
+.ts{{color:#888;margin-right:12px}}
+.method{{color:#4fc3f7;font-weight:bold}}
+.rich-head{{color:#ffb74d;font-family:monospace;padding:4px 12px;font-size:0.9em}}
+.rich-block{{padding:4px 12px;border-left:3px solid #4fc3f7;margin:6px 12px;white-space:pre-wrap}}
+.btype{{display:inline-block;color:#888;font-family:monospace;font-size:0.85em;margin-right:8px}}
+.mk-tag{{color:#ffb74d;font-family:monospace;font-size:0.8em}}
+.mk-spoiler{{background:#666;color:transparent;border-radius:2px}}
+.mk-spoiler:hover{{color:inherit}}
+.payload{{padding:8px 12px;white-space:pre-wrap;word-break:break-word;font-size:0.85em;
+color:#a5b2c0;margin:0;border-top:1px solid #3a4048}}
 </style></head><body>
 <h2>TG-мок: что улетело бы в Telegram</h2>
-<table><tr><th>Время</th><th>Метод</th><th>Payload</th></tr>{rows}</table>
+<p><em>Кликни по записи — раскроется содержимое. rich_message показан блоками.</em></p>
+{''.join(rows)}
 </body></html>"""
+
+
+def _block_rich_html(block: dict) -> str:
+    """Блок → HTML с видимыми признаками форматов: [жирный], [спойлер],
+    [цитата], [код], [ссылка: url] и т.д. — чтобы в журнале было видно,
+    какие теги реально дошли."""
+    parts: list[str] = []
+
+    def fmt(text: str, wrapper: str) -> str:
+        label = {
+            "bold": "жирный", "italic": "курсив", "underline": "подчёркнутый",
+            "strikethrough": "зачёркнутый", "spoiler": "СПОЙЛЕР",
+            "code": "код", "url": "ссылка",
+        }.get(wrapper, wrapper)
+        if wrapper == "spoiler":
+            return f'<span class="mk-spoiler">{text}</span>'
+        if wrapper == "url":
+            return f'<span class="mk-tag">[ссылка]</span>{text}'
+        return f'<span class="mk-tag">[{label}]</span>{text}'
+
+    def walk(node):
+        if isinstance(node, str):
+            parts.append(node)
+        elif isinstance(node, dict):
+            t = node.get("type")
+            if "text" in node:
+                inner = node["text"]
+                # внутренности тоже могут быть узлами (concat)
+                before = len(parts)
+                walk(inner)
+                if t and len(parts) > before:
+                    parts[before] = fmt(parts[before], t) if isinstance(
+                        parts[before], str
+                    ) else parts[before]
+            elif "source" in node:  # math
+                parts.append(f'<span class="mk-tag">[math]</span>{node["source"]}')
+        elif isinstance(node, list):
+            for child in node:
+                walk(child)
+
+    walk(block.get("text"))
+    if not parts and "blocks" in block:
+        for inner in block.get("blocks", []):
+            parts.append(_block_rich_html(inner))
+    return "".join(parts)
+
+
+def _block_plain_text(block: dict) -> str:
+    """Читаемый текст rich-блока: обходит дерево узлов, склеивает text/plain."""
+    parts: list[str] = []
+
+    def walk(node):
+        if isinstance(node, str):
+            parts.append(node)
+        elif isinstance(node, dict):
+            if "text" in node:
+                walk(node["text"])
+            if "source" in node:  # math
+                parts.append(str(node["source"]))
+        elif isinstance(node, list):
+            for child in node:
+                walk(child)
+
+    walk(block.get("text"))
+    if not parts and "blocks" in block:
+        for inner in block["blocks"]:
+            walk(inner.get("text") if isinstance(inner, dict) else inner)
+    return "".join(parts)
+
+
+def _html_escape(value: str) -> str:
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+@blueprint.route("/dev/tg-log/json", methods=("GET",))
+async def tg_log_json():
+    """Журнал вызовов в машинном виде (для скриптов: ресенд, диффы)."""
+    return jsonify({"calls": TG_CALL_LOG})
 
 
 def tg_mock_record(method: str, payload: dict) -> dict:

@@ -14,7 +14,79 @@
     .border-dashed {
         border-style: dashed !important;
     }
+    /* Кастомные кнопки тулбара: спойлер и сворачиваемая цитата (текстовые). */
+    .ql-toolbar button.ql-d2-spoiler::after,
+    .ql-toolbar button.ql-d2-expand-quote::after {
+        font-size: 12px;
+        font-weight: 600;
+        font-family: sans-serif;
+        content: "•••";
+    }
+    .ql-toolbar button.ql-d2-expand-quote::after {
+        content: "⇕❝";
+    }
+    /* Цитаты в редакторе: левая черта как в TG. */
+    .ql-editor blockquote {
+        border-left: 4px solid #ccc;
+        margin: 4px 0;
+        padding-left: 12px;
+    }
+    /* Raw-html embed (expandable quote) виден как цитатный блок. */
+    .ql-editor .d2-raw-html {
+        display: block;
+        border-left: 4px solid #ffd54a;
+        padding-left: 12px;
+        margin: 4px 0;
+    }
+    /* Raw-html embed больше не используется (blots); expandable-цитата
+       теперь blockquote.d2-expandable. */
+    .ql-editor blockquote.d2-expandable {
+        border-left: 4px solid #ffd54a;
+    }
+    /* Спойлер в редакторе: точки, раскрываются по клику. */
+    .ql-editor tg-spoiler, .ql-editor .tg-spoiler {
+        background: #888;
+        color: transparent;
+        border-radius: 2px;
+        cursor: pointer;
+    }
+    .ql-editor tg-spoiler:hover, .ql-editor .tg-spoiler:hover {
+        color: inherit;
+        background: rgba(136, 136, 136, 0.3);
+    }
+    /* Pre/code: тёмная тема — Quill-дефолт светло-серый фон и тёмный текст
+       ломаются в тёмной теме (белое на белом). Адаптируем под тему. */
+    .ql-editor pre.ql-syntax, .ql-editor code {
+        background-color: rgba(136, 136, 136, 0.18) !important;
+        color: inherit !important;
+        border-radius: 3px;
+    }
 </style>
+<script>
+    // Тултипы кнопок тулбара Quill (после его инициализации).
+    document.addEventListener('DOMContentLoaded', function () {
+        var titles = {
+            'ql-bold': 'Жирный',
+            'ql-italic': 'Курсив',
+            'ql-underline': 'Подчёркнутый',
+            'ql-strike': 'Зачёркнутый',
+            'ql-code': 'Моноширинный',
+            'ql-link': 'Ссылка',
+            'ql-image': 'Картинка',
+            'ql-blockquote': 'Цитата',
+            'ql-code-block': 'Блок кода',
+            'ql-clean': 'Убрать форматирование',
+            'ql-d2-spoiler': 'Спойлер',
+            'ql-d2-expand-quote': 'Сворачиваемая цитата'
+        };
+        setInterval(function () {
+            document.querySelectorAll('.ql-toolbar button').forEach(function (btn) {
+                var cls = Object.keys(titles).find(function (c) { return btn.classList.contains(c); });
+                if (cls) btn.title = titles[cls];
+            });
+        }, 1000);
+    });
+</script>
 {% endblock %}
 {% block content %}
 

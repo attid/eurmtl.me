@@ -34,6 +34,7 @@ _WRAP_TAGS = {
     "strike": "strikethrough",
     "del": "strikethrough",
     "u": "underline",
+    "tg-spoiler": "spoiler",
 }
 
 
@@ -91,7 +92,11 @@ def _blocks_from_children(children, base_url: str) -> list[dict]:
                 blocks.append(_heading_block(child, base_url))
             elif name in ("p", "div"):
                 flush_inline()
-                blocks.extend(_paragraph_blocks(child, base_url))
+                if name == "div" and "ql-code-block-container" in (child.get("class") or []):
+                    # Quill 2 код-блок → pre-блок Telegram.
+                    blocks.append(_code_block_container_block(child))
+                else:
+                    blocks.extend(_paragraph_blocks(child, base_url))
             elif name in ("ul", "ol"):
                 flush_inline()
                 blocks.append(_list_block(child, base_url))
@@ -100,9 +105,50 @@ def _blocks_from_children(children, base_url: str) -> list[dict]:
                 block = _photo_block(child, base_url)
                 if block is not None:
                     blocks.append(block)
-            elif name in ("table", "blockquote", "pre"):
+            elif name == "blockquote":
+                # Цитата и сворачиваемая цитата (Bot API 10.3):
+                # blockquote → {type: "blockquote", blocks: [...]},
+                # blockquote expandable → {type: "expandable_blockquote",
+                # text: RichText}. Quill сохраняет КАЖДУЮ строку цитаты
+                # отдельным <blockquote> — соседние сливаются в один
+                # rich-блок (в TG 39 цитат подряд выглядят простыней).
                 flush_inline()
-                blocks.extend(_fallback_text_blocks(child, base_url))
+                bq = _blockquote_block(child, base_url)
+                # Соседние цитаты одного вида сливаются в один rich-блок
+                # (Quill даёт строку = <blockquote>, в TG простыня блоков).
+                # Пустые строки (<blockquote><br></blockquote>) не тащим.
+                prev = blocks[-1] if blocks else None
+                if bq.get("type") == "blockquote" and prev and prev.get("type") == "blockquote":
+                    non_empty = [
+                        b for b in bq["blocks"]
+                        if (b.get("text") if isinstance(b.get("text"), str) else "x")
+                        and (b.get("text") != "\n")
+                    ]
+                    prev["blocks"].extend(non_empty)
+                elif (
+                    bq.get("type") == "expandable_blockquote"
+                    and prev
+                    and prev.get("type") == "expandable_blockquote"
+                ):
+                    # Expandable хранит RichText — склеиваем текст.
+                    prev_text = prev.get("text")
+                    add_text = bq.get("text")
+                    prev["text"] = _concat_rich(prev_text, add_text)
+                else:
+                    blocks.append(bq)
+            elif name in ("table", "pre"):
+                flush_inline()
+                if name == "pre":
+                    blocks.append(_pre_block(child))
+                else:
+                    blocks.extend(_fallback_text_blocks(child, base_url))
+            elif (
+                name == "div"
+                and "ql-code-block-container" in (child.get("class") or [])
+            ):
+                # Quill 2 код-блок: <div class="ql-code-block-container">.
+                flush_inline()
+                blocks.append(_code_block_container_block(child))
             else:
                 # inline-тег (strong/a/span/...) — в текущий абзац.
                 inline_run.extend(_inline_from_tag(child, base_url))
@@ -201,6 +247,62 @@ def _fallback_text_blocks(tag: Tag, base_url: str) -> list[dict]:
     return blocks
 
 
+def _concat_rich(a, b):
+    """RichText + RichText → один RichText: плоский список узлов
+    [часть_A, "\\n", часть_B] — concat-обёртка не нужна, список сам
+    является RichText (concat)."""
+    parts = [p for p in (a, b) if p]
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    flat: list = []
+    for p in parts:
+        if isinstance(p, list) and p and isinstance(p[0], dict) and p[0].get("type") == "concat":
+            flat.extend(p[0]["text"])
+        elif flat:
+            flat.append("\n")
+            flat.append(p)
+        else:
+            flat.append(p)
+    return flat
+
+
+def _blockquote_block(tag: Tag, base_url: str) -> dict:
+    """<blockquote> → {"type": "blockquote", blocks: [...]}.
+    Сворачиваемая цитата приходит в двух формах (обе поддерживаются):
+    <blockquote expandable> — из старых сохранений и <blockquote
+    class="d2-expandable"> — формат Quill-blot (d2_expand_quote). Обе →
+    {"type": "expandable_blockquote", text: RichText} (свёрнутая по
+    умолчанию, Bot API 10.3)."""
+    if tag.has_attr("expandable") or "d2-expandable" in (tag.get("class") or []):
+        node, _ = _merge_nodes(_inline_from_children(tag, base_url))
+        return {
+            "type": "expandable_blockquote",
+            "text": node if node is not None else "",
+        }
+    blocks = _blocks_from_children(tag.children, base_url)
+    if not blocks:
+        text = tag.get_text().strip()
+        blocks = [{"type": "paragraph", "text": text}] if text else []
+    return {"type": "blockquote", "blocks": blocks}
+
+
+def _pre_block(tag: Tag) -> dict:
+    """<pre> → {"type": "pre", text: RichText} (язык не определяем —
+    в д2-вопросах не нужен)."""
+    text = tag.get_text().strip()
+    return {"type": "pre", "text": text}
+
+
+def _code_block_container_block(tag: Tag) -> dict:
+    """Quill 2 сохраняет код-блок как
+    <div class="ql-code-block-container"><div class="ql-code-block">…</div></div>
+    — конвертируем в pre-блок Telegram."""
+    text = tag.get_text().strip()
+    return {"type": "pre", "text": text}
+
+
 def _inline_from_children(tag: Tag, base_url: str) -> list:
     """Плоский список RichText-узлов детей inline-контейнера (p, h*, li,
     обёртки). Встроенные блоки (img/списки внутри p) приходят как
@@ -261,8 +363,15 @@ def _inline_from_tag(tag: Tag, base_url: str) -> list:
     if name in ("ul", "ol"):
         return [("__block__", _list_block(tag, base_url))]
     if name in ("p", "div"):
+        # Quill код-блок (div.ql-code-block-container) → pre-блок Telegram.
+        if "ql-code-block-container" in (tag.get("class") or []):
+            return [("__block__", _code_block_container_block(tag))]
         return [("__blocks__", _paragraph_blocks(tag, base_url))]
-    if name in ("table", "pre", "blockquote"):
+    if name == "pre":
+        return [("__block__", _pre_block(tag))]
+    if name == "blockquote":
+        return [("__block__", _blockquote_block(tag, base_url))]
+    if name == "table":
         return [("__blocks__", _fallback_text_blocks(tag, base_url))]
     # Неизвестный тег (span, font, ...) — рекурсивно содержимое.
     return _inline_from_children(tag, base_url)

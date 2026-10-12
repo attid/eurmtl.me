@@ -2,6 +2,69 @@
 {% block head_scripts %}
 <script src="/static/js/quill2/quill.js"></script>
 <link rel="stylesheet" href="/static/css/quill2.snow.css">
+<style>
+    /* Кастомные кнопки тулбара: спойлер и сворачиваемая цитата. */
+    .ql-toolbar button.ql-d2-spoiler::after,
+    .ql-toolbar button.ql-d2-expand-quote::after {
+        font-size: 12px;
+        font-weight: 600;
+        font-family: sans-serif;
+        content: "•••";
+    }
+    .ql-toolbar button.ql-d2-expand-quote::after {
+        content: "⇕❝";
+    }
+    /* Цитаты и спойлер в редакторе. */
+    .ql-editor blockquote {
+        border-left: 4px solid #ccc;
+        margin: 4px 0;
+        padding-left: 12px;
+    }
+    .ql-editor .d2-expandable {
+        border-left: 4px solid #ffd54a;
+    }
+    .ql-editor tg-spoiler, .ql-editor .tg-spoiler {
+        background: #888;
+        color: transparent;
+        border-radius: 2px;
+        cursor: pointer;
+    }
+    .ql-editor tg-spoiler:hover, .ql-editor .tg-spoiler:hover {
+        color: inherit;
+        background: rgba(136, 136, 136, 0.3);
+    }
+    /* Pre/code: тёмная тема — адаптируем под тему (иначе белое на белом). */
+    .ql-editor pre.ql-syntax, .ql-editor code {
+        background-color: rgba(136, 136, 136, 0.18) !important;
+        color: inherit !important;
+        border-radius: 3px;
+    }
+</style>
+<script>
+    // Тултипы кнопок тулбара Quill.
+    document.addEventListener('DOMContentLoaded', function () {
+        var titles = {
+            'ql-bold': 'Жирный',
+            'ql-italic': 'Курсив',
+            'ql-underline': 'Подчёркнутый',
+            'ql-strike': 'Зачёркнутый',
+            'ql-code': 'Моноширинный',
+            'ql-link': 'Ссылка',
+            'ql-image': 'Картинка',
+            'ql-blockquote': 'Цитата',
+            'ql-code-block': 'Блок кода',
+            'ql-clean': 'Убрать форматирование',
+            'ql-d2-spoiler': 'Спойлер',
+            'ql-d2-expand-quote': 'Сворачиваемая цитата'
+        };
+        setInterval(function () {
+            document.querySelectorAll('.ql-toolbar button').forEach(function (btn) {
+                var cls = Object.keys(titles).find(function (c) { return btn.classList.contains(c); });
+                if (cls) btn.title = titles[cls];
+            });
+        }, 1000);
+    });
+</script>
 {% endblock %}
 {% block content %}
 
