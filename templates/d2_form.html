@@ -3,13 +3,16 @@
 <script src="/static/js/quill2/quill.js"></script>
 <link rel="stylesheet" href="/static/css/quill2.snow.css">
 <style>
-    /* Кастомные кнопки тулбара: спойлер и сворачиваемая цитата. */
+    /* Кастомные кнопки тулбара: спойлер и сворачиваемая цитата (текстовые).
+       Цвет — как у SVG-иконок Quill (#444, hover #06c), чтобы в тёмной и
+       светлой теме выглядели одинаково с соседними кнопками. */
     .ql-toolbar button.ql-d2-spoiler::after,
     .ql-toolbar button.ql-d2-expand-quote::after {
         font-size: 12px;
         font-weight: 600;
         font-family: sans-serif;
         content: "•••";
+        color: #444;
     }
     .ql-toolbar button.ql-d2-expand-quote::after {
         content: "⇕❝";
