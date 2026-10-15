@@ -171,7 +171,9 @@ def _is_row_creator(data_row: dict) -> bool:
     CREATED_BY пишется как '@username' при создании (cmd_d2_add / смена
     чтения); сверяем без учёта '@', пробелов и регистра.
     """
-    created_by = str(data_row.get("CREATED_BY") or "").strip().lstrip("@").strip().lower()
+    created_by = (
+        str(data_row.get("CREATED_BY") or "").strip().lstrip("@").strip().lower()
+    )
     session_username = _session_username()
     return bool(created_by) and created_by == session_username
 
@@ -258,10 +260,17 @@ D2_RICH_ENABLED = True  # kill-switch пилота rich-постов
 _READING_TAG = {1: "first_reading", 2: "second_reading", 3: "third_reading"}
 
 
-def _d2_rich_blocks(status: str, inquiry: str, org: str = "", reading: int = 1,
-                    question_number=None, title: str = "",
-                    links_url=([], [], []), uuid_url: str = "",
-                    username: str = ""):
+def _d2_rich_blocks(
+    status: str,
+    inquiry: str,
+    org: str = "",
+    reading: int = 1,
+    question_number=None,
+    title: str = "",
+    links_url=([], [], []),
+    uuid_url: str = "",
+    username: str = "",
+):
     """Блоки InputRichMessage. Формат зависит от org.hash_position:
     - suffix (PFM/USDMM/GORA): жирная строка статуса, затем тело, ссылки внизу.
     - prefix (MTLA): первая строка "<статус> #<N>_reading", затем "Вопрос N:
@@ -303,16 +312,31 @@ def _d2_rich_blocks(status: str, inquiry: str, org: str = "", reading: int = 1,
     return blocks
 
 
-async def _d2_send_rich(channel: str, status: str, inquiry: str,
-                        org: str = "", reading: int = 1,
-                        question_number=None, title: str = "",
-                        links_url=([], [], []), uuid_url: str = "",
-                        username: str = ""):
+async def _d2_send_rich(
+    channel: str,
+    status: str,
+    inquiry: str,
+    org: str = "",
+    reading: int = 1,
+    question_number=None,
+    title: str = "",
+    links_url=([], [], []),
+    uuid_url: str = "",
+    username: str = "",
+):
     """sendRichMessage в канал. Возвращает message_id или None (ошибка уже
     залогирована warning'ом — вызывающий решает про фолбэк)."""
-    blocks = _d2_rich_blocks(status, inquiry, org, reading, question_number,
-                             title, links_url=links_url, uuid_url=uuid_url,
-                             username=username)
+    blocks = _d2_rich_blocks(
+        status,
+        inquiry,
+        org,
+        reading,
+        question_number,
+        title,
+        links_url=links_url,
+        uuid_url=uuid_url,
+        username=username,
+    )
     if blocks is None:
         return None
     try:
@@ -333,18 +357,34 @@ async def _d2_send_rich(channel: str, status: str, inquiry: str,
         return None
 
 
-async def _d2_edit_rich(channel: str, message_id, status: str, inquiry: str,
-                        org: str = "", reading: int = 1,
-                        question_number=None, title: str = "",
-                        links_url=([], [], []), uuid_url: str = "",
-                        username: str = "") -> bool:
+async def _d2_edit_rich(
+    channel: str,
+    message_id,
+    status: str,
+    inquiry: str,
+    org: str = "",
+    reading: int = 1,
+    question_number=None,
+    title: str = "",
+    links_url=([], [], []),
+    uuid_url: str = "",
+    username: str = "",
+) -> bool:
     """editMessageText(rich_message=...) опубликованного поста. message_id
     передаётся строкой как есть (из TELEGRAM_LINK), приводим к int.
     False — не получилось (включая «старый пост был не rich»): вызывающий
     републикует или падает в фолбэк."""
-    blocks = _d2_rich_blocks(status, inquiry, org, reading, question_number,
-                             title, links_url=links_url, uuid_url=uuid_url,
-                             username=username)
+    blocks = _d2_rich_blocks(
+        status,
+        inquiry,
+        org,
+        reading,
+        question_number,
+        title,
+        links_url=links_url,
+        uuid_url=uuid_url,
+        username=username,
+    )
     if blocks is None:
         return False
     try:
@@ -567,7 +607,8 @@ async def cmd_d2_show(question_uuid):
             # же чтение с черновиком патчит её, а не плодит дубли.
             draft_row = next(
                 (
-                    r for r in question_data
+                    r
+                    for r in question_data
                     if r.get("QUESTION_ID") == question["id"]
                     and _readings_int(r) == new_reading
                     and not (r.get("TELEGRAM_LINK") or "")
@@ -638,11 +679,17 @@ async def cmd_d2_show(question_uuid):
                     edited = False
                     if channel is not None:
                         edited = await _d2_edit_rich(
-                            channel, telegram_link.split("/")[-1], status, inquiry,
-                            org=org, reading=new_reading,
+                            channel,
+                            telegram_link.split("/")[-1],
+                            status,
+                            inquiry,
+                            org=org,
+                            reading=new_reading,
                             question_number=question.get("NUMBER"),
-                            title=short_subject, links_url=links_url,
-                            uuid_url=question_uuid, username=username,
+                            title=short_subject,
+                            links_url=links_url,
+                            uuid_url=question_uuid,
+                            username=username,
                         )
                         if not edited:
                             # Пост мог быть не rich (старые публикации) —
@@ -678,7 +725,11 @@ async def cmd_d2_show(question_uuid):
                     channel = await resolve_channel(org, new_reading)
                     if channel is not None:
                         message_id = await _d2_send_rich(
-                            channel, status, inquiry, org=org, reading=new_reading,
+                            channel,
+                            status,
+                            inquiry,
+                            org=org,
+                            reading=new_reading,
                             question_number=question.get("NUMBER"),
                             title=short_subject,
                         )
@@ -723,9 +774,7 @@ async def cmd_d2_show(question_uuid):
                         f"id={draft_row['id']} обновлено (uuid прежний "
                         f"{draft_row.get('UUID')}) [{org}] №{question.get('NUMBER')}"
                     )
-                    await flash(
-                        f"Черновик чтения {new_reading} обновлён.", "good"
-                    )
+                    await flash(f"Черновик чтения {new_reading} обновлён.", "good")
                     return redirect(f"/d2/{draft_row.get('UUID')}")
                 await grist_manager.post_data(
                     MTLGrist.QUESTION_DATA, {"records": [{"fields": fields}]}
@@ -780,11 +829,13 @@ async def cmd_d2_show(question_uuid):
                         old_link.split("/")[-1],
                         "☑️ #next",
                         data_row.get("BODY") or "",
-                        org=org, reading=reading,
+                        org=org,
+                        reading=reading,
                         question_number=question.get("NUMBER"),
                         title=short_subject,
                         links_url=updated_links,
-                        uuid_url=question_uuid, username=username,
+                        uuid_url=question_uuid,
+                        username=username,
                     )
                     logger.info(
                         f"D2 reading change: правка поста прошлого чтения "
@@ -906,10 +957,17 @@ async def cmd_d2_publish(question_uuid):
         # Не вышло (пост мёртв или был не rich) — уходим на ветку публикации
         # ниже.
         published = await _d2_edit_rich(
-            channel, telegram_link.split("/")[-1], status, inquiry,
-            org=org, reading=reading, question_number=question.get("NUMBER"),
-            title=question.get("TITLE") or "", links_url=links_url,
-            uuid_url=question_uuid, username=username,
+            channel,
+            telegram_link.split("/")[-1],
+            status,
+            inquiry,
+            org=org,
+            reading=reading,
+            question_number=question.get("NUMBER"),
+            title=question.get("TITLE") or "",
+            links_url=links_url,
+            uuid_url=question_uuid,
+            username=username,
         )
         if published:
             await flash("Пост в Telegram обновлён.", "good")
@@ -917,10 +975,16 @@ async def cmd_d2_publish(question_uuid):
     if not published and channel is not None:
         # Публикация (в т.ч. републикация мёртвого/не-rich поста).
         message_id = await _d2_send_rich(
-            channel, status, inquiry, org=org, reading=reading,
+            channel,
+            status,
+            inquiry,
+            org=org,
+            reading=reading,
             question_number=question.get("NUMBER"),
-            title=question.get("TITLE") or "", links_url=links_url,
-            uuid_url=question_uuid, username=username,
+            title=question.get("TITLE") or "",
+            links_url=links_url,
+            uuid_url=question_uuid,
+            username=username,
         )
         if message_id is None:
             text = get_full_text(status, inquiry, links_url, question_uuid, username)
@@ -1100,9 +1164,15 @@ async def cmd_d2_add():
         channel = await resolve_channel(org, reading)
         if channel is not None:
             message_id = await _d2_send_rich(
-                channel, status, inquiry, org=org, reading=reading,
-                question_number=question_number, title=short_subject,
-                uuid_url=d_uuid, username=username,
+                channel,
+                status,
+                inquiry,
+                org=org,
+                reading=reading,
+                question_number=question_number,
+                title=short_subject,
+                uuid_url=d_uuid,
+                username=username,
             )
             if message_id is None:
                 text = get_full_text(status, inquiry, [[], [], []], d_uuid, username)
@@ -1274,9 +1344,10 @@ async def cmd_d2_copy():
         inquiry=data_row.get("BODY") or "",
         template_title=f"Копия вопроса №{question.get('NUMBER')}",
         reading=1,
+        readings_total=_org_readings(org),
         statuses=statuses_list,
         user_weight=user_weight,
-        org=org,
+        **await _d2_workspace_context(),
     )
 
 
@@ -1403,7 +1474,8 @@ async def cmd_d2_edit():
         if explicit_status:
             if status_param == "active":
                 filtered = [
-                    row for row in items
+                    row
+                    for row in items
                     if row["status"] in ("❗️ #active", "‼️ #control")
                 ]
             elif status_param == "drafts":
@@ -1411,9 +1483,7 @@ async def cmd_d2_edit():
             elif status_param == "all":
                 pass
             elif status_param in statuses:
-                filtered = [
-                    row for row in items if row["status"] == status_param
-                ]
+                filtered = [row for row in items if row["status"] == status_param]
     else:
         # Явный выбор статуса — уважается всегда. Без параметров — дефолт
         # вида «Требует внимания» с ПРИМЕНЁННЫМ фильтром (active+control),
@@ -1422,8 +1492,7 @@ async def cmd_d2_edit():
             # «Требует внимания»: активные + контроль (решение владельца
             # 2026-10-10; ☑️ #next — конечный статус, в агрегат не входит).
             filtered = [
-                row for row in items
-                if row["status"] in ("❗️ #active", "‼️ #control")
+                row for row in items if row["status"] in ("❗️ #active", "‼️ #control")
             ]
         elif status_param == "drafts":
             # Черновики: все чтения без TELEGRAM_LINK.
