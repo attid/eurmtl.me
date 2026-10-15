@@ -52,7 +52,9 @@ def _recordsBrief(json_data: Dict[str, Any]) -> str:
     return " ".join(parts) if parts else str(json_data)[:_BRIEF_MAX]
 
 
-def _log_mutation(method: str, table: GristTableConfig, json_data: Dict[str, Any]) -> None:
+def _log_mutation(
+    method: str, table: GristTableConfig, json_data: Dict[str, Any]
+) -> None:
     logger.info(f"Grist {method} {table.table_name}: {_recordsBrief(json_data)}")
 
 
@@ -212,8 +214,7 @@ class GristAPI:
         match response.status:
             case 200:
                 logger.info(
-                    f"Grist OK: PATCH {table.table_name} "
-                    f"{_recordsBrief(json_data)}"
+                    f"Grist OK: PATCH {table.table_name} {_recordsBrief(json_data)}"
                 )
                 return True
             case _:
@@ -298,9 +299,7 @@ class GristAPI:
             case 200 if isinstance(response.data, list) and response.data:
                 # Grist отвечает списком: [{"id": N}] или просто [N].
                 first = response.data[0]
-                attachment_id = (
-                    first.get("id") if isinstance(first, dict) else first
-                )
+                attachment_id = first.get("id") if isinstance(first, dict) else first
             case _:
                 raise Exception(f"Ошибка загрузки attachment: Статус {response.status}")
         if attachment_id is None:

@@ -92,7 +92,9 @@ def _blocks_from_children(children, base_url: str) -> list[dict]:
                 blocks.append(_heading_block(child, base_url))
             elif name in ("p", "div"):
                 flush_inline()
-                if name == "div" and "ql-code-block-container" in (child.get("class") or []):
+                if name == "div" and "ql-code-block-container" in (
+                    child.get("class") or []
+                ):
                     # Quill 2 код-блок → pre-блок Telegram.
                     blocks.append(_code_block_container_block(child))
                 else:
@@ -118,9 +120,14 @@ def _blocks_from_children(children, base_url: str) -> list[dict]:
                 # (Quill даёт строку = <blockquote>, в TG простыня блоков).
                 # Пустые строки (<blockquote><br></blockquote>) не тащим.
                 prev = blocks[-1] if blocks else None
-                if bq.get("type") == "blockquote" and prev and prev.get("type") == "blockquote":
+                if (
+                    bq.get("type") == "blockquote"
+                    and prev
+                    and prev.get("type") == "blockquote"
+                ):
                     non_empty = [
-                        b for b in bq["blocks"]
+                        b
+                        for b in bq["blocks"]
                         if (b.get("text") if isinstance(b.get("text"), str) else "x")
                         and (b.get("text") != "\n")
                     ]
@@ -142,9 +149,8 @@ def _blocks_from_children(children, base_url: str) -> list[dict]:
                     blocks.append(_pre_block(child))
                 else:
                     blocks.extend(_fallback_text_blocks(child, base_url))
-            elif (
-                name == "div"
-                and "ql-code-block-container" in (child.get("class") or [])
+            elif name == "div" and "ql-code-block-container" in (
+                child.get("class") or []
             ):
                 # Quill 2 код-блок: <div class="ql-code-block-container">.
                 flush_inline()
@@ -258,7 +264,12 @@ def _concat_rich(a, b):
         return parts[0]
     flat: list = []
     for p in parts:
-        if isinstance(p, list) and p and isinstance(p[0], dict) and p[0].get("type") == "concat":
+        if (
+            isinstance(p, list)
+            and p
+            and isinstance(p[0], dict)
+            and p[0].get("type") == "concat"
+        ):
             flat.extend(p[0]["text"])
         elif flat:
             flat.append("\n")

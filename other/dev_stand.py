@@ -199,7 +199,9 @@ async def tg_log_page():
             try:
                 rich = json.loads(payload["rich_message"])
                 blocks = rich.get("blocks", [])
-                parts = [f'<div class="rich-head">rich_message: {len(blocks)} блоков</div>']
+                parts = [
+                    f'<div class="rich-head">rich_message: {len(blocks)} блоков</div>'
+                ]
                 for i, block in enumerate(blocks):
                     text = _block_rich_html(block)
                     btype = block.get("type", "?")
@@ -220,7 +222,7 @@ async def tg_log_page():
                     )
                 rich_html = "".join(parts)
             except (ValueError, TypeError):
-                rich_html = f'<div class="rich-head">rich_message (не JSON)</div>'
+                rich_html = '<div class="rich-head">rich_message (не JSON)</div>'
             payload_view = _html_escape(
                 json.dumps(
                     {k: v for k, v in payload.items() if k != "rich_message"},
@@ -264,7 +266,7 @@ color:#a5b2c0;margin:0;border-top:1px solid #3a4048}}
 </style></head><body>
 <h2>TG-мок: что улетело бы в Telegram</h2>
 <p><em>Кликни по записи — раскроется содержимое. rich_message показан блоками.</em></p>
-{''.join(rows)}
+{"".join(rows)}
 </body></html>"""
 
 
@@ -276,9 +278,13 @@ def _block_rich_html(block: dict) -> str:
 
     def fmt(text: str, wrapper: str) -> str:
         label = {
-            "bold": "жирный", "italic": "курсив", "underline": "подчёркнутый",
-            "strikethrough": "зачёркнутый", "spoiler": "СПОЙЛЕР",
-            "code": "код", "url": "ссылка",
+            "bold": "жирный",
+            "italic": "курсив",
+            "underline": "подчёркнутый",
+            "strikethrough": "зачёркнутый",
+            "spoiler": "СПОЙЛЕР",
+            "code": "код",
+            "url": "ссылка",
         }.get(wrapper, wrapper)
         if wrapper == "spoiler":
             return f'<span class="mk-spoiler">{text}</span>'
@@ -297,9 +303,11 @@ def _block_rich_html(block: dict) -> str:
                 before = len(parts)
                 walk(inner)
                 if t and len(parts) > before:
-                    parts[before] = fmt(parts[before], t) if isinstance(
-                        parts[before], str
-                    ) else parts[before]
+                    parts[before] = (
+                        fmt(parts[before], t)
+                        if isinstance(parts[before], str)
+                        else parts[before]
+                    )
             elif "source" in node:  # math
                 parts.append(f'<span class="mk-tag">[math]</span>{node["source"]}')
         elif isinstance(node, list):
@@ -337,12 +345,7 @@ def _block_plain_text(block: dict) -> str:
 
 
 def _html_escape(value: str) -> str:
-    return (
-        str(value)
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
+    return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 @blueprint.route("/dev/tg-log/json", methods=("GET",))

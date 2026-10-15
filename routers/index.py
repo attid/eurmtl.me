@@ -244,7 +244,9 @@ async def openapi_json():
                     "summary": "Agent login by signing the nonce with a EURMTL_users key",
                     "responses": {
                         "200": {"description": "Session cookie established"},
-                        "400": {"description": "Invalid signature, address or expired nonce"},
+                        "400": {
+                            "description": "Invalid signature, address or expired nonce"
+                        },
                         "403": {"description": "No EURMTL_users row for the address"},
                     },
                 },

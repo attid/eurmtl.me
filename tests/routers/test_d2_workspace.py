@@ -593,7 +593,7 @@ async def test_next_number_is_per_org(client):
         {"id": 2, "NUMBER": 7, "ORG": "PFM"},
         {"id": 3, "NUMBER": 1, "ORG": "GORA"},
     ]
-    assert _org_next_number(questions, "PFM") == 8   # только PFM-вопросы
+    assert _org_next_number(questions, "PFM") == 8  # только PFM-вопросы
     assert _org_next_number(questions, "GORA") == 2  # только GORA-вопросы
     assert _org_next_number(questions, "USDMM") == 1  # пусто — начинаем с 1
     assert _org_next_number(questions, DEFAULT_ORG_NAME) == 8
@@ -608,8 +608,14 @@ async def test_add_same_number_in_other_org_allowed(client):
         {"id": 1, "NUMBER": 1, "ORG": "PFM", "TITLE": "PFM one", "READING": 1},
     ]
     question_data = [
-        {"QUESTION_ID": 1, "READING": "1", "UUID": "pfm1", "TELEGRAM_LINK": "https://t.me/c/1863399780/1"},
+        {
+            "QUESTION_ID": 1,
+            "READING": "1",
+            "UUID": "pfm1",
+            "TELEGRAM_LINK": "https://t.me/c/1863399780/1",
+        },
     ]
+
     # post_data «создаёт» строку: орг-скоуп next() после POST найдёт GORA №1.
     async def fake_post(table, json_data):
         if table.table_name == "D2_QUESTIONS":
@@ -627,7 +633,7 @@ async def test_add_same_number_in_other_org_allowed(client):
         patch(
             "other.grist_tools.grist_manager.post_data",
             new=AsyncMock(side_effect=fake_post),
-        ) as post_mock,
+        ),
         patch("routers.decision.skynet_bot.send_message", new=AsyncMock()) as send_mock,
     ):
         response = await client.post(
@@ -672,9 +678,7 @@ async def test_save_draft_does_not_touch_telegram(client):
         _secretaries_mock({GORA_ADDRESS: {SECRETARY_ID}}),
         _user_org_names_mock({"GORA"}),
         _tables_mock(QUESTIONS=questions, QUESTION_DATA=question_data),
-        patch(
-            "other.grist_tools.grist_manager.patch_data", new=AsyncMock()
-        ) as patch_mock,
+        patch("other.grist_tools.grist_manager.patch_data", new=AsyncMock()),
         patch(
             "routers.decision.skynet_bot.edit_message_text", new=AsyncMock()
         ) as edit_mock,
@@ -698,10 +702,12 @@ async def test_save_draft_does_not_touch_telegram(client):
     assert not any("не прошла" in t for t in texts)
     assert any("успешно обновлён" in t for t in texts)
 
+
 @pytest.fixture(autouse=True)
 def _clear_question_tables_cache():
     """Кеш D2_* таблиц (TTL 5с) переживает тесты — чистим как остальные кеши."""
     from routers.decision import question_tables_cache
+
     question_tables_cache.cache.clear()
     yield
     question_tables_cache.cache.clear()

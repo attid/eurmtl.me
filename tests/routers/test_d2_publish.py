@@ -395,6 +395,7 @@ async def test_republish_dead_post_sends_new_message(client):
                 "CREATED_BY": "@itolstov",
             }
         ]
+
         # /d2/publish: кеш таблиц делает число лоадов неважным —
         # мок по имени таблицы (как в _tables_mock).
         async def fake_load(table, *a, **k):
@@ -419,8 +420,10 @@ async def test_republish_dead_post_sends_new_message(client):
     # Подвал: ссылка на редактирование ведёт на /d/<uuid> (целевой URL
     # навсегда, переживёт cutover).
     url_nodes = [
-        b["text"] for b in rich_blocks
-        if b.get("type") == "paragraph" and isinstance(b.get("text"), dict)
+        b["text"]
+        for b in rich_blocks
+        if b.get("type") == "paragraph"
+        and isinstance(b.get("text"), dict)
         and b["text"].get("type") == "url"
     ]
     assert any(
@@ -808,10 +811,12 @@ async def test_edit_list_marks_draft_questions(client):
     assert response.status_code == 200
     assert "черновик" in body
 
+
 @pytest.fixture(autouse=True)
 def _clear_question_tables_cache():
     """Кеш D2_* таблиц (TTL 5с) переживает тесты — чистим как остальные кеши."""
     from routers.decision import question_tables_cache
+
     question_tables_cache.cache.clear()
     yield
     question_tables_cache.cache.clear()
@@ -841,7 +846,13 @@ async def test_add_same_number_other_org_links_correct_question(client):
             # POST: GORA №1 уже создан.
             if calls["questions"] >= 2:
                 return questions + [
-                    {"id": 200, "NUMBER": 1, "TITLE": "GORA q", "READING": 1, "ORG": "GORA"}
+                    {
+                        "id": 200,
+                        "NUMBER": 1,
+                        "TITLE": "GORA q",
+                        "READING": 1,
+                        "ORG": "GORA",
+                    }
                 ]
             return questions
         return []
@@ -894,9 +905,7 @@ async def test_reading_change_writes_session_user_as_creator(client):
             "other.grist_tools.grist_manager.load_table_data",
             new=AsyncMock(return_value=[]),
         ) as load_mock,
-        patch(
-            "other.grist_tools.grist_manager.patch_data", new=AsyncMock()
-        ),
+        patch("other.grist_tools.grist_manager.patch_data", new=AsyncMock()),
         patch(
             "other.grist_tools.grist_manager.post_data", new=AsyncMock()
         ) as post_mock,

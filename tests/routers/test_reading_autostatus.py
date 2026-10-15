@@ -5,16 +5,24 @@ from tests.routers.test_d2_workspace import _secretaries_mock, _user_org_names_m
 SECRETARY_ID = 1837984392
 PFM_ADDRESS = "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
 
+
 def _tables_mock(**tables):
     from other.grist_tools import MTLGrist
+
     by_name = {}
     for attr, rows in tables.items():
         table = getattr(MTLGrist, attr, None)
         key = table.table_name if table is not None else attr
         by_name[key] = rows
+
     async def fake(table, *args, **kwargs):
         return list(by_name.get(table.table_name, []))
-    return patch("other.grist_tools.grist_manager.load_table_data", new=AsyncMock(side_effect=fake))
+
+    return patch(
+        "other.grist_tools.grist_manager.load_table_data",
+        new=AsyncMock(side_effect=fake),
+    )
+
 
 @pytest.mark.asyncio
 async def test_reading_change_closes_previous(client):
@@ -23,26 +31,46 @@ async def test_reading_change_closes_previous(client):
         s["user_id"] = SECRETARY_ID
         s["d2_org"] = "PFM"
     questions = [{"id": 1, "NUMBER": 118, "TITLE": "Q", "READING": 1, "ORG": "PFM"}]
-    data = [{"id": 10, "QUESTION_ID": 1, "READING": 1, "UUID": "u1",
-             "TELEGRAM_LINK": "https://t.me/c/1863399780/1", "BODY": "<p>v1</p>",
-             "STATUS": "❗️ #active", "CREATED_BY": "@x", "ORG": "PFM"}]
+    data = [
+        {
+            "id": 10,
+            "QUESTION_ID": 1,
+            "READING": 1,
+            "UUID": "u1",
+            "TELEGRAM_LINK": "https://t.me/c/1863399780/1",
+            "BODY": "<p>v1</p>",
+            "STATUS": "❗️ #active",
+            "CREATED_BY": "@x",
+            "ORG": "PFM",
+        }
+    ]
     with (
         _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
         _user_org_names_mock({"PFM"}),
         _tables_mock(D2_QUESTIONS=questions, D2_QUESTION_DATA=data),
         patch("routers.decision._d2_send_rich", new=AsyncMock(return_value=77)),
-        patch("other.grist_tools.grist_manager.patch_data", new=AsyncMock()) as patch_mock,
-        patch("other.grist_tools.grist_manager.post_data", new=AsyncMock()) as post_mock,
+        patch(
+            "other.grist_tools.grist_manager.patch_data", new=AsyncMock()
+        ) as patch_mock,
+        patch(
+            "other.grist_tools.grist_manager.post_data", new=AsyncMock()
+        ) as post_mock,
     ):
-        resp = await client.post("/d2/u1", form={
-            "short_subject": "Q", "inquiry": "<p>v2</p>",
-            "status": "❗️ #active", "reading": "2",
-        })
+        resp = await client.post(
+            "/d2/u1",
+            form={
+                "short_subject": "Q",
+                "inquiry": "<p>v2</p>",
+                "status": "❗️ #active",
+                "reading": "2",
+            },
+        )
         assert resp.status_code == 302
         assert patch_mock.await_count >= 1
         posted = post_mock.await_args_list[-1].args[1]["records"][0]["fields"]
         assert posted["READING"] == 2 and posted["STATUS"] == "❗️ #active"
         assert posted["TELEGRAM_LINK"].endswith("/77")
+
 
 @pytest.mark.asyncio
 async def test_reading_change_keeps_canceled(client):
@@ -52,9 +80,19 @@ async def test_reading_change_keeps_canceled(client):
         s["user_id"] = SECRETARY_ID
         s["d2_org"] = "PFM"
     questions = [{"id": 1, "NUMBER": 118, "TITLE": "Q", "READING": 1, "ORG": "PFM"}]
-    data = [{"id": 10, "QUESTION_ID": 1, "READING": 1, "UUID": "u1",
-             "TELEGRAM_LINK": "https://t.me/c/1863399780/1", "BODY": "<p>v1</p>",
-             "STATUS": "🔇 #canceled", "CREATED_BY": "@x", "ORG": "PFM"}]
+    data = [
+        {
+            "id": 10,
+            "QUESTION_ID": 1,
+            "READING": 1,
+            "UUID": "u1",
+            "TELEGRAM_LINK": "https://t.me/c/1863399780/1",
+            "BODY": "<p>v1</p>",
+            "STATUS": "🔇 #canceled",
+            "CREATED_BY": "@x",
+            "ORG": "PFM",
+        }
+    ]
     with (
         _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
         _user_org_names_mock({"PFM"}),
@@ -63,10 +101,15 @@ async def test_reading_change_keeps_canceled(client):
         patch("other.grist_tools.grist_manager.patch_data", new=AsyncMock()),
         patch("other.grist_tools.grist_manager.post_data", new=AsyncMock()),
     ):
-        await client.post("/d2/u1", form={
-            "short_subject": "Q", "inquiry": "<p>v2</p>",
-            "status": "❗️ #active", "reading": "2",
-        })
+        await client.post(
+            "/d2/u1",
+            form={
+                "short_subject": "Q",
+                "inquiry": "<p>v2</p>",
+                "status": "❗️ #active",
+                "reading": "2",
+            },
+        )
         assert data[0]["STATUS"] == "🔇 #canceled"
 
 
@@ -80,9 +123,18 @@ async def test_reading_change_edits_previous_post_to_next(client):
         s["user_id"] = SECRETARY_ID
         s["d2_org"] = "PFM"
     questions = [{"id": 1, "NUMBER": 118, "TITLE": "Q", "READING": 1, "ORG": "PFM"}]
-    data = [{"id": 10, "QUESTION_ID": 1, "READING": 1, "UUID": "u1",
-             "TELEGRAM_LINK": "https://t.me/c/1863399780/1", "BODY": "<p>v1</p>",
-             "STATUS": "❗️ #active", "CREATED_BY": "@x"}]
+    data = [
+        {
+            "id": 10,
+            "QUESTION_ID": 1,
+            "READING": 1,
+            "UUID": "u1",
+            "TELEGRAM_LINK": "https://t.me/c/1863399780/1",
+            "BODY": "<p>v1</p>",
+            "STATUS": "❗️ #active",
+            "CREATED_BY": "@x",
+        }
+    ]
     with (
         _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
         _user_org_names_mock({"PFM"}),
@@ -94,10 +146,15 @@ async def test_reading_change_edits_previous_post_to_next(client):
         patch("other.grist_tools.grist_manager.patch_data", new=AsyncMock()),
         patch("other.grist_tools.grist_manager.post_data", new=AsyncMock()),
     ):
-        resp = await client.post("/d2/u1", form={
-            "short_subject": "Q", "inquiry": "<p>v2</p>",
-            "status": "❗️ #active", "reading": "2",
-        })
+        resp = await client.post(
+            "/d2/u1",
+            form={
+                "short_subject": "Q",
+                "inquiry": "<p>v2</p>",
+                "status": "❗️ #active",
+                "reading": "2",
+            },
+        )
         assert resp.status_code == 302
     edit_mock.assert_awaited_once()
     args, kwargs = edit_mock.await_args
@@ -123,9 +180,18 @@ async def test_reading_change_draft_old_post_not_edited(client):
         s["user_id"] = SECRETARY_ID
         s["d2_org"] = "PFM"
     questions = [{"id": 1, "NUMBER": 118, "TITLE": "Q", "READING": 1, "ORG": "PFM"}]
-    data = [{"id": 10, "QUESTION_ID": 1, "READING": 1, "UUID": "u1",
-             "TELEGRAM_LINK": "", "BODY": "<p>v1</p>",
-             "STATUS": "❗️ #active", "CREATED_BY": "@x"}]
+    data = [
+        {
+            "id": 10,
+            "QUESTION_ID": 1,
+            "READING": 1,
+            "UUID": "u1",
+            "TELEGRAM_LINK": "",
+            "BODY": "<p>v1</p>",
+            "STATUS": "❗️ #active",
+            "CREATED_BY": "@x",
+        }
+    ]
     with (
         _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
         _user_org_names_mock({"PFM"}),
@@ -137,10 +203,15 @@ async def test_reading_change_draft_old_post_not_edited(client):
         patch("other.grist_tools.grist_manager.patch_data", new=AsyncMock()),
         patch("other.grist_tools.grist_manager.post_data", new=AsyncMock()),
     ):
-        resp = await client.post("/d2/u1", form={
-            "short_subject": "Q", "inquiry": "<p>v2</p>",
-            "status": "❗️ #active", "reading": "2",
-        })
+        resp = await client.post(
+            "/d2/u1",
+            form={
+                "short_subject": "Q",
+                "inquiry": "<p>v2</p>",
+                "status": "❗️ #active",
+                "reading": "2",
+            },
+        )
         assert resp.status_code == 302
     edit_mock.assert_not_awaited()
 
@@ -155,9 +226,18 @@ async def test_reading_change_draft_no_publish_no_autostatus(client):
         s["user_id"] = SECRETARY_ID
         s["d2_org"] = "PFM"
     questions = [{"id": 1, "NUMBER": 118, "TITLE": "Q", "READING": 1, "ORG": "PFM"}]
-    data = [{"id": 10, "QUESTION_ID": 1, "READING": 1, "UUID": "u1",
-             "TELEGRAM_LINK": "https://t.me/c/1863399780/1", "BODY": "<p>v1</p>",
-             "STATUS": "❗️ #active", "CREATED_BY": "@x"}]
+    data = [
+        {
+            "id": 10,
+            "QUESTION_ID": 1,
+            "READING": 1,
+            "UUID": "u1",
+            "TELEGRAM_LINK": "https://t.me/c/1863399780/1",
+            "BODY": "<p>v1</p>",
+            "STATUS": "❗️ #active",
+            "CREATED_BY": "@x",
+        }
+    ]
     with (
         _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
         _user_org_names_mock({"PFM"}),
@@ -169,12 +249,20 @@ async def test_reading_change_draft_no_publish_no_autostatus(client):
             "routers.decision._d2_edit_rich", new=AsyncMock(return_value=True)
         ) as edit_mock,
         patch("other.grist_tools.grist_manager.patch_data", new=AsyncMock()),
-        patch("other.grist_tools.grist_manager.post_data", new=AsyncMock()) as post_mock,
+        patch(
+            "other.grist_tools.grist_manager.post_data", new=AsyncMock()
+        ) as post_mock,
     ):
-        resp = await client.post("/d2/u1", form={
-            "short_subject": "Q", "inquiry": "<p>v3</p>",
-            "status": "❗️ #active", "reading": "3", "as_draft": "on",
-        })
+        resp = await client.post(
+            "/d2/u1",
+            form={
+                "short_subject": "Q",
+                "inquiry": "<p>v3</p>",
+                "status": "❗️ #active",
+                "reading": "3",
+                "as_draft": "on",
+            },
+        )
         assert resp.status_code == 302
     rich_mock.assert_not_awaited()  # публикации нет
     edit_mock.assert_not_awaited()  # прошлый пост не правим
@@ -194,13 +282,27 @@ async def test_reading_change_draft_twice_updates_same_row(client):
         s["d2_org"] = "PFM"
     questions = [{"id": 1, "NUMBER": 118, "TITLE": "Q", "READING": 1, "ORG": "PFM"}]
     data = [
-        {"id": 10, "QUESTION_ID": 1, "READING": 1, "UUID": "u1",
-         "TELEGRAM_LINK": "https://t.me/c/1863399780/1", "BODY": "<p>v1</p>",
-         "STATUS": "❗️ #active", "CREATED_BY": "@x"},
+        {
+            "id": 10,
+            "QUESTION_ID": 1,
+            "READING": 1,
+            "UUID": "u1",
+            "TELEGRAM_LINK": "https://t.me/c/1863399780/1",
+            "BODY": "<p>v1</p>",
+            "STATUS": "❗️ #active",
+            "CREATED_BY": "@x",
+        },
         # Черновик чтения 3 уже есть (создан раньше).
-        {"id": 11, "QUESTION_ID": 1, "READING": 3, "UUID": "u3draft",
-         "TELEGRAM_LINK": "", "BODY": "<p>old draft</p>",
-         "STATUS": "❗️ #active", "CREATED_BY": "@x"},
+        {
+            "id": 11,
+            "QUESTION_ID": 1,
+            "READING": 3,
+            "UUID": "u3draft",
+            "TELEGRAM_LINK": "",
+            "BODY": "<p>old draft</p>",
+            "STATUS": "❗️ #active",
+            "CREATED_BY": "@x",
+        },
     ]
     with (
         _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
@@ -215,10 +317,16 @@ async def test_reading_change_draft_twice_updates_same_row(client):
             "other.grist_tools.grist_manager.post_data", new=AsyncMock()
         ) as post_mock,
     ):
-        resp = await client.post("/d2/u1", form={
-            "short_subject": "Q", "inquiry": "<p>new draft text</p>",
-            "status": "❗️ #active", "reading": "3", "as_draft": "on",
-        })
+        resp = await client.post(
+            "/d2/u1",
+            form={
+                "short_subject": "Q",
+                "inquiry": "<p>new draft text</p>",
+                "status": "❗️ #active",
+                "reading": "3",
+                "as_draft": "on",
+            },
+        )
         assert resp.status_code == 302
     post_mock.assert_not_awaited()  # дубль не создаётся
     # PATCH ушёл в существующую черновик-строку id=11.

@@ -295,11 +295,13 @@ def test_blockquote_becomes_quote_block():
     blocks = result["blocks"]
     assert blocks[0]["type"] == "blockquote"
     inner = blocks[0]["blocks"]
-    assert any(b.get("text") == "Скрытый текст" for b in inner if b.get("type") == "paragraph")
+    assert any(
+        b.get("text") == "Скрытый текст" for b in inner if b.get("type") == "paragraph"
+    )
 
 
 def test_expandable_blockquote_becomes_expandable():
-    result = convert('<blockquote expandable><p>Длинный текст цитаты</p></blockquote>')
+    result = convert("<blockquote expandable><p>Длинный текст цитаты</p></blockquote>")
     blocks = result["blocks"]
     assert blocks[0]["type"] == "expandable_blockquote"
     # text — RichText, содержащий текст цитаты

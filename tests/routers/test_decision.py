@@ -31,7 +31,6 @@ async def test_decision_post_also_redirects(client):
 
 
 @pytest.mark.asyncio
-
 def test_get_full_text_builds_links_and_footer():
     text = get_full_text(
         "❗️ #active",
