@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 from datetime import datetime
 
@@ -157,6 +156,24 @@ async def _session_user_telegram_id() -> int | None:
         return int(user_id)
     except (TypeError, ValueError):
         return None
+
+
+def _session_username() -> str:
+    """Username текущего пользователя из сессии (без @, пробелов, lower)."""
+    userdata = session.get("userdata") or {}
+    username = userdata.get("username") or ""
+    return str(username).strip().lstrip("@").strip().lower()
+
+
+def _is_row_creator(data_row: dict) -> bool:
+    """Текущий пользователь — владелец строки QUESTION_DATA (CREATED_BY).
+
+    CREATED_BY пишется как '@username' при создании (cmd_d2_add / смена
+    чтения); сверяем без учёта '@', пробелов и регистра.
+    """
+    created_by = str(data_row.get("CREATED_BY") or "").strip().lstrip("@").strip().lower()
+    session_username = _session_username()
+    return bool(created_by) and created_by == session_username
 
 
 async def _user_visible_orgs() -> set:
@@ -675,7 +692,10 @@ async def cmd_d2_show(question_uuid):
                     "BODY": inquiry,
                     "EXTRA": "",
                     "STATUS": status,
-                    "CREATED_BY": username,
+                    # Автор нового чтения — тот, кто его создал (сессия),
+                    # не автор прошлого чтения: иначе владелец-не-секретарь
+                    # не сможет опубликовать свой черновик-чтение.
+                    "CREATED_BY": "@" + _session_username(),
                     "CREATED_AT": datetime.now().isoformat(),
                 }
                 if message_id is not None and channel is not None:
@@ -821,7 +841,11 @@ async def cmd_d2_show(question_uuid):
     ]
     readings_total = _org_readings(org)
     is_draft = not (data_row.get("TELEGRAM_LINK") or "")
-    can_publish = is_draft and await _is_org_secretary(org)
+    # Кнопка «Опубликовать» на черновике: секретарь оргы ИЛИ владелец
+    # записи (решение владельца 2026-10-15: черновик публикует и автор).
+    can_publish = is_draft and (
+        await _is_org_secretary(org) or _is_row_creator(data_row)
+    )
     return await render_template(
         "d2_question.html",
         question_number=question_number,
@@ -850,8 +874,14 @@ async def cmd_d2_publish(question_uuid):
     org = question.get("ORG") or DEFAULT_ORG_NAME
     if not await _org_visible(org):
         return "Decision not exist =(", 404
-    if not await _is_org_secretary(org):
-        await flash("Публиковать могут только секретари.")
+    is_draft = not (data_row.get("TELEGRAM_LINK") or "")
+    can_publish = await _is_org_secretary(org) or (
+        is_draft and _is_row_creator(data_row)
+    )
+    if not can_publish:
+        # Секретарь — всегда; владелец — только публикацию своего черновика
+        # (републикация удалённого поста остаётся секретарской).
+        await flash("Публиковать могут только секретари (владелец — свой черновик).")
         return redirect(f"/d2/{question_uuid}")
 
     from other.grist_tools import grist_manager, MTLGrist

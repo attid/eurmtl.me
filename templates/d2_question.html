@@ -146,6 +146,8 @@
         <form action="/d2/{{ row_uuid }}/publish" method="post" class="d-inline">
             <button type="submit" class="btn btn-primary btn-sm">Опубликовать<i class="ti ti-send ms-2"></i></button>
         </form>
+        {% endif %}
+        {% if is_draft %}
         <span class="badge bg-warning-lt ms-1">черновик</span>
         {% endif %}
     </div>

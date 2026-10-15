@@ -495,15 +495,67 @@ async def test_republish_dead_post_falls_back_to_legacy(client):
 
 
 @pytest.mark.asyncio
-async def test_publish_by_non_secretary_rejected(client):
-    """Подписант PFM (не секретарь) публиковать не может."""
+async def test_draft_publish_by_creator_non_secretary(client):
+    """Владелец черновика (не секретарь) может опубликовать черновик."""
     async with client.session_transaction() as session:
         session["userdata"] = PLAIN_SESSION
         session["user_id"] = PLAIN_SESSION["id"]
 
+    msg = AsyncMock()
+    msg.message_id = 7171
     with (
         _secretaries_mock({GORA_ADDRESS: {1837984392}}),
         _signer_mock(PFM_ADDRESS, 1863399780),  # attid подписант PFM
+        patch(
+            "other.grist_tools.grist_manager.load_table_data",
+            new=AsyncMock(return_value=[]),
+        ) as load_mock,
+        patch(
+            "other.grist_tools.grist_manager.patch_data", new=AsyncMock()
+        ) as patch_mock,
+        patch(
+            "routers.decision.skynet_bot.send_rich_message",
+            new=AsyncMock(return_value=msg),
+        ) as rich_mock,
+        patch("routers.decision.skynet_bot.send_message", new=AsyncMock()) as send_mock,
+    ):
+        questions = [
+            {"id": 2, "NUMBER": 2, "TITLE": "Купить сервер", "READING": 1, "ORG": "PFM"}
+        ]
+        data = [
+            {
+                "id": 3,
+                "QUESTION_ID": 2,
+                "READING": 1,
+                "UUID": DRAFT_UUID,
+                "TELEGRAM_LINK": "",
+                "BODY": "<p>Body</p>",
+                "STATUS": "✅ #done",
+                "CREATED_BY": "@attid",
+            }
+        ]
+        load_mock.side_effect = [questions, data, [], questions, data, []]
+        response = await client.post(f"/d2/{DRAFT_UUID}/publish")
+
+    assert response.status_code == 302
+    rich_mock.assert_awaited_once()
+    send_mock.assert_not_awaited()
+    patched = patch_mock.await_args.args[1]
+    assert patched["records"][0]["fields"]["TELEGRAM_LINK"] == (
+        "https://t.me/c/1863399780/7171"
+    )
+
+
+@pytest.mark.asyncio
+async def test_draft_publish_by_other_non_secretary_rejected(client):
+    """Не-секретарь, не владелец черновика — публиковать нельзя."""
+    async with client.session_transaction() as session:
+        session["userdata"] = {"id": 1863399780, "username": "somebody_else"}
+        session["user_id"] = 1863399780
+
+    with (
+        _secretaries_mock({GORA_ADDRESS: {1837984392}}),
+        _signer_mock(PFM_ADDRESS, 1863399780),
         patch(
             "other.grist_tools.grist_manager.load_table_data",
             new=AsyncMock(return_value=[]),
@@ -532,11 +584,95 @@ async def test_publish_by_non_secretary_rejected(client):
     send_mock.assert_not_awaited()
     async with client.session_transaction() as session:
         flashes = dict(session.get("_flashes", []))
-    assert any("только секретари" in str(m) for m in flashes.values())
+    assert any("Публиковать" in str(m) for m in flashes.values())
+
+
+@pytest.mark.asyncio
+async def test_republish_by_creator_non_secretary_rejected(client):
+    """Републикация опубликованного (удалённый пост) — только секретарь;
+    владелец-не-секретарь получает отказ."""
+    async with client.session_transaction() as session:
+        session["userdata"] = PLAIN_SESSION
+        session["user_id"] = PLAIN_SESSION["id"]
+
+    with (
+        _secretaries_mock({GORA_ADDRESS: {1837984392}}),
+        _signer_mock(PFM_ADDRESS, 1863399780),
+        patch(
+            "other.grist_tools.grist_manager.load_table_data",
+            new=AsyncMock(return_value=[]),
+        ) as load_mock,
+        patch("routers.decision.skynet_bot.send_message", new=AsyncMock()) as send_mock,
+    ):
+        questions = [
+            {"id": 2, "NUMBER": 2, "TITLE": "Купить сервер", "READING": 1, "ORG": "PFM"}
+        ]
+        data = [
+            {
+                "id": 3,
+                "QUESTION_ID": 2,
+                "READING": 1,
+                "UUID": PUBLISHED_UUID.replace("1111", "2222"),
+                "TELEGRAM_LINK": "https://t.me/c/1863399780/100",
+                "BODY": "<p>Body</p>",
+                "STATUS": "✅ #done",
+                "CREATED_BY": "@attid",
+            }
+        ]
+        load_mock.side_effect = [questions, data, [], questions, data, []]
+        response = await client.post(
+            f"/d2/{PUBLISHED_UUID.replace('1111', '2222')}/publish"
+        )
+
+    assert response.status_code == 302
+    send_mock.assert_not_awaited()
+    async with client.session_transaction() as session:
+        flashes = dict(session.get("_flashes", []))
+    assert any("Публиковать" in str(m) for m in flashes.values())
 
 
 @pytest.mark.asyncio
 async def test_question_screen_hides_publish_button_for_draft_non_secretary(client):
+    """Не-секретарь и не владелец черновика: кнопки нет."""
+    async with client.session_transaction() as session:
+        session["userdata"] = {"id": 1863399780, "username": "somebody_else"}
+        session["user_id"] = 1863399780
+
+    with (
+        _secretaries_mock({GORA_ADDRESS: {1837984392}}),
+        _signer_mock(PFM_ADDRESS, 1863399780),  # attid подписант PFM
+        patch(
+            "other.grist_tools.grist_manager.load_table_data",
+            new=AsyncMock(return_value=[]),
+        ) as load_mock,
+    ):
+        questions = [
+            {"id": 2, "NUMBER": 2, "TITLE": "Купить сервер", "READING": 1, "ORG": "PFM"}
+        ]
+        data = [
+            {
+                "id": 3,
+                "QUESTION_ID": 2,
+                "READING": 1,
+                "UUID": DRAFT_UUID,
+                "TELEGRAM_LINK": "",
+                "BODY": "<p>Body</p>",
+                "STATUS": "✅ #done",
+                "CREATED_BY": "@attid",
+            }
+        ]
+        load_mock.side_effect = [questions, data, [], questions, data, []]
+        response = await client.get(f"/d2/{DRAFT_UUID}")
+
+    body = await response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "/publish" not in body
+    assert "черновик" in body  # бейдж виден и не-владельцу (is_draft)
+
+
+@pytest.mark.asyncio
+async def test_question_screen_shows_publish_button_for_draft_creator(client):
+    """Владелец черновика (не секретарь) видит кнопку «Опубликовать»."""
     async with client.session_transaction() as session:
         session["userdata"] = PLAIN_SESSION
         session["user_id"] = PLAIN_SESSION["id"]
@@ -569,7 +705,8 @@ async def test_question_screen_hides_publish_button_for_draft_non_secretary(clie
 
     body = await response.get_data(as_text=True)
     assert response.status_code == 200
-    assert "/publish" not in body
+    assert f"/d2/{DRAFT_UUID}/publish" in body
+    assert "черновик" in body
 
 
 @pytest.mark.asyncio
@@ -737,3 +874,168 @@ async def test_add_same_number_other_org_links_correct_question(client):
     data_payload = post_mock.await_args_list[-1].args[1]
     fields = data_payload["records"][0]["fields"]
     assert fields["QUESTION_ID"] == 200  # GORA-вопрос, не MTLA id=154
+
+
+@pytest.mark.asyncio
+async def test_reading_change_writes_session_user_as_creator(client):
+    """P1-регрессия: новое чтение создаёт подписант Б — CREATED_BY новой
+    строки @Б (из сессии), а не автор прошлого чтения @А; иначе Б не смог
+    бы опубликовать свой черновик-чтение."""
+    async with client.session_transaction() as session:
+        session["userdata"] = PLAIN_SESSION  # attid, подписант PFM
+        session["user_id"] = PLAIN_SESSION["id"]
+
+    msg = AsyncMock()
+    msg.message_id = 800
+    with (
+        _secretaries_mock({GORA_ADDRESS: {1837984392}}),
+        _signer_mock(PFM_ADDRESS, 1863399780),
+        patch(
+            "other.grist_tools.grist_manager.load_table_data",
+            new=AsyncMock(return_value=[]),
+        ) as load_mock,
+        patch(
+            "other.grist_tools.grist_manager.patch_data", new=AsyncMock()
+        ),
+        patch(
+            "other.grist_tools.grist_manager.post_data", new=AsyncMock()
+        ) as post_mock,
+        patch(
+            "routers.decision.skynet_bot.send_rich_message",
+            new=AsyncMock(return_value=msg),
+        ),
+        patch("routers.decision.skynet_bot.send_message", new=AsyncMock()),
+    ):
+        questions = [
+            {"id": 2, "NUMBER": 2, "TITLE": "Купить сервер", "READING": 1, "ORG": "PFM"}
+        ]
+        data = [
+            {
+                "id": 3,
+                "QUESTION_ID": 2,
+                "READING": 1,
+                "UUID": "aaaabbbbccccddddeeeeffff00009999",
+                "TELEGRAM_LINK": "https://t.me/c/1863399780/55",
+                "BODY": "<p>Body</p>",
+                "STATUS": "❗️ #active",
+                "CREATED_BY": "@itolstov",  # автор чтения 1 — не attid
+            }
+        ]
+        load_mock.side_effect = [questions, data, [], questions, data, []]
+        response = await client.post(
+            "/d2/aaaabbbbccccddddeeeeffff00009999",
+            form={
+                "short_subject": "Купить сервер",
+                "inquiry": "<p>Body 2</p>",
+                "status": "☑️ #next",
+                "reading": "2",
+                "as_draft": "on",
+            },
+        )
+
+    assert response.status_code == 302
+    payload = post_mock.await_args.args[1]
+    fields = payload["records"][0]["fields"]
+    assert fields["CREATED_BY"] == "@attid"  # из сессии, не @itolstov
+    assert "TELEGRAM_LINK" not in fields  # черновик
+
+
+@pytest.mark.asyncio
+async def test_draft_creator_case_and_at_sign_insensitive(client):
+    """Совпадение владельца без учёта регистра и '@': в Grist 'ATTID',
+    в сессии 'attid' — публикует."""
+    async with client.session_transaction() as session:
+        session["userdata"] = {"id": 1863399780, "username": "attid"}
+        session["user_id"] = 1863399780
+
+    msg = AsyncMock()
+    msg.message_id = 9191
+    with (
+        _secretaries_mock({GORA_ADDRESS: {1837984392}}),
+        _signer_mock(PFM_ADDRESS, 1863399780),
+        patch(
+            "other.grist_tools.grist_manager.load_table_data",
+            new=AsyncMock(return_value=[]),
+        ) as load_mock,
+        patch(
+            "other.grist_tools.grist_manager.patch_data", new=AsyncMock()
+        ) as patch_mock,
+        patch(
+            "routers.decision.skynet_bot.send_rich_message",
+            new=AsyncMock(return_value=msg),
+        ),
+        patch("routers.decision.skynet_bot.send_message", new=AsyncMock()) as send_mock,
+    ):
+        questions = [
+            {"id": 2, "NUMBER": 2, "TITLE": "Купить сервер", "READING": 1, "ORG": "PFM"}
+        ]
+        data = [
+            {
+                "id": 3,
+                "QUESTION_ID": 2,
+                "READING": 1,
+                "UUID": DRAFT_UUID,
+                "TELEGRAM_LINK": "",
+                "BODY": "<p>Body</p>",
+                "STATUS": "✅ #done",
+                "CREATED_BY": "ATTID",  # без @, другой регистр
+            }
+        ]
+        load_mock.side_effect = [questions, data, [], questions, data, []]
+        response = await client.post(f"/d2/{DRAFT_UUID}/publish")
+
+    assert response.status_code == 302
+    send_mock.assert_not_awaited()
+    patched = patch_mock.await_args.args[1]
+    assert patched["records"][0]["fields"]["TELEGRAM_LINK"] == (
+        "https://t.me/c/1863399780/9191"
+    )
+
+
+@pytest.mark.asyncio
+async def test_secretary_publishes_foreign_draft(client):
+    """Секретарь публикует чужой черновик (автор @someone_else)."""
+    async with client.session_transaction() as session:
+        session["userdata"] = SECRETARY_SESSION
+        session["user_id"] = SECRETARY_SESSION["id"]
+
+    msg = AsyncMock()
+    msg.message_id = 9292
+    with (
+        _secretaries_mock({PFM_ADDRESS: {1837984392}}),
+        patch(
+            "other.grist_tools.grist_manager.load_table_data",
+            new=AsyncMock(return_value=[]),
+        ) as load_mock,
+        patch(
+            "other.grist_tools.grist_manager.patch_data", new=AsyncMock()
+        ) as patch_mock,
+        patch(
+            "routers.decision.skynet_bot.send_rich_message",
+            new=AsyncMock(return_value=msg),
+        ),
+        patch("routers.decision.skynet_bot.send_message", new=AsyncMock()),
+    ):
+        questions = [
+            {"id": 2, "NUMBER": 2, "TITLE": "Купить сервер", "READING": 1, "ORG": "PFM"}
+        ]
+        data = [
+            {
+                "id": 3,
+                "QUESTION_ID": 2,
+                "READING": 1,
+                "UUID": DRAFT_UUID,
+                "TELEGRAM_LINK": "",
+                "BODY": "<p>Body</p>",
+                "STATUS": "✅ #done",
+                "CREATED_BY": "@someone_else",
+            }
+        ]
+        load_mock.side_effect = [questions, data, [], questions, data, []]
+        response = await client.post(f"/d2/{DRAFT_UUID}/publish")
+
+    assert response.status_code == 302
+    patched = patch_mock.await_args.args[1]
+    assert patched["records"][0]["fields"]["TELEGRAM_LINK"] == (
+        "https://t.me/c/1863399780/9292"
+    )
