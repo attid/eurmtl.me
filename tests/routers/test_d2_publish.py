@@ -207,6 +207,61 @@ async def test_add_publish_still_sends_message(client):
 
 
 @pytest.mark.asyncio
+async def test_add_publish_with_data_uri_body_skips_photo(client):
+    """Инцидент №705: data-URI из Ctrl+V не создаёт photo-блок —
+    rich-публикация проходит, легаси-фолбэк не нужен."""
+    async with client.session_transaction() as session:
+        session["userdata"] = SECRETARY_SESSION
+        session["user_id"] = SECRETARY_SESSION["id"]
+        session["d2_org"] = "PFM"
+
+    msg = AsyncMock()
+    msg.message_id = 4243
+    questions = [{"id": 9, "NUMBER": 76, "TITLE": "", "READING": 1}]
+    calls = {"questions": 0}
+
+    async def fake(table, *a, **k):
+        name = table.table_name
+        if name == "D2_QUESTIONS":
+            calls["questions"] += 1
+            return questions if calls["questions"] >= 2 else []
+        return []
+
+    body = '<p>до</p><p><img src="data:image/png;base64,iVBORw0KGgo="></p><p>после</p>'
+    with (
+        _secretaries_mock({PFM_ADDRESS: {1837984392}}),
+        patch(
+            "other.grist_tools.grist_manager.load_table_data",
+            new=AsyncMock(side_effect=fake),
+        ),
+        patch("other.grist_tools.grist_manager.post_data", new=AsyncMock()),
+        patch(
+            "routers.decision.skynet_bot.send_rich_message",
+            new=AsyncMock(return_value=msg),
+        ) as rich_mock,
+        patch("routers.decision.skynet_bot.send_message", new=AsyncMock()) as send_mock,
+    ):
+        response = await client.post(
+            "/d2/add",
+            form={
+                "question_number": "76",
+                "short_subject": "Topic",
+                "inquiry": body,
+                "status": "❗️ #active",
+                "reading": "1",
+            },
+        )
+
+    assert response.status_code == 302
+    send_mock.assert_not_awaited()  # rich прошёл — легаси не нужен
+    blocks = rich_mock.await_args.kwargs["rich_message"]["blocks"]
+    types = [block["type"] for block in blocks]
+    assert "photo" not in types
+    assert {"type": "paragraph", "text": "до"} in blocks
+    assert {"type": "paragraph", "text": "после"} in blocks
+
+
+@pytest.mark.asyncio
 async def test_add_publish_falls_back_to_legacy_on_convert_error(client):
     """Конвертер упал → sendMessage+SULGUK (пилот не блокируем)."""
     async with client.session_transaction() as session:

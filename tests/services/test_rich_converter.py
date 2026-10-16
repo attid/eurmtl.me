@@ -181,6 +181,136 @@ def test_img_without_src_dropped():
     assert convert("<p><img></p>") == {"blocks": []}
 
 
+def test_data_uri_img_dropped():
+    # Ctrl+V в Quill вставляет скриншот как data:image/...;base64.
+    # Telegram не скачает такой URL ("failed to get HTTP URL content",
+    # инцидент №705) — фото-блок не строим, текст вокруг сохраняем.
+    body = '<p>до</p><p><img src="data:image/png;base64,iVBORw0KGgo="></p><p>после</p>'
+    assert valid(body) == {
+        "blocks": [
+            {"type": "paragraph", "text": "до"},
+            {"type": "paragraph", "text": "после"},
+        ]
+    }
+
+
+def test_data_uri_case_insensitive_dropped():
+    # RFC 3986: схема регистронезависима — DATA:/Data: тоже дропаем.
+    assert valid('<p><img src="DATA:image/png;base64,iVBORw0KGgo="></p>') == {
+        "blocks": []
+    }
+    assert valid('<p><img src="Data:image/png;base64,iVBORw0KGgo="></p>') == {
+        "blocks": []
+    }
+
+
+def test_data_uri_inline_in_paragraph_dropped():
+    # data-URI внутри абзаца: img выпадает, текст остаётся узлами списка.
+    out = valid('<p>Привет <img src="data:image/png;base64,iVBOR="> мир</p>')
+    assert out == {"blocks": [{"type": "paragraph", "text": ["Привет ", " мир"]}]}
+
+
+def test_blob_and_unknown_schemes_dropped():
+    # Telegram скачивает только http(s): blob: из drag-and-drop и любые
+    # прочие схемы — не photo-блок, а пропуск.
+    assert valid('<p><img src="blob:https://eurmtl.me/abc"></p>') == {"blocks": []}
+    assert valid('<p><img src="ftp://cdn.example.org/pic.jpg"></p>') == {"blocks": []}
+
+
+def test_protocol_relative_url_dropped():
+    # "//cdn.example.org/x" через base_url даёт битый URL — не photo-блок.
+    assert valid('<p><img src="//cdn.example.org/pic.jpg"></p>') == {"blocks": []}
+
+
+def test_scheme_without_host_dropped():
+    # "http://" без домена Telegram не скачает — не photo-блок.
+    assert valid('<p><img src="http://"></p>') == {"blocks": []}
+    assert valid('<p><img src="https:///pic.jpg"></p>') == {"blocks": []}
+
+
+def test_invalid_ipv6_url_dropped_not_raised():
+    # urlsplit кидает ValueError на битых IPv6-скобках; конвертер не должен
+    # падать (деградация до поста без картинки при любом битом BODY).
+    assert valid('<p><img src="http://[invalid"></p>') == {"blocks": []}
+    assert valid('<p><img src="https://["></p>') == {"blocks": []}
+
+
+def test_relative_path_without_slash_dropped():
+    # Относительные пути без "/" в D2 не бывают — политика: дропаем.
+    assert valid('<p><img src="pic.jpg"></p>') == {"blocks": []}
+    assert valid('<p><img src="images/pic.jpg"></p>') == {"blocks": []}
+
+
+def test_whitespace_src_dropped():
+    assert valid('<p><img src="   "></p>') == {"blocks": []}
+
+
+def test_data_uri_inside_blockquote_dropped():
+    # Цитата с data-URI: текст цитаты живёт, фото-блок не создаётся.
+    out = valid(
+        '<blockquote><img src="data:image/png;base64,iVBOR=">цитата</blockquote>'
+    )
+    assert out["blocks"][0]["type"] == "blockquote"
+    assert "data:" not in str(out["blocks"][0])
+
+
+def test_mixed_paragraph_data_and_valid_imgs():
+    # Валидная картинка между мусорными строится, мусор отбрасывается.
+    out = valid(
+        '<p><img src="data:image/png;base64,iVBOR=">'
+        '<img src="/d2/img/1">'
+        '<img src="blob:https://eurmtl.me/x"></p>'
+    )
+    assert out == {
+        "blocks": [
+            {
+                "type": "photo",
+                "photo": {"type": "photo", "media": "https://eurmtl.me/d2/img/1"},
+            }
+        ]
+    }
+
+
+def test_valid_photo_keeps_uppercase_scheme():
+    # Валидный http(s)-URL с верхним регистром схемы остаётся как есть —
+    # _absolute_url не должен считать его относительным путём.
+    out = valid('<p><img src="HTTPS://cdn.example.org/pic.jpg"></p>')
+    assert out == {
+        "blocks": [
+            {
+                "type": "photo",
+                "photo": {"type": "photo", "media": "HTTPS://cdn.example.org/pic.jpg"},
+            }
+        ]
+    }
+
+
+def test_top_level_data_uri_img_dropped():
+    # top-level <img> вне параграфа — тоже без photo-блока.
+    assert valid('<img src="data:image/png;base64,iVBOR=">') == {"blocks": []}
+
+
+def test_data_uri_inside_list_item_dropped():
+    # data-URI внутри пункта списка: текст живёт, фото-блок не создаётся.
+    out = valid('<ul><li><img src="data:image/png;base64,iVBOR=">пункт</li></ul>')
+    assert out["blocks"][0]["type"] == "list"
+    texts = out["blocks"][0]["items"][0]["blocks"]
+    assert all("data:" not in str(node) for node in texts)
+
+
+def test_valid_photo_survives_next_to_data_uri():
+    # Валидная картинка рядом с data-URI: фото-блок на месте.
+    out = valid('<p><img src="/d2/img/1"><img src="data:image/png;base64,iVBOR="></p>')
+    assert out == {
+        "blocks": [
+            {
+                "type": "photo",
+                "photo": {"type": "photo", "media": "https://eurmtl.me/d2/img/1"},
+            }
+        ]
+    }
+
+
 def test_br_makes_newline():
     out = valid("<p>строка1<br>строка2</p>")
     assert out == {

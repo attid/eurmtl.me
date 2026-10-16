@@ -1,6 +1,11 @@
 {# Инициализация quill-редактора #editor-container (Quill 2, локальные статики).
    Подключать после скрипта /static/js/quill2/quill.js. #}
 <script>
+    // Пока картинка загружается, сабмит запрещён (проверка в onsubmit):
+    // quill.root.innerHTML без ещё не вставленной картинки — пост ушёл бы
+    // неполным. disabled-кнопка от Enter-сабмита не спасает.
+    var d2UploadsInFlight = 0;
+
     function d2InitQuill() {
         var editorContainer = document.getElementById('editor-container');
         if (!editorContainer || typeof Quill === 'undefined') {
@@ -70,11 +75,25 @@
         });
 
         window.d2Quill = quill;
+        d2BindFilePaste(quill);
+        // Сервер отдал редактор read-only (disable_fields) — Quill сам не
+        // читает data-disabled на контейнере.
+        if (editorContainer.dataset.disabled) {
+            quill.enable(false);
+        }
 
         var form = editorContainer.closest('form');
         if (form && !form.dataset.quillBound) {
             form.dataset.quillBound = "1";
-            form.onsubmit = function() {
+            form.onsubmit = function(event) {
+                // Картинка ещё загружается — innerHTML без неё, пост бы
+                // ушёл неполным; disabled-кнопка от Enter-сабмита не спасает.
+                if (d2UploadsInFlight > 0) {
+                    if (event) {
+                        event.preventDefault();
+                    }
+                    return false;
+                }
                 document.getElementById('inquiry').value = quill.root.innerHTML;
             };
         }
@@ -101,43 +120,204 @@
         quill.formatLine(range.index, range.length, 'd2-expand-quote', !current['d2-expand-quote'], 'user');
     }
 
-    function d2PickImage(quill) {
-        var input = document.getElementById('d2-image-input');
-        if (!input) {
+    // Paste/Drop картинок: Quill вставляет файлы как data:URI (родной
+    // uploader), а Telegram такой URL не скачивает — публикация падала
+    // (инцидент №705). Перехватываем оба события: файлы уходят на тот же
+    // путь, что кнопка 🖼 (POST /d2/upload_image → Grist → /d2/img/<id>),
+    // остальной контент вставляет сам Quill. Ограничение: drop вставляет
+    // в позицию текстового курсора редактора, а не в точку курсора мыши
+    // (caretRangeFromPoint сознательно не используем).
+    //
+    // Слушаем в capture-фазе на quill.container, а не на quill.root: свой
+    // paste-обработчик Quill вешает на root при создании (и для файлов
+    // запускает родной uploader → data-URI). Слушатель на самом root,
+    // добавленный позже, вызывается после Quill-овского и перебить его
+    // не может; capture у предка срабатывает раньше at-target у root.
+    function d2ExtractImages(event) {
+        var transfer = event.clipboardData || event.dataTransfer;
+        if (!transfer) {
+            return [];
+        }
+        return Array.from(transfer.files || []).filter(function(file) {
+            // Whitelist форматов бэкенда (D2_IMAGE_TYPES): SVG/TIFF пройдут
+            // проверку "image/*", но сервер ответит 400 unsupported type.
+            // Параметры типа ("image/png; charset=...") отсекаем как бэкенд.
+            var mime = (file.type || '').split(';')[0].trim().toLowerCase();
+            if (['image/png', 'image/jpeg', 'image/webp', 'image/gif'].indexOf(mime) !== -1) {
+                return true;
+            }
+            // file.type бывает пуст при drop из файловых менеджеров —
+            // фолбэк по расширению имени.
+            return /\.(png|jpe?g|webp|gif)$/i.test(file.name);
+        });
+    }
+
+    // Общая пачечная загрузка: busy-счётчик на всю пачку (иначе между
+    // файлами кнопка сабмита мигнёт активной), файлы строго последовательно
+    // — параллельные fetch встанут на один индекс и поменяются местами.
+    // targetIndex — куда вставлять (кнопка 🖼 передаёт сохранённый курсор
+    // тулбара); null — вставка по фокусу/в конец.
+    function d2UploadImages(quill, images, targetIndex) {
+        d2SetFormBusy(quill, true);
+        var failures = [];
+        var done = images.reduce(function(chain, image) {
+            return chain.then(function() {
+                return d2UploadImageFile(quill, image, targetIndex).catch(function(err) {
+                    failures.push(err && err.message ? err.message : String(err));
+                });
+            });
+        }, Promise.resolve());
+        done.finally(function() {
+            d2SetFormBusy(quill, false);
+            if (failures.length) {
+                alert('Не удалось загрузить картинок: ' + failures.length + '\n' + failures.join('\n'));
+            }
+        });
+    }
+
+    function d2BindFilePaste(quill) {
+        // Firefox: без preventDefault на dragover браузер отменяет drop
+        // (или открывает файл во вкладке). Разрешаем только файлы.
+        quill.container.addEventListener('dragover', function(event) {
+            if (event.dataTransfer && Array.from(event.dataTransfer.types || []).indexOf('Files') !== -1) {
+                event.preventDefault();
+            }
+        }, true);
+        ['paste', 'drop'].forEach(function(type) {
+            quill.container.addEventListener(type, function(event) {
+                if (type === 'drop' && event.dataTransfer &&
+                    Array.from(event.dataTransfer.types || []).indexOf('Files') !== -1) {
+                    // dragover уже отменили: drop без preventDefault уводит
+                    // браузер на file:// — даже если это не картинка.
+                    event.preventDefault();
+                }
+                // Read-only редактор (disable_fields): картинки не грузим —
+                // иначе мусорные аплоады и блокировка кнопок мёртвой формы.
+                if (!quill.isEnabled()) {
+                    return;
+                }
+                var images = d2ExtractImages(event);
+                if (!images.length) {
+                    return;
+                }
+                // Без preventDefault WebKit/Firefox сами вставят data-URI
+                // из буфера поверх нашей загрузки.
+                event.preventDefault();
+                event.stopPropagation();
+                d2UploadImages(quill, images, null);
+            }, true);
+        });
+    }
+
+    function d2SetFormBusy(quill, busy) {
+        var form = quill.container.closest('form');
+        if (!form) {
             return;
         }
+        d2UploadsInFlight += busy ? 1 : -1;
+        if (d2UploadsInFlight < 0) {
+            d2UploadsInFlight = 0;
+        }
+        Array.from(form.querySelectorAll('button[type="submit"]')).forEach(function(button) {
+            if (busy) {
+                // Блокируем только свои: кнопки, задизейбленные сервером
+                // (disable_fields — нет прав на редактирование), не трогаем.
+                if (!button.disabled) {
+                    button.dataset.uploadDisabled = "1";
+                    button.disabled = true;
+                }
+            } else if (d2UploadsInFlight === 0 && button.dataset.uploadDisabled) {
+                delete button.dataset.uploadDisabled;
+                button.disabled = false;
+            }
+        });
+    }
+
+    // Загрузка файла в Grist Attachments и вставка <img src="/d2/img/<id>">.
+    // Общий код с кнопкой 🖼; возвращает Promise ради последовательной
+    // загрузки при multi-file paste.
+    function d2UploadImageFile(quill, file, targetIndex) {
+        var formData = new FormData();
+        // Safari/WebKit: у вставленного из буфера файла бывает пустое имя —
+        // бэкенд (/d2/upload_image) отклоняет filename="" как "no file".
+        var filename = file.name || 'pasted_' + Date.now() + '.' + (((file.type || '').split(';')[0].split('/')[1]) || 'png');
+        // Браузер сериализует пустой file.type в multipart как есть —
+        // сервер отклонит "unsupported type". Восстанавливаем MIME по
+        // расширению через Blob с явным типом.
+        var uploadFile = file;
+        if (!file.type || file.type === 'application/octet-stream') {
+            var ext = file.name && file.name.indexOf('.') !== -1
+                ? file.name.split('.').pop().toLowerCase()
+                : '';
+            var mime = (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' : ('image/' + (ext || 'png'));
+            uploadFile = file.slice(0, file.size, mime);
+        }
+        formData.append('file', uploadFile, filename);
+        return fetch('/d2/upload_image', {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: formData
+        })
+            .then(function(response) {
+                if (!response.ok) {
+                    return response.json().catch(function() { return {}; }).then(function(err) {
+                        throw new Error(err.error || ('Upload failed: ' + response.status));
+                    });
+                }
+                return response.json();
+            })
+            .then(function(data) {
+                if (!data.url) {
+                    throw new Error('No url in response');
+                }
+                // Selection читаем ПОСЛЕ upload, не до: пользователь успевает
+                // печатать/кликать, старый индекс врезал бы картинку не туда.
+                // enable(false) на время загрузки не вариант — замороженный
+                // Quill молча пропускает insertEmbed. getSelection(true)
+                // сфокусировал бы редактор и украл фокус из другого поля —
+                // поэтому без true, а если фокус ушёл из Quill, вставляем
+                // в конец. insertEmbed в Quill 2 и так перетягивает фокус
+                // в редактор — возвращаем его в поле, откуда он ушёл.
+                // targetIndex (кнопка 🖼) сильнее всего: тулбар-клик переводит
+                // фокус с редактора, но вставлять надо на курсор до клика.
+                var activeBefore = document.activeElement;
+                var focused = activeBefore === quill.root ||
+                    quill.root.contains(activeBefore);
+                var range = targetIndex != null
+                    ? { index: targetIndex }
+                    : (focused ? quill.getSelection() : null);
+                var insertIndex = range ? range.index : Math.max(0, quill.getLength() - 1);
+                quill.insertEmbed(insertIndex, 'image', data.url, 'user');
+                if (focused || targetIndex != null) {
+                    // Курсор — за картинкой, иначе следующий ввод пойдёт перед ней.
+                    quill.setSelection(insertIndex + 1, 'silent');
+                } else if (activeBefore && typeof activeBefore.focus === 'function') {
+                    activeBefore.focus();
+                }
+            })
+            .catch(function(err) {
+                console.log('Image upload failed:', err.message);
+                throw err;
+            });
+    }
+
+    function d2PickImage(quill) {
+        var input = document.getElementById('d2-image-input');
+        if (!input || !quill.isEnabled()) {
+            return;
+        }
+        // Курсор на момент клика: тулбар-клик уводит фокус с редактора, и
+        // после диалога выбора файла getSelection() уже вернёт null —
+        // сохраняем позицию заранее.
+        var savedRange = quill.getSelection(true);
+        var targetIndex = savedRange ? savedRange.index : null;
         input.value = '';
         input.onchange = function() {
             var file = input.files && input.files[0];
             if (!file) {
                 return;
             }
-            var range = quill.getSelection(true);
-            var formData = new FormData();
-            formData.append('file', file);
-            fetch('/d2/upload_image', {
-                method: 'POST',
-                credentials: 'same-origin',
-                body: formData
-            })
-                .then(function(response) {
-                    if (!response.ok) {
-                        return response.json().catch(function() { return {}; }).then(function(err) {
-                            throw new Error(err.error || ('Upload failed: ' + response.status));
-                        });
-                    }
-                    return response.json();
-                })
-                .then(function(data) {
-                    if (!data.url) {
-                        throw new Error('No url in response');
-                    }
-                    quill.insertEmbed(range ? range.index : quill.getLength(), 'image', data.url, 'user');
-                })
-                .catch(function(err) {
-                    console.log('Image upload failed:', err.message);
-                    alert('Не удалось загрузить картинку: ' + err.message);
-                });
+            d2UploadImages(quill, [file], targetIndex);
         };
         input.click();
     }

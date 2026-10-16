@@ -19,6 +19,7 @@ docs/samples/tg_rich_message_example.json.
 import re
 
 from bs4 import BeautifulSoup, NavigableString, Tag
+from urllib.parse import urlsplit
 
 # <h1>-<h3> → заголовок размера 1-3; крупнее — тоже heading, size без cap
 # сверх 6 (Bot API не ограничивает, эталон содержит level 4).
@@ -228,18 +229,35 @@ def _photo_block(tag: Tag, base_url: str) -> dict | None:
     src = (tag.get("src") or "").strip()
     if not src:
         return None
+    # Telegram умеет скачивать только http(s)-URL: root-relative src
+    # ("/d2/img/<id>") достраиваем до абсолютного, всё остальное (data:
+    # из Ctrl+V, blob: из drag-and-drop, относительные пути без "/" —
+    # в D2 их не бывает) — дропаем, иначе sendRichMessage падает
+    # с "failed to get HTTP URL content" (инцидент №705).
+    lowered = src.lower()
+    is_http = lowered.startswith(("http://", "https://"))
+    is_root_relative = lowered.startswith("/") and not lowered.startswith("//")
+    if is_http:
+        try:
+            has_host = bool(urlsplit(src).netloc)
+        except ValueError:
+            # urlsplit кидает ValueError на битых IPv6-скобках ("http://[")
+            # — не роняем конвертер, просто дропаем картинку.
+            return None
+        if not has_host:
+            # "http://" без хоста Telegram не скачает — дропаем.
+            return None
+        media = src
+    elif is_root_relative:
+        media = f"{base_url.rstrip('/')}/{src.lstrip('/')}"
+    else:
+        # blob:, data:, "//cdn.example.org/x" (битый URL с base_url),
+        # относительные пути без "/" (в D2 их не бывает) — дропаем.
+        return None
     return {
         "type": "photo",
-        "photo": {"type": "photo", "media": _absolute_url(src, base_url)},
+        "photo": {"type": "photo", "media": media},
     }
-
-
-def _absolute_url(src: str, base_url: str) -> str:
-    if src.startswith(("http://", "https://")):
-        return src
-    if not base_url.endswith("/"):
-        base_url += "/"
-    return base_url + src.lstrip("/")
 
 
 def _fallback_text_blocks(tag: Tag, base_url: str) -> list[dict]:
