@@ -47,6 +47,13 @@ ORGS: tuple[Org, ...] = (
         hash_position="prefix",
     ),
     Org(
+        "RELY",
+        "GC5WBT3D5GPZ3FU7MTUMVWTLAS3IUU7EPCTFJSLHI5RYMPTLEIX2RELY",
+        ("3247417561",),  # канал -1003247417561, Council; один канал на 3 чтения
+        3,
+        hash_position="prefix",  # как MTLA: "статус #first_reading" + "Вопрос N: тема"
+    ),
+    Org(
         "TFM",
         "",
         (),
