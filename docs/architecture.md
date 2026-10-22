@@ -46,6 +46,14 @@ Mandatory rules for new code and migrations:
 3. `interface` may call `application` use-cases only.
 4. `infrastructure` may depend on `application` ports and external SDKs.
 5. Composition/wiring happens in boundary modules (entrypoints/factories).
+6. Outbound HTTP requests to a URL taken from a request are allowed only
+   through `other/url_safety.py` (`post_callback`, `validate_callback_url`,
+   `create_safe_connector`): private/loopback/link-local/metadata addresses
+   and DNS rebinding are blocked (RFC1918, `169.254.0.0/16`, `fe80::/10`).
+   Redirects must be handled manually (`allow_redirects=False`) and every
+   `Location` validated before the next request; IP literals are re-checked
+   in the connector because aiohttp bypasses the resolver for them.
+   Blocked URL -> HTTP 400 `callback URL is not allowed`.
 
 ## Migration Strategy
 

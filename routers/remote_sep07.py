@@ -16,6 +16,10 @@ from db.sql_models import (
 )
 from services.xdr_parser import is_valid_base64
 from other.web_tools import cors_jsonify
+from other.url_safety import (
+    CallbackURLNotAllowed,
+    post_callback,
+)
 from services.transaction_service import TransactionService
 
 blueprint = Blueprint("sep07", __name__, url_prefix="/remote/sep07")
@@ -460,48 +464,63 @@ async def submit_signed():
                 {"SUCCESS": False, "message": "Invalid signed XDR format"}, 400
             )
 
-        # Submit to callback URL using form data
+        # Anti-SSRF: эндпоинт публичный, поэтому не даём использовать его
+        # как прокси во внутреннюю сеть (RFC1918, loopback, metadata).
+        # post_callback валидирует исходный URL и каждый redirect (Location)
+        # до запроса, а коннектор дополнительно проверяет IP в момент connect.
         import aiohttp
 
+        error_message = "unknown error"
         try:
-            async with aiohttp.ClientSession() as session:
-                form_data = aiohttp.FormData()
-                form_data.add_field("xdr", signed_xdr)
-
-                async with session.post(callback_url, data=form_data) as response:
-                    response_text = await response.text()
-
-                    logger.info(f"Callback response status: {response.status}")
-                    logger.debug(f"Callback response: {response_text}")
-
-                    if response.status == 200:
-                        return cors_jsonify(
-                            {
-                                "SUCCESS": True,
-                                "message": "Successfully submitted to callback",
-                                "callback_response": response_text,
-                            },
-                            200,
-                        )
-                    else:
-                        return cors_jsonify(
-                            {
-                                "SUCCESS": False,
-                                "message": f"Callback returned status {response.status}",
-                                "callback_response": response_text,
-                            },
-                            response.status,
-                        )
-
+            callback_response = await post_callback(callback_url, {"xdr": signed_xdr})
+        except CallbackURLNotAllowed as exc:
+            logger.warning(f"Rejected callback URL {callback_url!r}: {exc}")
+            return cors_jsonify(
+                {"SUCCESS": False, "message": "callback URL is not allowed"}, 400
+            )
+        except aiohttp.ClientConnectorError as e:
+            if isinstance(e.os_error, CallbackURLNotAllowed):
+                logger.warning(
+                    f"Blocked callback connection to {callback_url!r}: {e.os_error}"
+                )
+                return cors_jsonify(
+                    {"SUCCESS": False, "message": "callback URL is not allowed"}, 400
+                )
+            error_message = str(e)
         except Exception as e:
-            logger.error(f"Failed to submit to callback: {str(e)}")
+            error_message = str(e)
+        else:
+            response_text = callback_response.text
+
+            logger.info(f"Callback response status: {callback_response.status}")
+            logger.debug(f"Callback response: {response_text}")
+
+            if callback_response.status == 200:
+                return cors_jsonify(
+                    {
+                        "SUCCESS": True,
+                        "message": "Successfully submitted to callback",
+                        "callback_response": response_text,
+                    },
+                    200,
+                )
             return cors_jsonify(
                 {
                     "SUCCESS": False,
-                    "message": f"Failed to submit to callback: {str(e)}",
+                    "message": f"Callback returned status {callback_response.status}",
+                    "callback_response": response_text,
                 },
-                500,
+                callback_response.status,
             )
+
+        logger.error(f"Failed to submit to callback: {error_message}")
+        return cors_jsonify(
+            {
+                "SUCCESS": False,
+                "message": f"Failed to submit to callback: {error_message}",
+            },
+            500,
+        )
 
     except Exception as e:
         logger.error(f"Unexpected error submitting signed XDR: {str(e)}", exc_info=True)
