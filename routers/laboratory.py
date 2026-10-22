@@ -214,8 +214,10 @@ _BUILD_XDR_FIELDS: dict[str, dict[str, str]] = {
 }
 
 # Поля revoke_sponsorship зависят от revoke_type; остальные (sourceAccount,
-# revoke_type, require_trustline) сборщик читает через .get() и игнорирует при
-# неверном типе, поэтому они намеренно не валидируются.
+# revoke_type) сборщик читает через .get() и игнорирует при неверном типе,
+# поэтому они намеренно не валидируются. Исключение - require_trustline /
+# requireTrustline: сборщик приводит значение через int(), см.
+# _validate_pay_divs().
 _REVOKE_SPONSORSHIP_FIELDS: dict[str, dict[str, str]] = {
     "account": {"revoke_account_id": "str"},
     "trustline": {
@@ -425,6 +427,36 @@ def _validate_liquidity_pool_withdraw(operation: dict, path: str) -> str | None:
     return _check_payload_field(f"{path}.amount", operation["amount"], "float")
 
 
+def _validate_pay_divs(operation: dict, path: str) -> str | None:
+    """Проверяет require_trustline / requireTrustline у pay_divs.
+
+    Сборщик (services/stellar_client.py) берёт require_trustline, если ключ
+    присутствует, иначе его алиас requireTrustline, и делает int(raw_flag) с
+    откатом на True только для TypeError/ValueError. Переполнение там не
+    ловится: JSON 1e999 -> inf -> int(inf) -> OverflowError -> 500. Поэтому
+    на границе отклоняем только переполнение (400); прочие значения (в т.ч.
+    нестроковые и нечисловые, которые сборщик молча превращает в True)
+    проходят без изменения поведения. Затенённый алиас не проверяется - он не
+    участвует в сборке и не может вызвать OverflowError.
+    """
+    field_name = (
+        "require_trustline" if "require_trustline" in operation else "requireTrustline"
+    )
+    if field_name not in operation:
+        return None
+    try:
+        int(operation[field_name])
+    except OverflowError:
+        return (
+            f"{path}.{field_name} is out of range for an integer "
+            f"(got {operation[field_name]!r})"
+        )
+    except (TypeError, ValueError):
+        # Сборщик откатывается на True - поведение сохранено.
+        return None
+    return None
+
+
 def _validate_build_xdr_operation(operation: dict, path: str) -> str | None:
     operation_type = operation.get("type")
     if not isinstance(operation_type, str) or not operation_type:
@@ -457,6 +489,8 @@ def _validate_build_xdr_operation(operation: dict, path: str) -> str | None:
         return _validate_claimants(operation, path)
     if operation_type == "liquidity_pool_withdraw":
         return _validate_liquidity_pool_withdraw(operation, path)
+    if operation_type == "pay_divs":
+        return _validate_pay_divs(operation, path)
     return None
 
 

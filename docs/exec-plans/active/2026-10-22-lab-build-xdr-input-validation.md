@@ -73,7 +73,10 @@ XDR читает поля «как есть» (`operation["asset"]`, `len(operat
 - Неизвестный (строковый) тип операции по-прежнему игнорируется — как в
   `stellar_build_xdr()`; ошибкой это не становится.
 - Нестрогие к типу поля, которые сборщик игнорирует (`sourceAccount`,
-  `revoke_type`, `require_trustline`), не отклоняются — поведение сохранено.
+  `revoke_type`), не отклоняются — поведение сохранено. Исключение —
+  `require_trustline`/`requireTrustline` у `pay_divs`: отклоняется только
+  переполнение (`int(inf)`), остальные значения работают как раньше
+  (см. «Раунд 2»).
 - `services/`, `db/`, `other/` не меняются. Соседний роут
   `/remote/sep07/submit-signed` (SSRF, Sentry #3121) — вне объёма.
 
@@ -110,15 +113,40 @@ XDR читает поля «как есть» (`operation["asset"]`, `len(operat
 `payment` (XDR декодируется, `Payment`), `liquidity_pool_withdraw` (см. выше)
 и `swap` (`PathPaymentStrictSend`, path `["XLM","EUR"]`, `dest_min="0.5"`).
 
+## Раунд 2 Code Review — P2 (pay_divs require_trustline) → исправлено
+
+Замечание: в `pay_divs` валидатор не проверял `require_trustline` и его алиас
+`requireTrustline`. Сборщик делает `int(raw_flag)` и ловит только
+`TypeError`/`ValueError`, поэтому JSON `1e999` → `inf` → `int(inf)` →
+`OverflowError` → HTTP 500.
+
+Исправлено: `_validate_pay_divs()` (вызывается из
+`_validate_build_xdr_operation` для `pay_divs`) повторяет выбор поля из
+сборщика (`require_trustline`, если ключ есть, иначе `requireTrustline`) и
+отклоняет **только** переполнение — HTTP 400
+`operations[0].<field> is out of range for an integer (got inf)`.
+Остальные значения сохранены как были: нечисловые/нестроковые по-прежнему
+откатываются в `true` внутри сборщика, `null`/отсутствие поля — значение по
+умолчанию; затенённый алиас (при заданном `require_trustline`) не проверяется,
+т.к. сборщик его не читает и `OverflowError` там невозможен.
+
+Тесты: `require_trustline` и `requireTrustline-alias` с сырым JSON `1e999` →
+400 и сборщик не вызывается; `shadowed_pay_divs_alias_overflow` → 200
+(поведение сохранено); параметризованные позитивы (`"1"`, `"0"`, `1`, `0`,
+мусорная строка, `null`, алиас, отсутствие поля) → 200;
+реальная сборка `pay_divs` с замоканными `load_account`/`pay_divs` → 200,
+XDR содержит `Payment`, `require_trustline=False` для `requireTrustline: "0"`.
+
 ## Результаты проверок
 
-- `pytest tests/routers/test_laboratory.py -q --no-cov` — **68 passed**
-  (было 19; добавлено 49 кейсов: dict-asset из Sentry #3123, матрица
-  невалидных типов, numeric overflow, 3 теста реальной сборки XDR с
+- `pytest tests/routers/test_laboratory.py -q --no-cov` — **81 passed**
+  (было 19; добавлено 62 кейса: dict-asset из Sentry #3123, матрица
+  невалидных типов, numeric overflow (включая `pay_divs`
+  `require_trustline`/`requireTrustline`), 4 теста реальной сборки XDR с
   замоканным Horizon, позитивные payload'ы). Покрытие валидатора в
   `routers/laboratory.py` — построчно 100% (кроме двух осознанных
   `pragma: no cover`: опечатка в таблице и защитная ветка порядка проверок).
-- Полный `pytest` — **740 passed, 1 skipped**, coverage 71.9% (порог 30%).
+- Полный `pytest` — **753 passed, 1 skipped**, coverage 71.9% (порог 30%).
 - `ruff format --check .` — 111 files already formatted; `ruff check .` -
   All checks passed.
 - `pyright --pythonpath .venv/bin/python` — **0 errors** (без явного
@@ -158,5 +186,7 @@ XDR читает поля «как есть» (`operation["asset"]`, `len(operat
   `len()`/`int()`/`float2str()` (раньше `TypeError`/`ValueError` → 500).
   Ни один корректный запрос не отклоняется.
 - Нестрогие к типу поля, которые сборщик читает через `.get()`
-  (`sourceAccount`, `revoke_type`, `require_trustline`), намеренно не
-  валидируются — поведение «молча игнорируется» сохранено.
+  (`sourceAccount`, `revoke_type`), намеренно не валидируются — поведение
+  «молча игнорируется» сохранено. У `pay_divs` `require_trustline` /
+  `requireTrustline` проверяется только на переполнение, т.к. сборщик
+  приводит значение через `int()` и не ловит `OverflowError`.

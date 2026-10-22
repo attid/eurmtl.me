@@ -914,6 +914,145 @@ async def test_lab_build_xdr_rejects_numeric_overflow(client, raw_body):
     build_mock.assert_not_awaited()
 
 
+PAY_DIVS_OVERFLOW_BODY = (
+    '{"publicKey": "GABC", "operations": [{"type": "pay_divs", '
+    '"holders": "XLM", "asset": "XLM", "amount": "1", "__FIELD__": 1e999}]}'
+)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field_name",
+    ["require_trustline", "requireTrustline"],
+    ids=["require_trustline", "requireTrustline-alias"],
+)
+async def test_lab_build_xdr_rejects_pay_divs_flag_overflow(client, field_name):
+    """pay_divs: int(inf) в сборщике -> OverflowError; на границе — 400.
+
+    Сборщик ловит только TypeError/ValueError, поэтому переполнение
+    require_trustline / requireTrustline раньше давало HTTP 500.
+    """
+    raw_body = PAY_DIVS_OVERFLOW_BODY.replace("__FIELD__", field_name)
+    build_mock = AsyncMock(return_value="AAAA")
+    with patch("routers.laboratory.stellar_build_xdr", new=build_mock):
+        response = await client.post(
+            "/lab/build_xdr",
+            data=raw_body,
+            headers={"Content-Type": "application/json"},
+        )
+
+    assert response.status_code == 400
+    error = (await response.get_json())["error"]
+    assert f"operations[0].{field_name}" in error
+    assert "out of range" in error
+    build_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_lab_build_xdr_accepts_shadowed_pay_divs_alias_overflow(client):
+    """Затенённый алиас (require_trustline задан) сборщик не читает — 200 сохранён."""
+    raw_body = (
+        '{"publicKey": "GABC", "operations": [{"type": "pay_divs", '
+        '"holders": "XLM", "asset": "XLM", "amount": "1", '
+        '"require_trustline": null, "requireTrustline": 1e999}]}'
+    )
+    build_mock = AsyncMock(return_value="AAAA")
+    with patch("routers.laboratory.stellar_build_xdr", new=build_mock):
+        response = await client.post(
+            "/lab/build_xdr",
+            data=raw_body,
+            headers={"Content-Type": "application/json"},
+        )
+
+    assert response.status_code == 200
+    assert await response.get_json() == {"xdr": "AAAA"}
+    build_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "flag_payload",
+    [
+        {"require_trustline": "1"},
+        {"require_trustline": "0"},
+        {"require_trustline": 1},
+        {"require_trustline": 0},
+        {"require_trustline": "abc"},
+        {"require_trustline": None},
+        {"requireTrustline": "0"},
+        {"requireTrustline": 1},
+        {},
+    ],
+    ids=[
+        "str-1",
+        "str-0",
+        "int-1",
+        "int-0",
+        "garbage-string-fallback",
+        "null",
+        "alias-str-0",
+        "alias-int-1",
+        "absent",
+    ],
+)
+async def test_lab_build_xdr_accepts_pay_divs_flag_variants(client, flag_payload):
+    """Допустимые значения require_trustline/алиаса не отклоняются."""
+    operation = {
+        "type": "pay_divs",
+        "holders": ASSET,
+        "asset": "XLM",
+        "amount": "1",
+        **flag_payload,
+    }
+    payload = {"publicKey": ACCOUNT, "operations": [operation]}
+    build_mock = AsyncMock(return_value="AAAA")
+    with patch("routers.laboratory.stellar_build_xdr", new=build_mock):
+        response = await client.post("/lab/build_xdr", json=payload)
+
+    assert response.status_code == 200
+    assert await response.get_json() == {"xdr": "AAAA"}
+    build_mock.assert_awaited_once_with(payload)
+
+
+@pytest.mark.asyncio
+async def test_lab_build_xdr_builds_real_pay_divs_xdr(client):
+    """Реальная сборка pay_divs: флаг и алиас доходят до сборщика как раньше."""
+    root_key = Keypair.random().public_key
+    holder = Keypair.random().public_key
+    pay_divs_mock = AsyncMock(return_value=[{"account": holder, "payment": 2.5}])
+
+    with (
+        patch("stellar_sdk.Server.load_account", return_value=Account(root_key, 1)),
+        patch("services.stellar_client.pay_divs", new=pay_divs_mock),
+    ):
+        response = await client.post(
+            "/lab/build_xdr",
+            json={
+                "publicKey": root_key,
+                "sequence": "11",
+                "operations": [
+                    {
+                        "type": "pay_divs",
+                        "holders": "XLM",
+                        "asset": "XLM",
+                        "amount": "5",
+                        "requireTrustline": "0",
+                    }
+                ],
+            },
+        )
+
+    assert response.status_code == 200
+    xdr = (await response.get_json())["xdr"]
+    transaction = TransactionEnvelope.from_xdr(
+        xdr, Network.PUBLIC_NETWORK_PASSPHRASE
+    ).transaction
+
+    assert isinstance(transaction.operations[0], Payment)
+    assert transaction.operations[0].amount == "2.5"
+    assert pay_divs_mock.await_args.kwargs["require_trustline"] is False
+
+
 @pytest.mark.asyncio
 async def test_lab_build_xdr_builds_real_payment_xdr(client):
     """Реальная сборка (Horizon замокан): корректный payment даёт валидный XDR."""

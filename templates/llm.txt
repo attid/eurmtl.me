@@ -253,7 +253,9 @@ Supported operation types:
 - holders: string, required. Asset whose holders receive payouts.
 - asset: string, required. Asset used for payout.
 - amount: string or number, required. Total amount to distribute.
-- require_trustline or requireTrustline: optional. If present, parsed as int then bool.
+- require_trustline or requireTrustline: optional. If present, parsed as int then bool;
+  require_trustline wins when the key is present. Values that fail to parse fall back
+  to true, but an out-of-range number (JSON 1e999 -> infinity) is rejected with HTTP 400.
 - Builder expands this into multiple payment operations based on live holder data.
 
 22. liquidity_pool_deposit
