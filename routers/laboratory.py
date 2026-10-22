@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from loguru import logger
 
@@ -125,13 +126,388 @@ async def cmd_mtl_pools():
     return None
 
 
+# --- POST /lab/build_xdr: валидация payload на границе API -----------------
+# Sentry #3123: внешний JSON-клиент прислал asset объектом {"code": "XLM"},
+# decode_asset() упал с AttributeError ('dict' object has no attribute
+# 'split') и роут отдал 500. Объектная форма asset не поддерживается: в
+# payload допустима только строка "XLM" или "CODE-ISSUER". Таблица ниже
+# перечисляет поля, которые читает stellar_build_xdr(), и их типы. Ошибка
+# валидации -> HTTP 400 {"error": ...}; корректный payload проходит дальше
+# без изменений, Stellar-логика (services/stellar_client.py) не затронута.
+#
+# kind:
+#   "str"       - строка (сборщик использует len()/.strip()/строковые операции);
+#   "asset"     - "XLM" или "CODE-ISSUER";
+#   "number"    - число или числовая строка (float2str(), запятая допустима);
+#   "float"     - число, которое принимает float() (без запятой и inf/nan);
+#   "int"       - int() или числовая строка;
+#   "int_str"   - строка, приводимая к int(), пустая строка = нет значения;
+#   "threshold" - ""/int/"low/med/high" (как в stellar_build_xdr());
+#   "json_path" - JSON-строка с массивом ассетов (swap).
+# Суффикс "?" - поле необязательное: отсутствие, null и "" допустимы.
+_BUILD_XDR_FIELDS: dict[str, dict[str, str]] = {
+    "payment": {"destination": "str", "asset": "asset", "amount": "number"},
+    "clawback": {"from": "str", "asset": "asset", "amount": "number"},
+    "claim_claimable_balance": {"balanceId": "str"},
+    "copy_multi_sign": {"from": "str"},
+    "trust_payment": {"destination": "str", "asset": "asset", "amount": "number"},
+    "change_trust": {"asset": "asset", "limit": "str"},
+    "create_account": {"destination": "str", "startingBalance": "float"},
+    "create_claimable_balance": {"asset": "asset", "amount": "number"},
+    "sell": {
+        "selling": "asset",
+        "buying": "asset",
+        "amount": "number",
+        "price": "number",
+        "offer_id": "int",
+    },
+    "swap": {
+        "selling": "asset",
+        "buying": "asset",
+        "amount": "number",
+        "destination": "number",
+        "path": "json_path",
+    },
+    "sell_passive": {
+        "selling": "asset",
+        "buying": "asset",
+        "amount": "number",
+        "price": "number",
+    },
+    "buy": {
+        "selling": "asset",
+        "buying": "asset",
+        "amount": "number",
+        "price": "number",
+        "offer_id": "int",
+    },
+    "manage_data": {"data_name": "str", "data_value": "str"},
+    "set_options": {"threshold": "threshold", "master": "int?", "home": "str?"},
+    "set_options_signer": {"signerAccount": "str", "weight": "int_str"},
+    "set_trust_line_flags": {
+        "trustor": "str",
+        "asset": "asset",
+        "setFlags": "int_str",
+        "clearFlags": "int_str",
+    },
+    "bump_sequence": {"bump_to": "int"},
+    "begin_sponsoring_future_reserves": {"sponsored_id": "str"},
+    "end_sponsoring_future_reserves": {},
+    "revoke_sponsorship": {},
+    "pay_divs": {"holders": "asset", "asset": "asset", "amount": "float"},
+    "liquidity_pool_deposit": {
+        "liquidity_pool_id": "str",
+        "max_amount_a": "number",
+        "max_amount_b": "number",
+        "min_price": "float",
+        "max_price": "float",
+    },
+    "liquidity_pool_withdraw": {
+        "liquidity_pool_id": "str",
+        # amount уточняется в _validate_liquidity_pool_withdraw(): сборщик
+        # вызывает float("amount") только при нулевой минимальной сумме.
+        "amount": "number",
+        "min_amount_a": "float",
+        "min_amount_b": "float",
+    },
+    "liquidity_pool_trustline": {"liquidity_pool_id": "str", "limit": "str"},
+}
+
+# Поля revoke_sponsorship зависят от revoke_type; остальные (sourceAccount,
+# revoke_type, require_trustline) сборщик читает через .get() и игнорирует при
+# неверном типе, поэтому они намеренно не валидируются.
+_REVOKE_SPONSORSHIP_FIELDS: dict[str, dict[str, str]] = {
+    "account": {"revoke_account_id": "str"},
+    "trustline": {
+        "revoke_trustline_account": "str",
+        "revoke_trustline_asset": "asset",
+    },
+    "data": {"revoke_data_account": "str", "revoke_data_name": "str"},
+    "offer": {"revoke_offer_seller": "str", "revoke_offer_id": "int"},
+    "claimable_balance": {"revoke_claimable_balance_id": "str"},
+    "liquidity_pool": {"revoke_liquidity_pool_id": "str"},
+    "signer": {"revoke_signer_account": "str", "revoke_signer_key": "str"},
+}
+
+_PREDICATE_TYPES = (
+    "unconditional",
+    "abs_before",
+    "abs_after",
+    "rel_before",
+    "rel_after",
+)
+
+
+def _is_number(value) -> bool:
+    """Число в том виде, в каком его принимает float2str() сборщика."""
+    try:
+        float2str(value)
+        normalized = value.replace(",", ".") if isinstance(value, str) else value
+        return math.isfinite(float(normalized))
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _is_float(value) -> bool:
+    """Строгое число для полей, где сборщик вызывает float() без нормализации."""
+    if isinstance(value, str) and "," in value:
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _is_int(value) -> bool:
+    try:
+        int(value)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return True
+
+
+def _is_asset(value) -> bool:
+    """Проверяет asset той же логикой, что и decode_asset()."""
+    try:
+        decode_asset(value)
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError):
+        return False
+    return True
+
+
+def _is_threshold(value) -> bool:
+    if not value:
+        return True
+    if isinstance(value, str) and "/" in value:
+        parts = value.split("/")
+        return len(parts) == 3 and all(_is_int(part) for part in parts)
+    return _is_int(value)
+
+
+def _is_predicate_value(predicate_type: str, value: str) -> bool:
+    if predicate_type in ("rel_before", "rel_after"):
+        return _is_int(value)
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
+def _is_swap_path(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    try:
+        path = json.loads(value)
+    except ValueError:
+        return False
+    if not isinstance(path, list):
+        return False
+    for element in path:
+        if not isinstance(element, dict):
+            return False
+        # Сборщик всегда читает element["asset_type"], поэтому ключ обязателен.
+        asset_type = element.get("asset_type")
+        if not isinstance(asset_type, str):
+            return False
+        if asset_type == "native":
+            continue
+        asset_code = element.get("asset_code")
+        asset_issuer = element.get("asset_issuer")
+        if not isinstance(asset_code, str) or not isinstance(asset_issuer, str):
+            return False
+        if not _is_asset(f"{asset_code}-{asset_issuer}"):
+            return False
+    return True
+
+
+def _check_payload_field(field_path: str, value, kind: str) -> str | None:
+    optional = kind.endswith("?")
+    base_kind = kind.rstrip("?")
+    if optional and (value is None or value == ""):
+        return None
+
+    if base_kind == "str":
+        valid, expected = isinstance(value, str), "a string"
+    elif base_kind == "asset":
+        valid = isinstance(value, str) and _is_asset(value)
+        expected = "a string like 'XLM' or 'CODE-ISSUER'"
+    elif base_kind == "number":
+        valid, expected = _is_number(value), "a number or numeric string"
+    elif base_kind == "float":
+        valid, expected = _is_float(value), "a number"
+    elif base_kind == "int":
+        valid, expected = _is_int(value), "an integer or numeric string"
+    elif base_kind == "int_str":
+        valid = isinstance(value, str) and (value == "" or _is_int(value))
+        expected = "an empty or numeric string"
+    elif base_kind == "threshold":
+        valid, expected = _is_threshold(value), "an integer or 'low/med/high'"
+    elif base_kind == "json_path":
+        valid = _is_swap_path(value)
+        expected = (
+            "a JSON array of asset objects, each with a string 'asset_type' "
+            "(and 'asset_code' + 'asset_issuer' for non-native)"
+        )
+    else:  # pragma: no cover - защита от опечатки в таблице
+        raise AssertionError(f"Unknown build_xdr validation kind: {kind}")
+
+    if valid:
+        return None
+    if base_kind == "json_path" and isinstance(value, str):
+        # Тип контейнера верный - проблема внутри JSON, он и есть значение.
+        return f"{field_path} must be {expected}"
+    return f"{field_path} must be {expected} (got {type(value).__name__})"
+
+
+def _validate_claimants(operation: dict, path: str) -> str | None:
+    for index in (1, 2):
+        destination = operation.get(f"claimant_{index}_destination", "")
+        if not isinstance(destination, str):
+            return (
+                f"{path}.claimant_{index}_destination must be a string "
+                f"(got {type(destination).__name__})"
+            )
+        if not destination.strip():
+            # Сборщик пропускает такого claimant'а, не читая предикат.
+            continue
+        predicate_type = operation.get(
+            f"claimant_{index}_predicate_type", "unconditional"
+        )
+        if (
+            not isinstance(predicate_type, str)
+            or predicate_type not in _PREDICATE_TYPES
+        ):
+            return (
+                f"{path}.claimant_{index}_predicate_type must be one of "
+                f"{', '.join(_PREDICATE_TYPES)} (got {type(predicate_type).__name__})"
+            )
+        predicate_value = operation.get(f"claimant_{index}_predicate_value", "")
+        if not isinstance(predicate_value, str):
+            return (
+                f"{path}.claimant_{index}_predicate_value must be a string "
+                f"(got {type(predicate_value).__name__})"
+            )
+        if predicate_type == "unconditional":
+            continue
+        value = predicate_value.strip()
+        if not value:
+            return (
+                f"{path}.claimant_{index}_predicate_value is required "
+                f"for predicate '{predicate_type}'"
+            )
+        if not _is_predicate_value(predicate_type, value):
+            return (
+                f"{path}.claimant_{index}_predicate_value must be ISO datetime "
+                f"for abs_* or seconds for rel_* (got {value!r})"
+            )
+    return None
+
+
+def _validate_liquidity_pool_withdraw(operation: dict, path: str) -> str | None:
+    """Уточняет вид поля amount для liquidity_pool_withdraw.
+
+    Сборщик вызывает float(operation["amount"]) только когда одна из
+    минимальных сумм равна нулю (расчёт share_ratio); в остальных случаях
+    amount идёт через float2str(), который принимает запятую как разделитель.
+    Поэтому "1,5" корректен при ненулевых минимумах и недопустим при расчёте.
+    """
+    try:
+        needs_share_ratio = any(
+            float(operation[field]) == 0 for field in ("min_amount_a", "min_amount_b")
+        )
+    except (KeyError, TypeError, ValueError, OverflowError):  # pragma: no cover
+        # Недостижимо: тип/наличие min_amount_* уже проверены таблицей выше.
+        # Оставлено как защита от изменения порядка проверок.
+        return None
+    if not needs_share_ratio:
+        return None
+    return _check_payload_field(f"{path}.amount", operation["amount"], "float")
+
+
+def _validate_build_xdr_operation(operation: dict, path: str) -> str | None:
+    operation_type = operation.get("type")
+    if not isinstance(operation_type, str) or not operation_type:
+        return f"{path}.type is required and must be a non-empty string"
+
+    fields = _BUILD_XDR_FIELDS.get(operation_type)
+    if fields is None:
+        # Неизвестный тип сборщик молча игнорирует - поведение сохранено.
+        return None
+    if operation_type == "revoke_sponsorship":
+        revoke_type = operation.get("revoke_type")
+        fields = (
+            _REVOKE_SPONSORSHIP_FIELDS.get(revoke_type, {})
+            if isinstance(revoke_type, str)
+            else {}
+        )
+
+    for field_name, kind in fields.items():
+        if field_name not in operation:
+            if kind.endswith("?"):
+                continue
+            return f"{path}.{field_name} is required"
+        error = _check_payload_field(
+            f"{path}.{field_name}", operation[field_name], kind
+        )
+        if error:
+            return error
+
+    if operation_type == "create_claimable_balance":
+        return _validate_claimants(operation, path)
+    if operation_type == "liquidity_pool_withdraw":
+        return _validate_liquidity_pool_withdraw(operation, path)
+    return None
+
+
+def validate_build_xdr_payload(data: dict) -> str | None:
+    """Проверяет типы и форматы payload POST /lab/build_xdr.
+
+    Возвращает текст ошибки для HTTP 400 либо None, если payload корректен.
+    """
+    public_key = data.get("publicKey")
+    if not isinstance(public_key, str) or not public_key:
+        return "publicKey is required and must be a non-empty string"
+
+    if "sequence" in data:
+        error = _check_payload_field("sequence", data["sequence"], "int")
+        if error:
+            return error
+
+    if data.get("memo_type") == "memo_text" and not isinstance(data.get("memo"), str):
+        return "memo is required and must be a string for memo_text"
+
+    operations = data.get("operations")
+    if not isinstance(operations, list):
+        return "operations is required and must be an array"
+
+    for index, operation in enumerate(operations):
+        if not isinstance(operation, dict):
+            return (
+                f"operations[{index}] must be a JSON object "
+                f"(got {type(operation).__name__})"
+            )
+        error = _validate_build_xdr_operation(operation, f"operations[{index}]")
+        if error:
+            return error
+    return None
+
+
 @blueprint.route("/lab/build_xdr", methods=["POST"])
 async def cmd_build_xdr():
     data = await request.json
+    if not isinstance(data, dict):
+        return jsonify({"error": "Request body must be a JSON object"}), 400
+
     memo_type = data.get("memo_type", "")
     if memo_type == "memo_hash":
-        if not is_valid_hash(data.get("memo", "")):
+        memo = data.get("memo")
+        if not isinstance(memo, str) or not is_valid_hash(memo):
             return jsonify({"error": "Bad memo hash. Must be 64 bytes hex string"})
+
+    error = validate_build_xdr_payload(data)
+    if error:
+        return jsonify({"error": error}), 400
 
     xdr = await stellar_build_xdr(data)
     return jsonify({"xdr": xdr})

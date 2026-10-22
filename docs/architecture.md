@@ -54,6 +54,14 @@ Mandatory rules for new code and migrations:
    `Location` validated before the next request; IP literals are re-checked
    in the connector because aiohttp bypasses the resolver for them.
    Blocked URL -> HTTP 400 `callback URL is not allowed`.
+7. JSON payloads of API routes are validated at the boundary before the
+   use-case call, for every field the use-case reads directly. A wrong
+   type/format -> HTTP 400 `{"error": "<field>: <expectation> (got <type>)"}`,
+   never an unhandled 500. Asset values are strings only (`XLM` or
+   `CODE-ISSUER`); the object/dict form (e.g. `{"code": "XLM"}`) is not
+   supported and is not converted. Reference implementation:
+   `_BUILD_XDR_FIELDS` + `validate_build_xdr_payload()` in
+   `routers/laboratory.py` (`POST /lab/build_xdr`).
 
 ## Migration Strategy
 

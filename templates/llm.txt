@@ -89,6 +89,15 @@ Common operation fields:
 Asset encoding:
 - Native XLM is encoded as "XLM".
 - Issued asset is encoded as "CODE-ISSUER".
+- Asset values must be strings. An object/array form (e.g. {"code": "XLM"}) is
+  rejected, not converted.
+
+Validation and error responses:
+- Field types/formats are validated before the XDR builder runs.
+- Invalid input returns HTTP 400 with {"error": "<field>: <expectation> (got <type>)"}.
+- memo_hash keeps the legacy 200 reply {"error": "Bad memo hash. Must be 64 bytes hex string"}
+  for invalid or non-string memo values.
+- Unknown operation types are still ignored by the builder (no error).
 
 Supported operation types:
 
@@ -121,7 +130,7 @@ Supported operation types:
 
 6. change_trust
 - asset: string, required
-- limit: string, optional. Empty string means None.
+- limit: string, required by current code. Empty string means None.
 
 7. create_account
 - destination: string, required
@@ -158,10 +167,10 @@ Supported operation types:
 - buying: string, required
 - amount: string or number, required
 - destination: string or number, required. Used as dest_min.
-- path: JSON string, required. Must decode into an array of assets.
-- Path element format:
+- path: JSON string, required. Must decode into an array of asset objects.
+- Path element format (asset_type is required by current code for every element):
   - {"asset_type":"native"}
-  - or {"asset_code":"USD","asset_issuer":"G..."}
+  - or {"asset_type":"credit_alphanum4","asset_code":"USD","asset_issuer":"G..."}
 - Destination account for strict send is operation sourceAccount if present, else top-level publicKey.
 
 11. sell_passive
@@ -182,7 +191,7 @@ Supported operation types:
 - data_value: string, required by current code shape, but empty string becomes None and removes data entry
 
 14. set_options
-- threshold: string, optional
+- threshold: string, required by current code. Empty string means None.
 - threshold supports:
   - single integer string, example "1"
   - slash form low/med/high, example "1/2/2"
@@ -191,14 +200,14 @@ Supported operation types:
 
 15. set_options_signer
 - signerAccount: string, required
-- weight: string, optional. Empty means None.
+- weight: string, required by current code. Empty means None.
 - signerAccount is only passed through if its length is > 55.
 
 16. set_trust_line_flags
 - trustor: string, required
 - asset: string, required
-- setFlags: string, optional. Empty means None.
-- clearFlags: string, optional. Empty means None.
+- setFlags: string, required by current code. Empty means None.
+- clearFlags: string, required by current code. Empty means None.
 - Flags are decoded from integer bitmask into Stellar TrustLineFlags.
 
 17. bump_sequence
@@ -257,14 +266,16 @@ Supported operation types:
 
 23. liquidity_pool_withdraw
 - liquidity_pool_id: string, required
-- amount: string or number, required
+- amount: string or number, required. A numeric string may use "," as decimal
+  separator only when min_amount_a and min_amount_b are both non-zero; if a
+  minimum is 0 the builder converts amount with float(), so only "." is allowed.
 - min_amount_a: string or number, required
 - min_amount_b: string or number, required
 - If min_amount_a == 0 or min_amount_b == 0, builder loads live pool data and derives fallback minimums.
 
 24. liquidity_pool_trustline
 - liquidity_pool_id: string, required
-- limit: string, optional. Empty string means None.
+- limit: string, required by current code. Empty string means None.
 - Builder loads pool data and creates a trustline for the LiquidityPoolAsset.
 
 Notes:
