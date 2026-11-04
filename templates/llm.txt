@@ -58,6 +58,7 @@ MCP endpoint (D2 questions):
 - Bearer token is personal, created by the logged-in human at /token (browser session required; the token is shown once). Creating a new token revokes the previous one; revocation takes effect immediately.
 - Actions run as the token owner: writes are attributed to their @username, permissions equal the web UI (org secretary or MAIN_ADDRESS signer).
 - Tools (phase 1): d2_list_orgs, d2_list_questions, d2_get_question, d2_create_draft, d2_update_draft. Drafts only — no publish via MCP yet; a published reading cannot be edited through MCP.
+- body format: HTML string, every paragraph wrapped in its own <p>...</p> (plain newlines are not rendered; untagged text collapses into one paragraph). Use sections <p><b>Предложение:</b> ...</p> and <p><b>Обоснование:</b> ...</p> (both required), optionally <p><b>Примечание:</b> ...</p> and <p><b>Имплементация:</b> ...</p>.
 - Errors: HTTP 401 {"error": "unauthorized"} for missing/invalid/revoked token; JSON-RPC error objects with codes -32601 (unknown method), -32602 (invalid params), -32700 (parse error); tool failures return result.isError with a human-readable message in content[0].text.
 
 Auth notes:
