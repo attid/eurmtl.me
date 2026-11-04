@@ -260,6 +260,17 @@ async def openapi_json():
                     },
                 }
             },
+            "/mcp": {
+                "post": {
+                    "summary": "JSON-RPC 2.0 endpoint for D2 question tools (Bearer token from /token)",
+                    "responses": {
+                        "200": {"description": "JSON-RPC result"},
+                        "401": {
+                            "description": "Missing, invalid or revoked Bearer token"
+                        },
+                    },
+                }
+            },
             "/.well-known/stellar.toml": {
                 "get": {
                     "summary": "Stellar ecosystem metadata",

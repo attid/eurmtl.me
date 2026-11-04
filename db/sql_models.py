@@ -1,6 +1,6 @@
 import uuid as uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import (
@@ -89,6 +89,21 @@ class BotLoginToken(Base):
     expires_at = Column("expires_at", DateTime(), nullable=False)
     confirmed_at = Column("confirmed_at", DateTime(), nullable=True)
     used_at = Column("used_at", DateTime(), nullable=True)
+
+
+class ApiToken(Base):
+    __tablename__ = "t_api_tokens"
+    token_hash = Column("token_hash", String(64), primary_key=True)
+    tg_id = Column("tg_id", BigInteger(), nullable=False, index=True)
+    username = Column("username", String(64), nullable=False)
+    scope = Column("scope", String(255), nullable=False, default="d2")
+    created_at = Column(
+        "created_at",
+        DateTime(),
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
+        nullable=False,
+    )
+    revoked_at = Column("revoked_at", DateTime(), nullable=True)
 
 
 # class EurmtlDicts(Base):

@@ -16,6 +16,8 @@ import routers.index
 import routers.laboratory
 import routers.mmwb
 import routers.agent_login
+import routers.mcp
+import routers.token
 import routers.remote
 import routers.sign_tools
 import routers.web_editor
@@ -58,6 +60,8 @@ app.register_blueprint(routers.d2_public.blueprint)
 app.register_blueprint(routers.cup.blueprint)
 app.register_blueprint(routers.remote.blueprint)
 app.register_blueprint(routers.web_editor.blueprint)
+app.register_blueprint(routers.token.blueprint)
+app.register_blueprint(routers.mcp.blueprint)
 app.register_blueprint(routers.mmwb.blueprint)
 app.register_blueprint(routers.grist.blueprint)
 app.register_blueprint(routers.rely.blueprint)

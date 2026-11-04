@@ -1,0 +1,61 @@
+{% extends 'tabler_base.html' %}
+
+{% block page_title %}API token{% endblock %}
+
+{% block content %}
+<h2 class="card-title">API token</h2>
+<p class="text-secondary">
+    Персональный токен для AI-агентов (MCP). Действует от вашего
+    имени: всё, что агент делает, подписывается вашим username.
+</p>
+
+{% if new_token %}
+<div class="alert alert-warning" role="alert">
+    <div><strong>Токен создан. Показывается один раз:</strong></div>
+    <pre class="m-2 p-2 bg-secondary-lt rounded user-select-all">{{ new_token }}</pre>
+    Скопируйте сейчас — после ухода со страницы он больше не покажется.
+</div>
+{% endif %}
+
+{% if active_token %}
+<div class="datagrid">
+    <div class="datagrid-item">
+        <div class="datagrid-title">Статус</div>
+        <div class="datagrid-content">
+            <span class="badge bg-success">активен</span>
+        </div>
+    </div>
+    <div class="datagrid-item">
+        <div class="datagrid-title">Создан</div>
+        <div class="datagrid-content">{{ active_token.created_at.strftime('%d.%m.%Y %H:%M') }} UTC</div>
+    </div>
+    <div class="datagrid-item">
+        <div class="datagrid-title">Username</div>
+        <div class="datagrid-content">@{{ active_token.username }}</div>
+    </div>
+    <div class="datagrid-item">
+        <div class="datagrid-title">Scope</div>
+        <div class="datagrid-content">{{ active_token.scope }}</div>
+    </div>
+</div>
+{% elif not new_token %}
+<div class="text-secondary">Активного токена нет.</div>
+{% endif %}
+
+<div class="mt-3 d-flex gap-2">
+    <form method="post" action="/token"
+          onsubmit="return confirm('{% if active_token %}Старый токен перестанет работать немедленно — агент с ним отвалится. Продолжить?{% else %}Создать токен?{% endif %}')">
+        <input type="hidden" name="action" value="create">
+        <button type="submit" class="btn btn-primary">
+            {{ 'Перевыпустить' if active_token else 'Создать токен' }}
+        </button>
+    </form>
+    {% if active_token %}
+    <form method="post" action="/token"
+          onsubmit="return confirm('Отозвать токен? Агент с ним сразу потеряет доступ.')">
+        <input type="hidden" name="action" value="revoke">
+        <button type="submit" class="btn btn-outline-danger">Отозвать</button>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}
