@@ -79,6 +79,10 @@ class MTLGrist:
     QUESTION_TEMPLATES = GristTableConfig(
         "3Fk4hjCv847GBx8ZTCPN2Y", "D2_QUESTION_TEMPLATES"
     )
+    # Публичные embed-токены орг (анонимный read-only роут /d2/pub/<token>);
+    # колонки ORG/TOKEN, таблицу и строки создаёт владелец руками в UI,
+    # сайт только читает. Ротация токена — правка ячейки в Grist.
+    D2_PUBLIC = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "D2_PUBLIC")
     # Картинки d2-вопросов: FILE — attachment, схему/таблицу создаёт владелец
     # руками в UI (сайт никогда не создаёт схему Grist).
     D2_IMAGES = GristTableConfig("3Fk4hjCv847GBx8ZTCPN2Y", "D2_IMAGES")

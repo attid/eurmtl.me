@@ -9,6 +9,7 @@ from quart import Quart, session
 import routers.contracts
 import routers.cup
 import routers.decision
+import routers.d2_public
 import routers.federal
 import routers.helpers
 import routers.index
@@ -53,6 +54,7 @@ app.register_blueprint(routers.sign_tools.blueprint)
 app.register_blueprint(routers.contracts.blueprint)
 app.register_blueprint(routers.helpers.blueprint)
 app.register_blueprint(routers.decision.blueprint)
+app.register_blueprint(routers.d2_public.blueprint)
 app.register_blueprint(routers.cup.blueprint)
 app.register_blueprint(routers.remote.blueprint)
 app.register_blueprint(routers.web_editor.blueprint)

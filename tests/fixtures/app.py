@@ -27,6 +27,7 @@ async def app(db_pool):
     from routers.cup import blueprint as cup_bp
     from routers.laboratory import blueprint as lab_bp
     from routers.decision import blueprint as decision_bp
+    from routers.d2_public import blueprint as d2_public_bp
     from routers.mmwb import blueprint as mmwb_bp
     from routers.federal import blueprint as federal_bp
     from routers.grist import blueprint as grist_bp
@@ -52,6 +53,7 @@ async def app(db_pool):
     app.register_blueprint(cup_bp)
     app.register_blueprint(lab_bp)
     app.register_blueprint(decision_bp)
+    app.register_blueprint(d2_public_bp)
     app.register_blueprint(mmwb_bp)
     app.register_blueprint(federal_bp)
     app.register_blueprint(grist_bp)
