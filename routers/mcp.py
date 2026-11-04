@@ -412,15 +412,24 @@ TOOLS_LIST = [
     (
         "d2_create_draft",
         "Создать черновик вопроса (НЕ уходит в Telegram). title — короткая "
-        "тема; body — HTML-текст с разделами Предложение/Обоснование/Примечание/"
-        "Имплементация; number — необязательно (по умолчанию следующий "
+        "тема; body — HTML: каждый абзац обёрнут в свой <p>...</p>, "
+        "plain-переносы \\n не визуализируются и текст без тегов склеится "
+        "в один абзац. Разделы: <p><b>Предложение:</b> ...</p> и "
+        "<p><b>Обоснование:</b> ...</p> (обязательны), при необходимости "
+        "<p><b>Примечание:</b> ...</p> и <p><b>Имплементация:</b> ...</p>. "
+        "number — необязательно (по умолчанию следующий "
         "свободный); reading — необязательно (по умолчанию 1). Возвращает uuid.",
         {
             "type": "object",
             "properties": {
                 "org": {"type": "string"},
                 "title": {"type": "string"},
-                "body": {"type": "string"},
+                "body": {
+                    "type": "string",
+                    "description": "HTML; каждый абзац в своём <p>...</p> "
+                    "(plain \\n не визуализируются). Разделы <p><b>Предложение:"
+                    "</b> ...</p> и <p><b>Обоснование:</b> ...</p> обязательны.",
+                },
                 "number": {"type": "integer"},
                 "reading": {"type": "integer"},
             },
@@ -430,7 +439,8 @@ TOOLS_LIST = [
     ),
     (
         "d2_update_draft",
-        "Править черновик по uuid: title (тема), body (HTML), status. "
+        "Править черновик по uuid: title (тема), body (HTML, абзацы "
+        "<p>...</p> — как в d2_create_draft), status. "
         "status — ровно одна из строк: '❗️ #active', '☑️ #next', '✅ #done', "
         "'🔂 #resign', '‼️ #control', '🔇 #canceled' (с эмодзи, как написано). "
         "Опубликованные чтения не правятся.",
@@ -439,7 +449,12 @@ TOOLS_LIST = [
             "properties": {
                 "uuid": {"type": "string"},
                 "title": {"type": "string"},
-                "body": {"type": "string"},
+                "body": {
+                    "type": "string",
+                    "description": "HTML; каждый абзац в своём <p>...</p> "
+                    "(plain \\n не визуализируются). Разделы как в "
+                    "d2_create_draft.",
+                },
                 "status": {
                     "type": "string",
                     "enum": [

@@ -184,6 +184,15 @@ async def test_mcp_initialize_and_tools_list(client, secretary_token):
         "d2_create_draft",
         "d2_update_draft",
     }
+    # Контракт формата body для агентов: <p> для абзацев, обязательные разделы.
+    # Регресс: агенты писали plain-текст с \n — BODY рендерится как HTML,
+    # переносы не визуализируются, вопрос склеивался в один абзац.
+    by_name = {t["name"]: t for t in data["result"]["tools"]}
+    create_body = by_name["d2_create_draft"]["inputSchema"]["properties"]["body"]
+    assert "<p>" in create_body["description"]
+    assert "Предложение" in create_body["description"]
+    update_body = by_name["d2_update_draft"]["inputSchema"]["properties"]["body"]
+    assert "<p>" in update_body["description"]
 
 
 @pytest.mark.asyncio
