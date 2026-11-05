@@ -366,7 +366,19 @@ async def test_publish_draft_by_secretary(client):
                 "BODY": "<p>Body</p>",
                 "STATUS": "✅ #done",
                 "CREATED_BY": "@attid",
-            }
+            },
+            {
+                # Соседнее чтение r2: его ссылка должна попасть в подвал
+                # публикуемого r1, self-link (r1 без ссылки) — нет.
+                "id": 4,
+                "QUESTION_ID": 2,
+                "READING": 2,
+                "UUID": "r2uuid" + "0" * 26,
+                "TELEGRAM_LINK": "https://t.me/c/1767165598/42",
+                "BODY": "<p>r2</p>",
+                "STATUS": "☑️ #next",
+                "CREATED_BY": "@attid",
+            },
         ]
         # /d2/publish: _find_question_row (3) + _load_question_tables (3).
         # Доступ — секретарство GORA из _secretaries_mock.
@@ -398,6 +410,15 @@ async def test_publish_draft_by_secretary(client):
         isinstance(t, dict) and t.get("text") == "Edit on eurmtl.me" for t in texts
     )
     assert any(t == "Added by @attid" for t in texts)
+    # Подвал e2e (решение владельца 2026-11-04): ссылка соседнего r2 — в
+    # подвале одной строкой, self-link/своего r1 (без ссылки) — нет.
+    assert any(
+        isinstance(t, dict)
+        and t.get("type") == "url"
+        and t.get("url") == "https://t.me/c/1767165598/42"
+        and t.get("text") == "Второе чтение"
+        for t in texts
+    ), texts
     patched = patch_mock.await_args.args[1]
     # GORA: канал орги вопроса из orgs_config (один канал на все чтения).
     assert patched["records"][0]["fields"]["TELEGRAM_LINK"] == (

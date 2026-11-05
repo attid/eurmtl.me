@@ -238,15 +238,28 @@ async def resolve_channel(org_name: str | None, reading: int) -> str | None:
     return None
 
 
-def get_full_text(status, start_text, links_url, uuid_url, username):
+def _reading_links_lines(links_url, reading: int = 0) -> list[str]:
+    """HTML-ссылки чтений для подвала поста: БЕЗ чтения самого поста
+    (self-link исключён — «мы же там находимся», решение владельца
+    2026-11-04); пусто — [] (строки чтений в подвале не будет)."""
+    return [
+        f'<a href="{link[0]}">{label}</a>'
+        for i, (label, link) in enumerate(
+            zip(("Первое чтение", "Второе чтение", "Третье чтение"), links_url)
+        )
+        if link and i != reading - 1
+    ]
+
+
+def get_full_text(status, start_text, links_url, uuid_url, username, reading=0):
+    """Legacy-текст поста (sendMessage+SULGUK). reading — номер чтения
+    поста: ссылка на само чтение в подвал не выводится, ссылки остальных
+    — одной строкой через « | »; ссылок нет — строки чтений нет вовсе."""
     full_text = [status, start_text.replace("<p><br></p>", ""), "---"]
 
-    if links_url[0]:
-        full_text.append(f'<a href="{links_url[0][0]}">Первое чтение</a>')
-    if links_url[1]:
-        full_text.append(f'<a href="{links_url[1][0]}">Второе чтение</a>')
-    if links_url[2]:
-        full_text.append(f'<a href="{links_url[2][0]}">Третье чтение</a>')
+    reading_links = _reading_links_lines(links_url, reading)
+    if reading_links:
+        full_text.append(" | ".join(reading_links))
 
     full_text.append("-")
     full_text.append(f'<a href="http://eurmtl.me/d/{uuid_url}">Edit on eurmtl.me</a>')
@@ -265,18 +278,18 @@ def _d2_rich_blocks(
     inquiry: str,
     org: str = "",
     reading: int = 1,
-    question_number=None,
-    title: str = "",
-    links_url=([], [], []),
+    links_url=((), (), ()),
     uuid_url: str = "",
     username: str = "",
 ):
-    """Блоки InputRichMessage. Формат зависит от org.hash_position:
-    - suffix (PFM/USDMM/GORA): жирная строка статуса, затем тело, ссылки внизу.
-    - prefix (MTLA): первая строка "<статус> #<N>_reading", затем "Вопрос N:
-      <тема>" и тело (формат канала MTLA Council, решение владельца 2026-10-10).
-    Внизу всегда подвал как в legacy: ссылки на чтения, Edit on eurmtl.me,
-    Added by. None — конвертация не удалась (фолбэк sendMessage+SULGUK)."""
+    """Блоки InputRichMessage. Первая строка — статус: "suffix" (PFM и
+    др.) просто статус, "prefix" (MTLA/RELY) — "<статус> #<N>_reading"
+    (управляющая штука, решение владельца 2026-11-04). Дальше — BODY
+    строго как в редакторе (1:1, никаких авто-добавлений текста), затем
+    подвал: ссылки чтений ОДНОЙ строкой через « | » (без ссылки на само
+    чтение поста — «мы же там находимся», решение владельца 2026-11-04;
+    ссылок нет — строки нет), Edit on eurmtl.me, Added by.
+    None — конвертация не удалась (фолбэк sendMessage+SULGUK)."""
     if not D2_RICH_ENABLED:
         return None
     from other import orgs_config
@@ -284,16 +297,13 @@ def _d2_rich_blocks(
     org_obj = next((o for o in orgs_config.ORGS if o.name == org), None)
     if org_obj and org_obj.hash_position == "prefix":
         tag = _READING_TAG.get(reading, f"{reading}_reading")
-        num = f"Вопрос {question_number}: " if question_number else ""
-        html = f"<p><b>{status} #{tag}</b></p><p><b>{num}{title}</b>{inquiry}</p>"
+        html = f"<p><b>{status} #{tag}</b></p>{inquiry}"
     else:
         html = f"<p><b>{status}</b></p>{inquiry}"
     html += "<p>---</p>"
-    for label, link in zip(
-        ("Первое чтение", "Второе чтение", "Третье чтение"), links_url
-    ):
-        if link:
-            html += f'<p><a href="{link[0]}">{label}</a></p>'
+    reading_links = _reading_links_lines(links_url, reading)
+    if reading_links:
+        html += "<p>" + " | ".join(reading_links) + "</p>"
     html += "<p>-</p>"
     if uuid_url:
         # /d/<uuid> — целевой URL навсегда: после cutover'а (вырезание d1)
@@ -319,8 +329,7 @@ async def _d2_send_rich(
     org: str = "",
     reading: int = 1,
     question_number=None,
-    title: str = "",
-    links_url=([], [], []),
+    links_url=((), (), ()),
     uuid_url: str = "",
     username: str = "",
 ):
@@ -331,8 +340,6 @@ async def _d2_send_rich(
         inquiry,
         org,
         reading,
-        question_number,
-        title,
         links_url=links_url,
         uuid_url=uuid_url,
         username=username,
@@ -365,8 +372,7 @@ async def _d2_edit_rich(
     org: str = "",
     reading: int = 1,
     question_number=None,
-    title: str = "",
-    links_url=([], [], []),
+    links_url=((), (), ()),
     uuid_url: str = "",
     username: str = "",
 ) -> bool:
@@ -379,8 +385,6 @@ async def _d2_edit_rich(
         inquiry,
         org,
         reading,
-        question_number,
-        title,
         links_url=links_url,
         uuid_url=uuid_url,
         username=username,
@@ -602,7 +606,19 @@ async def cmd_d2_show(question_uuid):
             from other.grist_tools import grist_manager, MTLGrist
 
             same_reading = new_reading == reading
-            reading_exists = links_url[new_reading - 1] is not None
+            reading_exists = (
+                1 <= new_reading <= len(links_url)
+                and links_url[new_reading - 1] is not None
+            )
+            # Ручной POST с чтением вне диапазона орги (радиокнопки формы
+            # его не дают): не публикуем мусорную строку и не падаем на
+            # updated_links[new_reading - 1] (ревью аги, круг 4, P1).
+            # same_reading не гвардим: легаси-строки с кривым READING
+            # должны правиться как есть.
+            max_reading = _org_readings(org)
+            if not same_reading and not 1 <= new_reading <= (max_reading or 1):
+                await flash(f"Чтение должно быть от 1 до {max_reading or 1}.")
+                return redirect(f"/d2/{question_uuid}")
             # Черновик-строка этого чтения (если есть): повторная смена на то
             # же чтение с черновиком патчит её, а не плодит дубли.
             draft_row = next(
@@ -667,7 +683,7 @@ async def cmd_d2_show(question_uuid):
                 )
                 _d2_invalidate_cache()
                 text = get_full_text(
-                    status, inquiry, links_url, question_uuid, username
+                    status, inquiry, links_url, question_uuid, username, new_reading
                 )
                 telegram_link = data_row.get("TELEGRAM_LINK") or ""
                 if not telegram_link:
@@ -686,7 +702,6 @@ async def cmd_d2_show(question_uuid):
                             org=org,
                             reading=new_reading,
                             question_number=question.get("NUMBER"),
-                            title=short_subject,
                             links_url=links_url,
                             uuid_url=question_uuid,
                             username=username,
@@ -718,7 +733,9 @@ async def cmd_d2_show(question_uuid):
                 # только при публикации нового чтения (решение владельца
                 # 2026-10-11).
                 new_uuid = uuid.uuid4().hex
-                text = get_full_text(status, inquiry, links_url, new_uuid, username)
+                text = get_full_text(
+                    status, inquiry, links_url, new_uuid, username, new_reading
+                )
                 channel = None
                 message_id = None
                 if not as_draft:
@@ -731,7 +748,9 @@ async def cmd_d2_show(question_uuid):
                             org=org,
                             reading=new_reading,
                             question_number=question.get("NUMBER"),
-                            title=short_subject,
+                            links_url=links_url,
+                            uuid_url=new_uuid,
+                            username=username,
                         )
                         if message_id is None:
                             message_id = await _d2_send_legacy(channel, text)
@@ -832,7 +851,6 @@ async def cmd_d2_show(question_uuid):
                         org=org,
                         reading=reading,
                         question_number=question.get("NUMBER"),
-                        title=short_subject,
                         links_url=updated_links,
                         uuid_url=question_uuid,
                         username=username,
@@ -964,7 +982,6 @@ async def cmd_d2_publish(question_uuid):
             org=org,
             reading=reading,
             question_number=question.get("NUMBER"),
-            title=question.get("TITLE") or "",
             links_url=links_url,
             uuid_url=question_uuid,
             username=username,
@@ -981,13 +998,14 @@ async def cmd_d2_publish(question_uuid):
             org=org,
             reading=reading,
             question_number=question.get("NUMBER"),
-            title=question.get("TITLE") or "",
             links_url=links_url,
             uuid_url=question_uuid,
             username=username,
         )
         if message_id is None:
-            text = get_full_text(status, inquiry, links_url, question_uuid, username)
+            text = get_full_text(
+                status, inquiry, links_url, question_uuid, username, reading
+            )
             message_id = await _d2_send_legacy(channel, text)
         if message_id is None:
             await flash("Публикация в Telegram не прошла.")
@@ -1091,6 +1109,14 @@ async def cmd_d2_add():
     inquiry = form_data["inquiry"]
     status = form_data["status"]
     reading = int(form_data["reading"])
+    # Радиокнопки формы дают 1..readings_total (readings=0 → hidden 1);
+    # ручной POST с чтением вне диапазона не должен писать мусор в Grist
+    # и публиковаться в клампнутый канал (ревью аги, круг 5 — симметрия
+    # с гвардом смены чтения в cmd_d2_show).
+    max_reading = _org_readings(org)
+    if not 1 <= reading <= (max_reading or 1):
+        await flash(f"Чтение должно быть от 1 до {max_reading or 1}.")
+        return redirect("/d2/fragment/form")
     as_draft = form_data.get("as_draft") == "on"
 
     if not await _d2_edit_allowed(org):
@@ -1170,12 +1196,13 @@ async def cmd_d2_add():
                 org=org,
                 reading=reading,
                 question_number=question_number,
-                title=short_subject,
                 uuid_url=d_uuid,
                 username=username,
             )
             if message_id is None:
-                text = get_full_text(status, inquiry, [[], [], []], d_uuid, username)
+                text = get_full_text(
+                    status, inquiry, [[], [], []], d_uuid, username, reading
+                )
                 message_id = await _d2_send_legacy(channel, text)
 
     fields = {

@@ -139,7 +139,9 @@ async def test_reading_change_edits_previous_post_to_next(client):
         _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
         _user_org_names_mock({"PFM"}),
         _tables_mock(D2_QUESTIONS=questions, D2_QUESTION_DATA=data),
-        patch("routers.decision._d2_send_rich", new=AsyncMock(return_value=77)),
+        patch(
+            "routers.decision._d2_send_rich", new=AsyncMock(return_value=77)
+        ) as send_mock,
         patch(
             "routers.decision._d2_edit_rich", new=AsyncMock(return_value=True)
         ) as edit_mock,
@@ -169,6 +171,16 @@ async def test_reading_change_edits_previous_post_to_next(client):
     new_reading_link = ("https://t.me/c/1652080456/77",)
     assert kwargs["links_url"][1] == new_reading_link
     assert kwargs["uuid_url"] == "u1"
+    # Регрессия (2026-11-04): новый пост чтения публиковался БЕЗ подвала
+    # — _d2_send_rich не получал links_url/uuid_url/username.
+    send_mock.assert_awaited_once()
+    send_args, send_kwargs = send_mock.await_args
+    assert send_args[0] == "1652080456"  # канал 2-го чтения PFM
+    assert send_args[2] == "<p>v2</p>"  # (channel, status, inquiry)
+    assert send_kwargs["reading"] == 2
+    assert send_kwargs["links_url"][0] == ("https://t.me/c/1863399780/1",)
+    assert len(send_kwargs["uuid_url"]) == 32
+    assert send_kwargs["username"] == "@x"
 
 
 @pytest.mark.asyncio
@@ -336,3 +348,94 @@ async def test_reading_change_draft_twice_updates_same_row(client):
         if c.args[1]["records"][0].get("id") == 11
     ]
     assert patched and patched[0]["fields"]["BODY"] == "<p>new draft text</p>"
+
+
+@pytest.mark.asyncio
+async def test_reading_change_out_of_range_rejected(client):
+    """Ручной POST со чтением вне 1..readings_total (PFM: 3): мусорная
+    строка не публикуется, updated_links не падает IndexError (ревью аги,
+    круг 4, P1 — resolve_org_channel клампит каналы, публикация шла)."""
+    async with client.session_transaction() as s:
+        s["userdata"] = {"id": SECRETARY_ID, "username": "itolstov"}
+        s["user_id"] = SECRETARY_ID
+        s["d2_org"] = "PFM"
+    questions = [{"id": 1, "NUMBER": 118, "TITLE": "Q", "READING": 1, "ORG": "PFM"}]
+    data = [
+        {
+            "id": 10,
+            "QUESTION_ID": 1,
+            "READING": 1,
+            "UUID": "u1",
+            "TELEGRAM_LINK": "https://t.me/c/1863399780/1",
+            "BODY": "<p>v1</p>",
+            "STATUS": "❗️ #active",
+            "CREATED_BY": "@x",
+        }
+    ]
+    with (
+        _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
+        _user_org_names_mock({"PFM"}),
+        _tables_mock(D2_QUESTIONS=questions, D2_QUESTION_DATA=data),
+        patch("routers.decision._d2_send_rich", new=AsyncMock()) as send_mock,
+        patch("routers.decision._d2_send_legacy", new=AsyncMock()) as legacy_mock,
+        patch("routers.decision._d2_edit_rich", new=AsyncMock()) as edit_mock,
+        patch(
+            "other.grist_tools.grist_manager.patch_data", new=AsyncMock()
+        ) as patch_mock,
+        patch(
+            "other.grist_tools.grist_manager.post_data", new=AsyncMock()
+        ) as post_mock,
+    ):
+        resp = await client.post(
+            "/d2/u1",
+            form={
+                "short_subject": "Q",
+                "inquiry": "<p>v2</p>",
+                "status": "❗️ #active",
+                "reading": "4",
+            },
+        )
+        assert resp.status_code == 302
+    send_mock.assert_not_awaited()
+    legacy_mock.assert_not_awaited()
+    edit_mock.assert_not_awaited()
+    patch_mock.assert_not_awaited()
+    post_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_add_out_of_range_reading_rejected(client):
+    """cmd_d2_add с чтением вне диапазона орги (PFM: 3): в Grist ничего
+    не пишется, публикация не идёт (ревью аги, круг 5 — симметрия с
+    гвардом cmd_d2_show)."""
+    async with client.session_transaction() as s:
+        s["userdata"] = {"id": SECRETARY_ID, "username": "itolstov"}
+        s["user_id"] = SECRETARY_ID
+        s["d2_org"] = "PFM"
+    with (
+        _secretaries_mock({PFM_ADDRESS: {SECRETARY_ID}}),
+        _user_org_names_mock({"PFM"}),
+        _tables_mock(D2_QUESTIONS=[], D2_QUESTION_DATA=[]),
+        patch("routers.decision._d2_send_rich", new=AsyncMock()) as send_mock,
+        patch(
+            "other.grist_tools.grist_manager.patch_data", new=AsyncMock()
+        ) as patch_mock,
+        patch(
+            "other.grist_tools.grist_manager.post_data", new=AsyncMock()
+        ) as post_mock,
+    ):
+        resp = await client.post(
+            "/d2/add",
+            form={
+                "question_number": "1",
+                "short_subject": "Q",
+                "inquiry": "<p>body</p>",
+                "status": "❗️ #active",
+                "reading": "4",
+            },
+        )
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith("/d2/fragment/form")
+    send_mock.assert_not_awaited()
+    patch_mock.assert_not_awaited()
+    post_mock.assert_not_awaited()

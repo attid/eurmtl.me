@@ -119,7 +119,7 @@
                 <div class="card-body">
                     <input type="hidden" name="inquiry" id="inquiry">
                     <div>
-                        <h5 class="card-title">Вопрос (Идет в канал без темы как написано ниже)</h5>
+                        <h5 class="card-title">Вопрос (Идет в канал 1:1 как написано ниже)</h5>
                     </div>
                     <div id="editor-container" {% if disable_fields %}data-disabled="true"{% endif %}>
                         {{ inquiry|safe }}
@@ -165,28 +165,139 @@
 {% block bottom_scripts %}
 {% include 'd2_quill_include.html' %}
 <script>
-    async function getNumber() {
-        if (document.querySelector("#question_number").disabled) {
-            return;
+    // Лупа — только обновление номера вопроса: тело больше не
+    // подставляет (раньше каждый клик добавлял дубль «Вопрос N: …»).
+    // Строка «Вопрос N: Тема» — живой слепок полей номера/темы: правится
+    // сама (debounce 0.5s, финальный sync на сабмите) и уходит в пост
+    // 1:1 как в редакторе. Владеем ТОЛЬКО первой строкой и только пока
+    // юзер её не поправил руками — после этого тело не трогаем.
+    (function () {
+        var numEl = document.querySelector("#question_number");
+        var subjEl = document.querySelector("#short_subject");
+        var quill = window.d2Quill;
+        // Форма — из DOM-связи с редактором (как в quill-include);
+        // используется только внутри ветки с quill (ревью аги, круг 3).
+        var form = null;
+
+        var DEBOUNCE_MS = 500;
+        var owned = false;      // владеем первой строкой тела
+        var lastSynced = null;  // текст нашей последней строки
+        var timer = null;
+
+        function lineText() {
+            if (!quill) { return ""; }
+            var lines = quill.getLines(0, 1);
+            if (!lines.length) { return ""; }
+            return quill.getText(0, Math.max(0, lines[0].length() - 1));
         }
 
-        fetch(`/d2/number`)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error("Network response was not ok");
+        function looksLikeTopicLine() {
+            // «?» — фолбэк targetText при пустом номере: строка с ним тоже
+            // наша, иначе sync вставит дубль (ревью аги). № — старые
+            // шаблоны могли писать с знаком номера. i — любой регистр.
+            return /^Вопрос\s*(?:№\s*)?(\d+|\?)\s*:/i.test(lineText().trim());
+        }
+
+        function targetText() {
+            var n = (numEl && numEl.value || "").trim() || "?";
+            var t = (subjEl && subjEl.value || "").trim();
+            return "Вопрос " + n + ": " + t;
+        }
+
+        function syncTopicLine() {
+            if (!owned || !quill) { return; }
+            var text = targetText();
+            if (text === lastSynced) { return; }
+            var lines = quill.getLines(0, 1);
+            var current = lineText().trim();
+            // Заменяем только НАШУ строку: равную прошлому слепку (любые
+            // наши промежуточные состояния номера — «?», «12а»; null не
+            // считается — иначе пустая первая строка/картинка шаблона
+            // удалится, ревью аги, круг 7) или под паттерн «Вопрос N:»
+            // (запечённая строка старого шаблона). Чужая строка
+            // («Вопрос о бюджете: …») не захватывается.
+            if (lines.length &&
+                    ((lastSynced !== null && current === lastSynced.trim()) ||
+                     looksLikeTopicLine())) {
+                quill.deleteText(0, lines[0].length(), "api");
+            }
+            // Жирным — только текст темы: \n с bold:true заставил бы
+            // Enter в конце строки наследовать жирный на всё тело
+            // (ревью аги, круг 7).
+            quill.insertText(0, text, { bold: true }, "api");
+            quill.insertText(text.length, "\n", "api");
+            lastSynced = text;
+        }
+
+        function scheduleSync() {
+            clearTimeout(timer);
+            timer = setTimeout(syncTopicLine, DEBOUNCE_MS);
+        }
+
+        if (quill && numEl && !numEl.disabled) {
+            form = quill.container.closest("form");
+            // Взятие владения при загрузке: первая строка под паттерн
+            // «Вопрос N: …» перехватывается и сразу свежеет под
+            // актуальные номер/тему (без debounce — прыжка через 0.5s не
+            // должно быть), иначе строка-слепок вставляется сверху.
+            owned = true;
+            if (looksLikeTopicLine()) {
+                lastSynced = lineText().trim();
+            }
+            syncTopicLine();
+
+            // Ручная правка первой строки снимает владение навсегда:
+            // правки юзера не перезаписываем. Обе стороны тримим — иначе
+            // хвостовой пробел пустой темы («Вопрос N: ») снимал владение
+            // на первом же символе тела (ревью аги, круг 2, P1).
+            quill.on("text-change", function (delta, oldDelta, source) {
+                if (source === "user" && owned && lastSynced !== null &&
+                        lineText().trim() !== lastSynced.trim()) {
+                    owned = false;
                 }
-                return response.json();
-            })
-            .then(data => {
-                document.querySelector("#question_number").value = data.number;
-                var currentText = window.d2Quill.root.innerHTML;
-                var shortSubject = document.querySelector("#short_subject").value;
-                window.d2Quill.root.innerHTML = "<b>Вопрос " + data.number + ": "+ shortSubject +"</b><br> " + currentText;
-            })
-            .catch(error => {
-                console.log("There was a problem with the fetch operation:", error.message);
             });
-    }
-    document.getElementById('loadsDecisionNum').addEventListener('click', getNumber);
+
+            if (subjEl) { subjEl.addEventListener("input", scheduleSync); }
+            numEl.addEventListener("input", scheduleSync);
+
+            // Финальный sync до копирования тела в #inquiry (onsubmit из
+            // quill-include присваивается свойством — оборачиваем).
+            if (form && form.onsubmit) {
+                var origSubmit = form.onsubmit;
+                form.onsubmit = function (event) {
+                    clearTimeout(timer);
+                    syncTopicLine();
+                    return origSubmit.call(form, event);
+                };
+            }
+        }
+
+        function getNumber() {
+            if (!numEl || numEl.disabled) {
+                return;
+            }
+            fetch(`/d2/number`)
+                .then(function (response) {
+                    if (!response.ok) {
+                        throw new Error("Network response was not ok");
+                    }
+                    return response.json();
+                })
+                .then(function (data) {
+                    numEl.value = data.number;
+                    // Номер сменился — строка пересобирается сразу;
+                    // висящий debounce-таймер не нужен (ревью аги, круг 8).
+                    clearTimeout(timer);
+                    syncTopicLine();
+                })
+                .catch(function (error) {
+                    console.log("There was a problem with the fetch operation:", error.message);
+                });
+        }
+        var loupe = document.getElementById("loadsDecisionNum");
+        if (loupe) {
+            loupe.addEventListener("click", getNumber);
+        }
+    })();
 </script>
 {% endblock %}
