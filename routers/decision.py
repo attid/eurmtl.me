@@ -125,10 +125,12 @@ def _org_readings(org: str) -> int:
 
 async def _is_org_secretary(org: str) -> bool:
     """Текущий пользователь (по userdata.id) — секретарь счёта MAIN_ADDRESS орги."""
-    user_id = (session.get("userdata") or {}).get("id")
-    if user_id in (None, ""):
+    # Через безопасный хелпер: битая сессия с нечисловым id не должна
+    # ронять страницу с ValueError int().
+    user_id = await _session_user_telegram_id()
+    if user_id is None:
         return False
-    return int(user_id) in await _org_secretary_addresses(org)
+    return user_id in await _org_secretary_addresses(org)
 
 
 async def _d2_edit_allowed(org: str) -> bool:
@@ -148,19 +150,27 @@ async def _d2_edit_allowed(org: str) -> bool:
 
 async def _session_user_telegram_id() -> int | None:
     """Telegram_id текущего пользователя из сессии (userdata.id)."""
-    userdata = session.get("userdata") or {}
+    userdata = session.get("userdata")
+    if not isinstance(userdata, dict):
+        # Повреждённая сессия (не dict) — как аноним.
+        return None
     user_id = userdata.get("id")
     if user_id in (None, ""):
         return None
     try:
-        return int(user_id)
+        uid = int(user_id)
+        # Telegram id строго положительные: 0/отрицательное — битая
+        # сессия, считаем анонимом.
+        return uid if uid > 0 else None
     except (TypeError, ValueError):
         return None
 
 
 def _session_username() -> str:
     """Username текущего пользователя из сессии (без @, пробелов, lower)."""
-    userdata = session.get("userdata") or {}
+    userdata = session.get("userdata")
+    if not isinstance(userdata, dict):
+        return ""
     username = userdata.get("username") or ""
     return str(username).strip().lstrip("@").strip().lower()
 
@@ -262,7 +272,9 @@ def get_full_text(status, start_text, links_url, uuid_url, username, reading=0):
         full_text.append(" | ".join(reading_links))
 
     full_text.append("-")
-    full_text.append(f'<a href="http://eurmtl.me/d/{uuid_url}">Edit on eurmtl.me</a>')
+    full_text.append(
+        f'<a href="http://eurmtl.me/d/{uuid_url}">Открыть на eurmtl.me</a>'
+    )
     full_text.append(f"Added by {username}")
     return "<br>".join(full_text)
 
@@ -288,7 +300,7 @@ def _d2_rich_blocks(
     строго как в редакторе (1:1, никаких авто-добавлений текста), затем
     подвал: ссылки чтений ОДНОЙ строкой через « | » (без ссылки на само
     чтение поста — «мы же там находимся», решение владельца 2026-11-04;
-    ссылок нет — строки нет), Edit on eurmtl.me, Added by.
+    ссылок нет — строки нет), Открыть на eurmtl.me, Added by.
     None — конвертация не удалась (фолбэк sendMessage+SULGUK)."""
     if not D2_RICH_ENABLED:
         return None
@@ -308,7 +320,11 @@ def _d2_rich_blocks(
     if uuid_url:
         # /d/<uuid> — целевой URL навсегда: после cutover'а (вырезание d1)
         # этот роут станет d2-механизмом, посты править не придётся.
-        html += f'<p><a href="{_d2_base_url()}/d/{uuid_url}">Edit on eurmtl.me</a></p>'
+        # «Открыть», не «Edit»: по ссылке приходят и читатели-анонимы
+        # (read-only просмотр, решение владельца 2026-11-05).
+        html += (
+            f'<p><a href="{_d2_base_url()}/d/{uuid_url}">Открыть на eurmtl.me</a></p>'
+        )
     if username:
         html += f"<p>Added by {username}</p>"
     try:
@@ -518,8 +534,12 @@ def _d2_invalidate_cache() -> None:
 
 def _readings_int(row) -> int | None:
     try:
-        return int(row.get("READING"))
-    except (TypeError, ValueError):
+        val = (row or {}).get("READING")
+        # Grist числовые отдаёт и float'ами/строковыми float («1.0»):
+        # int("1.0") бросил бы ValueError и чтение пропало из nav;
+        # inf → OverflowError тоже ловим.
+        return int(float(val)) if val is not None else None
+    except (AttributeError, TypeError, ValueError, OverflowError):
         return None
 
 
@@ -535,15 +555,54 @@ async def _find_question_row(question_uuid: str):
     return row, question
 
 
+def _is_telegram_link(link: str | None) -> bool:
+    """Валидная ссылка на ПОСТ Telegram: whitelist схемы + числовой id
+    сообщения в конце. Ссылка на сам канал (…/c/<chat_id>, 5 частей)
+    постом не считается — иначе message_id = chat_id;
+    «https://t.me/draft» без id ломает edit и кнопку."""
+    if not link:
+        return False
+    # Валидатор автономен: сам отсекает query/якорь.
+    link = str(link).strip().split("?")[0].split("#")[0].rstrip("/")
+    if not link.lower().startswith(("https://t.me/", "https://telegram.me/")):
+        return False
+    parts = link.rstrip("/").split("/")
+    if len(parts) < 5 or not parts[-1].isdigit():
+        return False
+    if parts[3].lower() == "c" and len(parts) < 6:
+        return False
+    return True
+
+
+def _row_telegram_link(row) -> str:
+    """Нормализованный TELEGRAM_LINK строки QUESTION_DATA: без пробелов
+    и без query/якоря («…/11?single» из альбомов) — они не нужны ни
+    кнопке, ни message_id. Пустая строка — черновик (в Grist ячейки
+    правят руками, пробел при очистке — обычное дело): единый
+    strip-предикат."""
+    link = str((row or {}).get("TELEGRAM_LINK") or "").strip()
+    return link.split("?")[0].split("#")[0].rstrip("/")
+
+
+def _row_is_published(row) -> bool:
+    """Чтение опубликовано: есть ВАЛИДНАЯ t.me-ссылка. Опечатка в ячейке
+    (t.me/... без схемы, «draft») = черновик, а не «зависшее» состояние
+    без кнопки канала и без кнопки «Опубликовать»."""
+    return _is_telegram_link(_row_telegram_link(row))
+
+
 def _question_links(question_id: int, question_data: list) -> tuple:
-    """TELEGRAM_LINK'и всех чтений вопроса: (first, second, third)."""
+    """TELEGRAM_LINK'и всех чтений вопроса: (first, second, third).
+    Только валидные t.me-ссылки — whitelist как в d2_public: ячейку
+    правят руками, javascript:/фишинг-URL на публичной странице
+    недопустимы."""
     links = [None, None, None]
     for row in question_data:
         if row.get("QUESTION_ID") != question_id:
             continue
         reading = _readings_int(row)
-        if reading and 1 <= reading <= 3 and row.get("TELEGRAM_LINK"):
-            links[reading - 1] = (row["TELEGRAM_LINK"],)
+        if reading and 1 <= reading <= 3 and _row_is_published(row):
+            links[reading - 1] = (_row_telegram_link(row),)
     return tuple(links)
 
 
@@ -555,32 +614,44 @@ async def _org_names() -> list[str]:
 
 @blueprint.route("/d2/<question_uuid>", methods=("GET", "POST"))
 async def cmd_d2_show(question_uuid):
-    session["return_to"] = request.url
-
-    # Просмотр d2 только для авторизованных с доступом к орге вопроса:
-    # аноним и чужак получают одинаковый отказ — существование не палить.
-    if session.get("userdata") is None:
-        return "Decision not exist =(", 404
+    # Read-only по ссылке (решение владельца 2026-11-05, вариант B):
+    # аноним с неугадываемой ссылкой (uuid 32-hex, из поста канала) читает
+    # вопрос без кнопок правки; несуществующие uuid не палим — тот же 404.
+    # Залогиненные: прежние гейты — чужая орга как несуществующая.
+    # Аноним = нет валидного telegram id (userdata {} после прерванного
+    # OAuth — тоже аноним).
+    anon = await _session_user_telegram_id() is None
     data_row, question = await _find_question_row(question_uuid)
     if data_row is None or question is None:
         return "Decision not exist =(", 404
     org = question.get("ORG") or DEFAULT_ORG_NAME
-    if not await _org_visible(org):
+    if not anon and not await _org_visible(org):
         # Чужая организация — как несуществующая, существование не палить.
         return "Decision not exist =(", 404
+    readonly_view = anon
+    # return_to после всех гейтов и только для GET: битая/чужая ссылка не
+    # должна подменять точку возврата после логина.
+    if request.method == "GET":
+        session["return_to"] = request.url
 
     questions, question_data, _ = await _load_question_tables()
     links_url = _question_links(question["id"], question_data)
     # Все чтения вопроса для навигации на экране: [(reading, uuid), ...].
+    # Анониму чужие черновики в навигации не светим:
+    # только опубликованные + текущее чтение, по прямой ссылке он пришёл.
     readings_nav = sorted(
         (
-            int(r.get("READING")),
+            reading,
             r.get("UUID") or "",
-            not (r.get("TELEGRAM_LINK") or ""),  # is_draft
+            not _row_is_published(r),  # is_draft
         )
         for r in question_data
         if r.get("QUESTION_ID") == question["id"]
-        and str(r.get("READING") or "").isdigit()
+        and (reading := _readings_int(r)) is not None
+        and reading > 0
+        and (
+            not readonly_view or _row_is_published(r) or r.get("UUID") == question_uuid
+        )
     )
 
     question_number = question.get("NUMBER")
@@ -590,8 +661,16 @@ async def cmd_d2_show(question_uuid):
     status = data_row.get("STATUS") or ""
     username = data_row.get("CREATED_BY") or ""
 
-    user_weight = 1 if await _d2_edit_allowed(org) else 0
+    # Право правки — явный предикат (не шорткат от anon): абстракция
+    # прав доступа не должна зависеть от видимости орги.
+    user_weight = 1 if not anon and await _d2_edit_allowed(org) else 0
     if request.method == "POST":
+        if user_weight < 1:
+            # Мутации только своим: аноним/чужак — как несуществующий,
+            # POST не должен отвечать 200.
+            return "Decision not exist =(", 404
+        # user_weight здесь всегда 1; вложенный if оставлен осознанно,
+        # чтобы не перендивать ~300 строк POST-логики (минимальный дифф).
         if user_weight > 0:
             form_data = await request.form
             short_subject = form_data["short_subject"]
@@ -612,7 +691,7 @@ async def cmd_d2_show(question_uuid):
             )
             # Ручной POST с чтением вне диапазона орги (радиокнопки формы
             # его не дают): не публикуем мусорную строку и не падаем на
-            # updated_links[new_reading - 1] (ревью аги, круг 4, P1).
+            # updated_links[new_reading - 1].
             # same_reading не гвардим: легаси-строки с кривым READING
             # должны правиться как есть.
             max_reading = _org_readings(org)
@@ -627,7 +706,7 @@ async def cmd_d2_show(question_uuid):
                     for r in question_data
                     if r.get("QUESTION_ID") == question["id"]
                     and _readings_int(r) == new_reading
-                    and not (r.get("TELEGRAM_LINK") or "")
+                    and not _row_is_published(r)
                 ),
                 None,
             )
@@ -685,10 +764,12 @@ async def cmd_d2_show(question_uuid):
                 text = get_full_text(
                     status, inquiry, links_url, question_uuid, username, new_reading
                 )
-                telegram_link = data_row.get("TELEGRAM_LINK") or ""
-                if not telegram_link:
-                    # Черновик: Telegram не трогаем — публикация кнопкой
-                    # «Опубликовать», править там нечего.
+                telegram_link = _row_telegram_link(data_row)
+                if not _row_is_published(data_row):
+                    # Черновик (в т.ч. с опечаткой в ссылке): Telegram не
+                    # трогаем — публикация кнопкой «Опубликовать», править
+                    # там нечего; иначе пугающая ошибка TG на пост,
+                    # который не публиковался.
                     pass
                 else:
                     channel = await resolve_channel(org, new_reading)
@@ -837,34 +918,40 @@ async def cmd_d2_show(question_uuid):
                         f"D2 reading change: autostatus id={data_row['id']} "
                         f"[{org}] №{question.get('NUMBER')} ❗️ #active -> ☑️ #next"
                     )
-                old_link = data_row.get("TELEGRAM_LINK") or ""
-                if old_link and message_id is not None and channel is not None:
+                old_link = _row_telegram_link(data_row)
+                if (
+                    _row_is_published(data_row)
+                    and message_id is not None
+                    and channel is not None
+                ):
                     updated_links = list(links_url)
                     updated_links[new_reading - 1] = (
                         f"https://t.me/c/{channel}/{message_id}",
                     )
-                    edited = await _d2_edit_rich(
-                        await resolve_channel(org, reading),
-                        old_link.split("/")[-1],
-                        "☑️ #next",
-                        data_row.get("BODY") or "",
-                        org=org,
-                        reading=reading,
-                        question_number=question.get("NUMBER"),
-                        links_url=updated_links,
-                        uuid_url=question_uuid,
-                        username=username,
-                    )
-                    logger.info(
-                        f"D2 reading change: правка поста прошлого чтения "
-                        f"r={reading} message_id={old_link.split('/')[-1]} -> "
-                        f"☑️ #next, ok={edited}"
-                    )
-                    if not edited:
-                        await flash(
-                            "Чтение переключено, но статус в старом посте "
-                            "Telegram обновить не удалось."
+                    old_channel = await resolve_channel(org, reading)
+                    if old_channel is not None:
+                        edited = await _d2_edit_rich(
+                            old_channel,
+                            old_link.split("/")[-1],
+                            "☑️ #next",
+                            data_row.get("BODY") or "",
+                            org=org,
+                            reading=reading,
+                            question_number=question.get("NUMBER"),
+                            links_url=updated_links,
+                            uuid_url=question_uuid,
+                            username=username,
                         )
+                        logger.info(
+                            f"D2 reading change: правка поста прошлого чтения "
+                            f"r={reading} message_id={old_link.split('/')[-1]} -> "
+                            f"☑️ #next, ok={edited}"
+                        )
+                        if not edited:
+                            await flash(
+                                "Чтение переключено, но статус в старом посте "
+                                "Telegram обновить не удалось."
+                            )
                 if question.get("TITLE") != short_subject:
                     await grist_manager.patch_data(
                         MTLGrist.QUESTIONS,
@@ -909,12 +996,17 @@ async def cmd_d2_show(question_uuid):
         (status_, "selected" if status_ == status else "") for status_ in statuses
     ]
     readings_total = _org_readings(org)
-    is_draft = not (data_row.get("TELEGRAM_LINK") or "")
+    is_draft = not _row_is_published(data_row)
     # Кнопка «Опубликовать» на черновике: секретарь оргы ИЛИ владелец
     # записи (решение владельца 2026-10-15: черновик публикует и автор).
-    can_publish = is_draft and (
-        await _is_org_secretary(org) or _is_row_creator(data_row)
+    # Аноним публиковать не может (кнопка скрыта, publish-роут отдаёт
+    # 404) — секретарство не запрашиваем.
+    can_publish = (
+        not readonly_view
+        and is_draft
+        and (await _is_org_secretary(org) or _is_row_creator(data_row))
     )
+    workspace_ctx = {} if readonly_view else await _d2_workspace_context()
     return await render_template(
         "d2_question.html",
         question_number=question_number,
@@ -929,13 +1021,22 @@ async def cmd_d2_show(question_uuid):
         links_url=links_url,
         is_draft=is_draft,
         can_publish=can_publish,
-        **await _d2_workspace_context(),
+        readonly_view=readonly_view,
+        # Орга вопроса — отдельной переменной: бейдж вопроса показывает
+        # РЕАЛЬНУЮ оргу вопроса, а не сессионную из шапки воркспейса
+        # (та затирала её: «None» у анонима / чужая орга). Шапка
+        # (d2_header_buttons) продолжает жить по сессионному воркспейсу —
+        # иначе рассинхрон кнопок с сессией. Анониму контекст шапки не
+        # нужен (шапка скрыта).
+        **(workspace_ctx | {"question_org": org}),
     )
 
 
 @blueprint.route("/d2/<question_uuid>/publish", methods=("POST",))
 async def cmd_d2_publish(question_uuid):
-    session["return_to"] = request.url
+    # return_to здесь не пишем: POST-only роут, чужой/битый запрос после
+    # логина уводил бы на 405. Точку возврата
+    # ставит GET cmd_d2_show.
 
     data_row, question = await _find_question_row(question_uuid)
     if data_row is None or question is None:
@@ -943,7 +1044,7 @@ async def cmd_d2_publish(question_uuid):
     org = question.get("ORG") or DEFAULT_ORG_NAME
     if not await _org_visible(org):
         return "Decision not exist =(", 404
-    is_draft = not (data_row.get("TELEGRAM_LINK") or "")
+    is_draft = not _row_is_published(data_row)
     can_publish = await _is_org_secretary(org) or (
         is_draft and _is_row_creator(data_row)
     )
@@ -962,7 +1063,7 @@ async def cmd_d2_publish(question_uuid):
     reading = _readings_int(data_row) or 1
     username = data_row.get("CREATED_BY") or ""
 
-    telegram_link = data_row.get("TELEGRAM_LINK") or ""
+    telegram_link = _row_telegram_link(data_row)
     channel = await resolve_channel(org, reading)
     logger.info(
         f"D2 publish: uuid={question_uuid} [{org}] №{question.get('NUMBER')} "
@@ -970,10 +1071,11 @@ async def cmd_d2_publish(question_uuid):
         f"status={status!r} by={username or '?'}"
     )
     published = False
-    if telegram_link and channel is not None:
+    if not is_draft and channel is not None:
         # Републикация: сначала пробуем поправить существующий пост rich'ем.
         # Не вышло (пост мёртв или был не rich) — уходим на ветку публикации
-        # ниже.
+        # ниже. По is_draft (валидная ссылка): с опечаткой edit по мусорному
+        # message_id заведомо обречён.
         published = await _d2_edit_rich(
             channel,
             telegram_link.split("/")[-1],
@@ -988,6 +1090,12 @@ async def cmd_d2_publish(question_uuid):
         )
         if published:
             await flash("Пост в Telegram обновлён.", "good")
+
+    if not published and channel is None:
+        # Канал для орги/чтения не настроен — молчаливый редирект без
+        # объяснения недопустим.
+        await flash("Канал Telegram для этой организации и чтения не настроен.")
+        return redirect(f"/d2/{question_uuid}")
 
     if not published and channel is not None:
         # Публикация (в т.ч. републикация мёртвого/не-rich поста).
@@ -1025,7 +1133,9 @@ async def cmd_d2_publish(question_uuid):
                 f"D2 publish: TELEGRAM_LINK обновлён id={data_row['id']}: "
                 f"{telegram_link!r} -> {new_link!r}"
             )
-        if telegram_link:
+        # Опечатка в ячейке — не «удалённый пост»: flash по факту
+        # публикации, а не по наличию строки в ячейке.
+        if not is_draft:
             await flash("Пост был удалён в Telegram — опубликован заново.", "good")
         else:
             await flash("Вопрос опубликован в Telegram.", "good")
@@ -1095,7 +1205,8 @@ async def cmd_d2_get_number():
 
 @blueprint.route("/d2/add", methods=("POST",))
 async def cmd_d2_add():
-    session["return_to"] = request.url
+    # return_to (POST-only) не пишем: после логина GET на /d2/add дал бы
+    # 405; точка возврата для создания — GET /d2/fragment/new.
 
     # Орга вопроса — воркспейс из сессии, org из формы не читается.
     org = await _d2_session_org()
@@ -1111,8 +1222,8 @@ async def cmd_d2_add():
     reading = int(form_data["reading"])
     # Радиокнопки формы дают 1..readings_total (readings=0 → hidden 1);
     # ручной POST с чтением вне диапазона не должен писать мусор в Grist
-    # и публиковаться в клампнутый канал (ревью аги, круг 5 — симметрия
-    # с гвардом смены чтения в cmd_d2_show).
+    # и публиковаться в клампнутый канал (симметрия с гвардом смены
+    # чтения в cmd_d2_show).
     max_reading = _org_readings(org)
     if not 1 <= reading <= (max_reading or 1):
         await flash(f"Чтение должно быть от 1 до {max_reading or 1}.")

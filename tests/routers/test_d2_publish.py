@@ -407,7 +407,7 @@ async def test_publish_draft_by_secretary(client):
     texts = [b.get("text") for b in blocks if b.get("type") == "paragraph"]
     assert "---" in texts and "-" in texts
     assert any(
-        isinstance(t, dict) and t.get("text") == "Edit on eurmtl.me" for t in texts
+        isinstance(t, dict) and t.get("text") == "Открыть на eurmtl.me" for t in texts
     )
     assert any(t == "Added by @attid" for t in texts)
     # Подвал e2e (решение владельца 2026-11-04): ссылка соседнего r2 — в
@@ -503,7 +503,8 @@ async def test_republish_dead_post_sends_new_message(client):
         and b["text"].get("type") == "url"
     ]
     assert any(
-        n["url"].endswith(f"/d/{PUBLISHED_UUID}") and n["text"] == "Edit on eurmtl.me"
+        n["url"].endswith(f"/d/{PUBLISHED_UUID}")
+        and n["text"] == "Открыть на eurmtl.me"
         for n in url_nodes
     ), url_nodes
     patched = patch_mock.await_args.args[1]

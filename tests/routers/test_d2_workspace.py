@@ -378,9 +378,10 @@ async def test_add_without_session_redirects_to_workspace_picker(client):
 
 
 @pytest.mark.asyncio
-async def test_question_screen_anonymous_gets_not_exist(client):
-    """Аноним на /d2/<uuid> — отказ, не 200 (просмотр закрыт)."""
-    response = await client.get(f"/d2/{PFM_QUESTION_UUID}")
+async def test_question_screen_anonymous_nonexistent_404(client):
+    """Аноним с ссылкой на НЕСУЩЕСТВУЮЩИЙ uuid — прежний 404 (существование
+    не палим; существующие uuid аноним читает — test_d2_anon_view)."""
+    response = await client.get(f"/d2/{'f' * 32}")
     assert response.status_code == 404
     body = await response.get_data(as_text=True)
     assert "Decision not exist" in body

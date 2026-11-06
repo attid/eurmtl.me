@@ -1,4 +1,4 @@
-{% extends 'tabler_base.html' %}{% block page_title %}D2: Вопрос №{{ question_number }}{% endblock %}
+{% extends 'tabler_base.html' %}{% block page_title %}D2: Вопрос №{{ question_number or "—" }}{% endblock %}
 {% block head_scripts %}
 <script src="/static/js/quill2/quill.js"></script>
 <link rel="stylesheet" href="/static/css/quill2.snow.css">
@@ -65,6 +65,7 @@
         border-radius: 3px;
     }
 </style>
+{% if not readonly_view %}
 <script>
     // Тултипы кнопок тулбара Quill (после его инициализации).
     document.addEventListener('DOMContentLoaded', function () {
@@ -90,17 +91,30 @@
         }, 1000);
     });
 </script>
+{% endif %}
+    {% if readonly_view %}
+    <style>
+        /* Публичный read-only: тулбар Quill не нужен — только чтение.
+           Границу контейнера возвращаем: селектор .ql-toolbar + .ql-container
+           убирает её даже у скрытого тулбара.
+           Стили в head_scripts: стили в body дают FOUC. */
+        .ql-toolbar { display: none; }
+        .ql-container.ql-snow { border-top: 1px solid #ccc; }
+    </style>
+    {% endif %}
 {% endblock %}
 {% block content %}
 
 {% set disable_fields = user_weight < 1 %}
+{% if not readonly_view %}
 <div>
     {% include 'd2_header_buttons.html' %}
 </div>
+{% endif %}
 
 <div class="container-xl">
-    <div class="mb-1"><a href="/d2/fragment/edit?status=active">← К списку вопросов</a></div>
-    <h2 class="page-title">Вопрос №{{ question_number }} <span class="badge bg-secondary-lt">{{ org }}</span></h2>
+    {% if not readonly_view %}<div class="mb-1"><a href="/d2/fragment/edit?status=active">← К списку вопросов</a></div>{% endif %}
+    <h2 class="page-title">Вопрос №{{ question_number or "—" }} <span class="badge bg-secondary-lt">{{ question_org }}</span></h2>
     <div class="text-secondary">
         {% if readings_total > 0 %}Чтение {{ reading }} из {{ readings_total }} · {% endif %}UUID {{ row_uuid }}
     </div>
@@ -118,7 +132,7 @@
     </div>
     {% endif %}
 
-    {% if links_url %}
+    {% if links_url|select|list %}
     <div class="mb-3">
         {% if links_url[0] %}
         <a href="{{ links_url[0][0] }}" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm">
@@ -138,6 +152,7 @@
     </div>
     {% endif %}
 
+    {% if not readonly_view %}
     <div class="mb-3">
         <a href="/d2/copy?uuid={{ row_uuid }}" class="btn btn-outline-secondary btn-sm">Копировать в новый вопрос</a>
         <a href="/d2/template/from?uuid={{ row_uuid }}" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#saveTemplateModal">Сохранить как шаблон</a>
@@ -153,8 +168,12 @@
     </div>
     {# Модалка #txModal без своей кнопки: кнопку рисуем сами (выше). #}
     {% include 'd2_tx_modal_buttonless.html' %}
+    {% elif is_draft %}
+    <div class="mb-3"><span class="badge bg-warning-lt">черновик (не публиковался)</span></div>
+    {% endif %}
 
 
+    {% if not readonly_view %}
     <div class="modal modal-blur fade" id="saveTemplateModal" tabindex="-1" role="dialog" aria-hidden="true">
         <div class="modal-dialog modal-sm modal-dialog-centered" role="document">
             <div class="modal-content">
@@ -176,8 +195,12 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
-    <form action="" method="post">
+    {# Анониму формы нет вовсе: Quill-скрипт затирает инлайновый
+    onsubmit своим form.onsubmit — инлайн-гвард иллюзорен (ревью аги,
+    круг 26). #}
+    {% if not readonly_view %}<form action="" method="post">{% else %}<div>{% endif %}
         <div class="row">
             <div class="col-12 mb-3">
                 <label for="short_subject" class="form-label">Тема (В реестр)</label>
@@ -199,7 +222,7 @@
                 <div class="card-body">
                     <input type="hidden" name="inquiry" id="inquiry">
                     <div>
-                        <h5 class="card-title">Вопрос (Идет в канал без темы как написано ниже)</h5>
+                        <h5 class="card-title">Вопрос{% if not readonly_view %} <span class="text-secondary fw-normal">(Идет в канал 1:1 как написано ниже)</span>{% endif %}</h5>
                     </div>
                     <div class="d2-editor-wrap">
                         <div id="editor-container" {% if disable_fields %}data-disabled="true"{% endif %}>
@@ -209,6 +232,7 @@
                 </div>
             </div>
 
+            {% if not readonly_view %}
             <div class="col-12 mb-3">
                 {% if readings_total > 0 %}
                 <label class="form-label">Чтение</label>
@@ -216,7 +240,7 @@
                 <div class="form-check">
                     <input type="radio" id="reading{{ n }}" name="reading" value="{{ n }}"
                            class="form-check-input" {{ 'checked' if reading == n else '' }}
-                           {% if links_url[n - 1] %}disabled{% endif %}>
+                           {% if disable_fields or links_url[n - 1] %}disabled{% endif %}>
                     <label for="reading{{ n }}" class="form-check-label">
                         {{ 'Первое чтение' if n == 1 else ('Второе чтение' if n == 2 else 'Третье чтение') }}
                         {% if links_url[n - 1] %}<span class="text-secondary">— уже есть</span>{% endif %}
@@ -226,7 +250,7 @@
                 {# Черновик-чтение: только когда выбрано ДРУГОЕ чтение (смена);
                    сервер применяет лишь при реальной смене. #}
                 <div class="form-check" id="d2-as-draft-row" style="display:none">
-                    <input type="checkbox" id="as_draft" name="as_draft" class="form-check-input">
+                    <input type="checkbox" id="as_draft" name="as_draft" class="form-check-input" {% if disable_fields %}disabled{% endif %}>
                     <label for="as_draft" class="form-check-label">
                         Сохранить новое чтение как черновик
                         <span class="text-secondary">(без публикации, прошлый статус не меняется)</span>
@@ -249,13 +273,15 @@
                 </button>
                 {% endif %}
             </div>
+            {% endif %}
         </div>
-    </form>
+    {% if not readonly_view %}</form>{% else %}</div>{% endif %}
 </div>
 {% endblock %}
 
 {% block bottom_scripts %}
 {% include 'd2_quill_include.html' %}
+{% if not readonly_view %}
 <script>
     // Чекбокс «черновик» виден только при выбранном ДРУГОМ чтении (смена).
     (function () {
@@ -280,4 +306,5 @@
         toggleDraftRow();
     })();
 </script>
+{% endif %}
 {% endblock %}

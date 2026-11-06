@@ -30,7 +30,6 @@ async def test_decision_post_also_redirects(client):
     assert response.headers["Location"].endswith("/d2/fragment/new")
 
 
-@pytest.mark.asyncio
 def test_get_full_text_builds_links_and_footer():
     text = get_full_text(
         "❗️ #active",
@@ -42,7 +41,7 @@ def test_get_full_text_builds_links_and_footer():
 
     assert "Первое чтение" in text
     assert "Третье чтение" in text
-    assert "Edit on eurmtl.me" in text
+    assert "Открыть на eurmtl.me" in text
     assert "Added by @alice" in text
 
 
