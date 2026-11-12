@@ -387,3 +387,151 @@ async def test_public_embed_token_with_spaces_matches(client):
         response = await client.get(f"/d2/pub/{PFM_PUBLIC_TOKEN}")
 
     assert response.status_code == 200
+
+
+# --- Режим публичного списка: PUBLIC_VIEW в D2_PUBLIC (решение 2026-11-11) ---
+
+
+def _row(question_id, reading, status, message_id):
+    """Строка QUESTION_DATA: опубликованное чтение с валидной TG-ссылкой."""
+    return {
+        "id": 1000 + question_id * 10 + reading,
+        "QUESTION_ID": question_id,
+        "READING": reading,
+        "UUID": f"{question_id:08x}{reading:08x}" + "0" * 16,
+        "TELEGRAM_LINK": f"https://t.me/c/1863399780/{message_id}",
+        "BODY": "СЕКРЕТНЫЙ ТЕКСТ",
+        "STATUS": status,
+    }
+
+
+def _three_reading_questions():
+    """Четыре вопроса орги + три чтения, различаются только статусом
+    последнего чтения: закрытыми считаются не все."""
+    questions = [
+        {"id": 1, "NUMBER": 4, "TITLE": "Принят в третьем чтении", "ORG": "PFM"},
+        {"id": 2, "NUMBER": 3, "TITLE": "Дошёл только до второго", "ORG": "PFM"},
+        {"id": 3, "NUMBER": 2, "TITLE": "Третье чтение ещё активно", "ORG": "PFM"},
+        {"id": 4, "NUMBER": 1, "TITLE": "Третье чтение отложено", "ORG": "PFM"},
+    ]
+    question_data = [
+        # Вопрос 1 — единственный закрытый: 3-е чтение и ✅ #done.
+        _row(1, 1, "☑️ #next", 201),
+        _row(1, 2, "☑️ #next", 202),
+        _row(1, 3, "✅ #done", 203),
+        # Вопрос 2 — ✅ #done, но не на третьем, а на втором чтении.
+        _row(2, 1, "☑️ #next", 211),
+        _row(2, 2, "✅ #done", 212),
+        # Вопрос 3 — третье чтение, но статус активный.
+        _row(3, 1, "☑️ #next", 221),
+        _row(3, 2, "☑️ #next", 222),
+        _row(3, 3, "❗️ #active", 223),
+        # Вопрос 4 — 🔂 #resign закрытым не считается.
+        _row(4, 1, "☑️ #next", 231),
+        _row(4, 2, "☑️ #next", 232),
+        _row(4, 3, "🔂 #resign", 233),
+    ]
+    return questions, question_data
+
+
+@pytest.mark.asyncio
+async def test_public_view_closed_mode_shows_only_closed(client):
+    """PUBLIC_VIEW=2: в списке только вопрос 3-го чтения со статусом ✅ #done."""
+    questions, question_data = _three_reading_questions()
+    rows = [{"id": 1, "ORG": "PFM", "TOKEN": PFM_PUBLIC_TOKEN, "PUBLIC_VIEW": 2}]
+    with _tables_mock(D2_PUBLIC=rows, QUESTIONS=questions, QUESTION_DATA=question_data):
+        response = await client.get(f"/d2/pub/{PFM_PUBLIC_TOKEN}")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "Принят в третьем чтении" in body
+    assert "Дошёл только до второго" not in body
+    assert "Третье чтение ещё активно" not in body
+    assert "Третье чтение отложено" not in body
+    # Ссылки всех чтений закрытого вопроса остаются (как в режиме 1).
+    for message_id in (201, 202, 203):
+        assert f'href="https://t.me/c/1863399780/{message_id}"' in body
+    assert "✅ #done" in body
+    assert "СЕКРЕТНЫЙ ТЕКСТ" not in body
+
+
+@pytest.mark.asyncio
+async def test_public_view_closed_mode_empty_state(client):
+    """PUBLIC_VIEW=2 и ни одного закрытого вопроса — заглушка, не 500."""
+    questions, question_data = _three_reading_questions()
+    rows = [{"id": 1, "ORG": "PFM", "TOKEN": PFM_PUBLIC_TOKEN, "PUBLIC_VIEW": 2}]
+    open_only = [row for row in question_data if row["QUESTION_ID"] != 1]
+    with _tables_mock(D2_PUBLIC=rows, QUESTIONS=questions, QUESTION_DATA=open_only):
+        response = await client.get(f"/d2/pub/{PFM_PUBLIC_TOKEN}")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "Принят в третьем чтении" not in body
+    assert "Опубликованных вопросов нет" in body
+
+
+@pytest.mark.asyncio
+async def test_public_view_closed_mode_canceled_not_closed(client):
+    """🔇 #canceled на третьем чтении закрытым не считается (только ✅ #done)."""
+    questions = [{"id": 1, "NUMBER": 1, "TITLE": "Отменён", "ORG": "PFM"}]
+    question_data = [
+        _row(1, 1, "☑️ #next", 301),
+        _row(1, 2, "☑️ #next", 302),
+        _row(1, 3, "🔇 #canceled", 303),
+    ]
+    rows = [{"id": 1, "ORG": "PFM", "TOKEN": PFM_PUBLIC_TOKEN, "PUBLIC_VIEW": 2}]
+    with _tables_mock(D2_PUBLIC=rows, QUESTIONS=questions, QUESTION_DATA=question_data):
+        response = await client.get(f"/d2/pub/{PFM_PUBLIC_TOKEN}")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "Отменён" not in body
+    assert "Опубликованных вопросов нет" in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "public_view", [None, "", "  ", "мусор", 1, 0, 3, -1, True, "1"]
+)
+async def test_public_view_default_mode_shows_all_published(client, public_view):
+    """Мусор/пусто/1/чужие числа в PUBLIC_VIEW = режим 1 (как раньше)."""
+    questions, question_data = _three_reading_questions()
+    rows = [
+        {
+            "id": 1,
+            "ORG": "PFM",
+            "TOKEN": PFM_PUBLIC_TOKEN,
+            "PUBLIC_VIEW": public_view,
+        }
+    ]
+    with _tables_mock(D2_PUBLIC=rows, QUESTIONS=questions, QUESTION_DATA=question_data):
+        response = await client.get(f"/d2/pub/{PFM_PUBLIC_TOKEN}")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "Принят в третьем чтении" in body
+    assert "Дошёл только до второго" in body
+    assert "Третье чтение ещё активно" in body
+    assert "Третье чтение отложено" in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("public_view", [2, 2.0, "2", " 2 ", "2.0"])
+async def test_public_view_closed_mode_accepts_numeric_cells(client, public_view):
+    """Номер режима читается из int/float/строки с пробелами (ручная ячейка)."""
+    questions = [{"id": 1, "NUMBER": 1, "TITLE": "Открытый", "ORG": "PFM"}]
+    question_data = [_row(1, 1, "❗️ #active", 401)]
+    rows = [
+        {
+            "id": 1,
+            "ORG": "PFM",
+            "TOKEN": PFM_PUBLIC_TOKEN,
+            "PUBLIC_VIEW": public_view,
+        }
+    ]
+    with _tables_mock(D2_PUBLIC=rows, QUESTIONS=questions, QUESTION_DATA=question_data):
+        response = await client.get(f"/d2/pub/{PFM_PUBLIC_TOKEN}")
+
+    assert response.status_code == 200
+    body = await response.get_data(as_text=True)
+    assert "Открытый" not in body

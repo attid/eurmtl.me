@@ -217,7 +217,8 @@
   "D2_PUBLIC": [
    {
     "ORG": "PFM",
-    "TOKEN": "test_public_token_pfm"
+    "TOKEN": "test_public_token_pfm",
+    "PUBLIC_VIEW": 1
    }
   ],
   "D2_QUESTION_TEMPLATES": [
