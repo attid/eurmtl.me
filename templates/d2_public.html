@@ -42,6 +42,8 @@
         /* Статус — короткая метка (эмодзи + тег): на узком экране не должен
            ломаться на две строки (жалоба владельца 2026-11-12). */
         td.status { white-space: nowrap; }
+        /* Дата решения — короткая (ДД.ММ.ГГГГ): не ломаем на две строки. */
+        td.decision { white-space: nowrap; color: #5b6474; }
         td.links a { color: #2369d8; text-decoration: none; }
         td.links a:hover { text-decoration: underline; }
         .empty { color: #5b6474; padding: 14px 10px; }
@@ -59,6 +61,7 @@
                 <th>Тема</th>
                 <th>Статус</th>
                 <th>Чтения</th>
+                <th>Решение</th>
             </tr>
         </thead>
         <tbody>
@@ -73,9 +76,10 @@
                     {%- if not loop.last %}, {% endif -%}
                     {%- endfor -%}
                 </td>
+                <td class="decision">{{ row.decision }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="4" class="empty">Опубликованных вопросов нет.</td></tr>
+            <tr><td colspan="5" class="empty">Опубликованных вопросов нет.</td></tr>
             {% endfor %}
         </tbody>
     </table>

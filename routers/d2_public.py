@@ -13,6 +13,7 @@
 """
 
 import hmac
+from datetime import date
 
 from quart import Blueprint, abort, render_template, Response
 
@@ -56,6 +57,38 @@ def _question_is_closed(readings: list[dict]) -> bool:
         last["reading"] == D2_CLOSED_READING
         and str(last["status"]).strip() == D2_CLOSED_STATUS
     )
+
+
+def _date_ru(value) -> str:
+    """CREATED_AT из Grist («2026-11-05T22:30:18.123456») → «05.11.2026».
+
+    Пустое/битое значение (ячейку правят руками) → прочерк: публичная
+    страница не должна падать из-за кривой даты.
+    """
+    raw = str(value or "").strip().split("T")[0].split(" ")[0]
+    year, _, rest = raw.partition("-")
+    month, _, day = rest.partition("-")
+    try:
+        parsed = date(int(year), int(month), int(day))
+    except (TypeError, ValueError):
+        return "—"
+    return parsed.strftime("%d.%m.%Y")
+
+
+def _decision_date(readings: list[dict]) -> str:
+    """Дата решения: CREATED_AT третьего чтения, если вопрос закрыт
+    (третье чтение + ✅ #done).
+
+    «Создание» чтения, а не дата поста: третье чтение у орг проходит
+    за один день (решение владельца 2026-11-12). Пока решение не принято —
+    прочерк, чтобы «Решение» не появлялось раньше самого решения.
+    """
+    if not _question_is_closed(readings):
+        return "—"
+    third = next(
+        (r for r in reversed(readings) if r["reading"] == D2_CLOSED_READING), None
+    )
+    return _date_ru(third.get("created_at")) if third else "—"
 
 
 # 5 секунд, как question_tables_cache у воркспейса: обновление токена/данных
@@ -117,7 +150,12 @@ async def d2_public_embed(token: str):
         if not link.startswith(("https://t.me/", "https://telegram.me/")):
             continue
         data_by_question.setdefault(question_id, []).append(
-            {"reading": reading, "status": row.get("STATUS") or "", "link": link}
+            {
+                "reading": reading,
+                "status": row.get("STATUS") or "",
+                "link": link,
+                "created_at": row.get("CREATED_AT"),
+            }
         )
 
     items = []
@@ -141,6 +179,7 @@ async def d2_public_embed(token: str):
                 "number": num,
                 "title": question.get("TITLE") or "",
                 "status": last["status"],
+                "decision": _decision_date(readings),
                 "readings": readings,
             }
         )

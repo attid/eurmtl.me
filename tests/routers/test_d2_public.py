@@ -392,7 +392,7 @@ async def test_public_embed_token_with_spaces_matches(client):
 # --- Режим публичного списка: PUBLIC_VIEW в D2_PUBLIC (решение 2026-11-11) ---
 
 
-def _row(question_id, reading, status, message_id):
+def _row(question_id, reading, status, message_id, created_at="2026-11-05T22:30:18"):
     """Строка QUESTION_DATA: опубликованное чтение с валидной TG-ссылкой."""
     return {
         "id": 1000 + question_id * 10 + reading,
@@ -402,6 +402,7 @@ def _row(question_id, reading, status, message_id):
         "TELEGRAM_LINK": f"https://t.me/c/1863399780/{message_id}",
         "BODY": "СЕКРЕТНЫЙ ТЕКСТ",
         "STATUS": status,
+        "CREATED_AT": created_at,
     }
 
 
@@ -547,3 +548,87 @@ async def test_public_embed_status_cell_does_not_wrap(client):
     body = await response.get_data(as_text=True)
     assert "td.status { white-space: nowrap; }" in body
     assert '<td class="status">✅ #done</td>' in body
+
+
+# --- Колонка «Решение»: дата третьего чтения (решение владельца 2026-11-12) ---
+
+
+@pytest.mark.asyncio
+async def test_public_embed_decision_date_of_third_reading(client):
+    """«Решение» = дата (ДД.ММ.ГГГГ) третьего чтения, а не первого: между
+    первым и третьим может пройти больше месяца."""
+    questions = [{"id": 1, "NUMBER": 1, "TITLE": "Принят", "ORG": "PFM"}]
+    question_data = [
+        _row(1, 1, "☑️ #next", 501, created_at="2026-09-01T10:00:00"),
+        _row(1, 2, "☑️ #next", 502, created_at="2026-10-01T10:00:00"),
+        _row(1, 3, "✅ #done", 503, created_at="2026-10-29T23:59:59.123456"),
+    ]
+    with _tables_mock(
+        D2_PUBLIC=D2_PUBLIC_ROWS, QUESTIONS=questions, QUESTION_DATA=question_data
+    ):
+        response = await client.get(f"/d2/pub/{PFM_PUBLIC_TOKEN}")
+
+    body = await response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "<th>Решение</th>" in body
+    assert '<td class="decision">29.10.2026</td>' in body
+    assert "01.09.2026" not in body
+    assert "01.10.2026" not in body
+    # ISO-дата из Grist не течёт в HTML.
+    assert "2026-10-29T" not in body
+
+
+@pytest.mark.asyncio
+async def test_public_embed_decision_empty_until_closed(client):
+    """Третье чтение ещё активно — «Решение» пустое (прочерк)."""
+    questions = [{"id": 1, "NUMBER": 1, "TITLE": "В работе", "ORG": "PFM"}]
+    question_data = [
+        _row(1, 1, "☑️ #next", 511),
+        _row(1, 2, "☑️ #next", 512),
+        _row(1, 3, "❗️ #active", 513, created_at="2026-10-29T10:00:00"),
+    ]
+    with _tables_mock(
+        D2_PUBLIC=D2_PUBLIC_ROWS, QUESTIONS=questions, QUESTION_DATA=question_data
+    ):
+        response = await client.get(f"/d2/pub/{PFM_PUBLIC_TOKEN}")
+
+    body = await response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert '<td class="decision">—</td>' in body
+
+
+@pytest.mark.asyncio
+async def test_public_embed_decision_in_closed_mode(client):
+    """Режим 2 показывает решение закрытого вопроса — та же колонка."""
+    questions, question_data = _three_reading_questions()
+    for row in question_data:
+        if row["QUESTION_ID"] == 1 and row["READING"] == 3:
+            row["CREATED_AT"] = "2026-10-29T10:00:00"
+    rows = [{"id": 1, "ORG": "PFM", "TOKEN": PFM_PUBLIC_TOKEN, "PUBLIC_VIEW": 2}]
+    with _tables_mock(D2_PUBLIC=rows, QUESTIONS=questions, QUESTION_DATA=question_data):
+        response = await client.get(f"/d2/pub/{PFM_PUBLIC_TOKEN}")
+
+    body = await response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Принят в третьем чтении" in body
+    assert '<td class="decision">29.10.2026</td>' in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("created_at", ["", None, "мусор", "2026-13-45T10:00:00"])
+async def test_public_embed_decision_bad_created_at_no_500(client, created_at):
+    """Пустой/битый CREATED_AT (ручная ячейка) — прочерк, код 200."""
+    questions = [{"id": 1, "NUMBER": 1, "TITLE": "Битая дата", "ORG": "PFM"}]
+    question_data = [
+        _row(1, 1, "☑️ #next", 521),
+        _row(1, 2, "☑️ #next", 522),
+        _row(1, 3, "✅ #done", 523, created_at=created_at),
+    ]
+    with _tables_mock(
+        D2_PUBLIC=D2_PUBLIC_ROWS, QUESTIONS=questions, QUESTION_DATA=question_data
+    ):
+        response = await client.get(f"/d2/pub/{PFM_PUBLIC_TOKEN}")
+
+    body = await response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert '<td class="decision">—</td>' in body
