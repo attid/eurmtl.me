@@ -535,3 +535,15 @@ async def test_public_view_closed_mode_accepts_numeric_cells(client, public_view
     assert response.status_code == 200
     body = await response.get_data(as_text=True)
     assert "Открытый" not in body
+
+
+@pytest.mark.asyncio
+async def test_public_embed_status_cell_does_not_wrap(client):
+    """Статус на узком экране не ломается на две строки (жалоба 2026-11-12):
+    правило nowrap и класс ячейки не должны разъехаться с разметкой."""
+    with _pfm_tables():
+        response = await client.get(f"/d2/pub/{PFM_PUBLIC_TOKEN}")
+
+    body = await response.get_data(as_text=True)
+    assert "td.status { white-space: nowrap; }" in body
+    assert '<td class="status">✅ #done</td>' in body

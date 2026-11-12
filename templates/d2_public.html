@@ -39,6 +39,9 @@
         }
         tr:last-child td { border-bottom: none; }
         td.num { white-space: nowrap; color: #5b6474; }
+        /* Статус — короткая метка (эмодзи + тег): на узком экране не должен
+           ломаться на две строки (жалоба владельца 2026-11-12). */
+        td.status { white-space: nowrap; }
         td.links a { color: #2369d8; text-decoration: none; }
         td.links a:hover { text-decoration: underline; }
         .empty { color: #5b6474; padding: 14px 10px; }
@@ -63,7 +66,7 @@
             <tr>
                 <td class="num">{{ row.number if row.number is not none else '—' }}</td>
                 <td>{{ row.title }}</td>
-                <td>{{ row.status }}</td>
+                <td class="status">{{ row.status }}</td>
                 <td class="links">
                     {%- for r in row.readings -%}
                     <a href="{{ r.link }}" target="_blank" rel="noopener noreferrer">Чтение {{ r.reading }}</a>
