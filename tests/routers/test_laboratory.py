@@ -11,6 +11,8 @@ from stellar_sdk import (
     TransactionEnvelope,
 )
 
+from routers.laboratory import _path_receive_label, validate_build_xdr_payload
+
 YANDEX_METRICA_JS = "https://mc.yandex.ru/metrika/tag.js"
 YANDEX_METRICA_PIXEL = "https://mc.yandex.ru/watch/95900394"
 
@@ -1163,6 +1165,153 @@ async def test_lab_build_xdr_builds_real_swap_xdr(client):
     assert isinstance(operation, PathPaymentStrictSend)
     assert [asset.code for asset in operation.path] == ["XLM", "EUR"]
     assert operation.dest_min == "0.5"
+
+
+SWAP_STRICT_RECEIVE_OPERATION = {
+    "type": "swap_strict_receive",
+    "selling": "XLM",
+    "buying": ASSET,
+    "amount": "10",
+    "destination": "12.5",
+    "path": "[]",
+}
+
+
+def test_validate_build_xdr_payload_accepts_swap_strict_receive():
+    """Валидатор пропускает strict receive без всяких подмен."""
+    payload = {
+        "publicKey": ACCOUNT,
+        "operations": [dict(SWAP_STRICT_RECEIVE_OPERATION)],
+    }
+
+    assert validate_build_xdr_payload(payload) is None
+
+
+def test_validate_build_xdr_payload_accepts_comma_numbers():
+    """amount/destination идут через float2str(), который принимает запятую."""
+    payload = {
+        "publicKey": ACCOUNT,
+        "operations": [
+            {
+                **SWAP_STRICT_RECEIVE_OPERATION,
+                "amount": "10,5",
+                "destination": "12,5",
+            }
+        ],
+    }
+
+    assert validate_build_xdr_payload(payload) is None
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_fragment"),
+    [
+        pytest.param(
+            lambda op: op.pop("path"),
+            "operations[0].path is required",
+            id="path-missing",
+        ),
+        pytest.param(
+            lambda op: op.update(path="not-json"),
+            "operations[0].path must be a JSON array",
+            id="path-not-json",
+        ),
+        pytest.param(
+            # Stellar XDR: Asset path<5>, >5 падало ValueError в to_xdr() -> 500.
+            lambda op: op.update(
+                path="[" + ",".join('{"asset_type": "native"}' for _ in range(6)) + "]"
+            ),
+            "operations[0].path must be a JSON array",
+            id="path-too-long",
+        ),
+        pytest.param(
+            lambda op: op.update(destination={"send_max": "12.5"}),
+            "operations[0].destination must be a number",
+            id="destination-dict",
+        ),
+        pytest.param(
+            lambda op: op.update(
+                path='[{"asset_type": "credit_alphanum4", "asset_code": "USD"}]'
+            ),
+            "operations[0].path must be a JSON array",
+            id="path-missing-issuer",
+        ),
+    ],
+)
+def test_validate_build_xdr_payload_rejects_bad_swap_strict_receive(
+    mutation, expected_fragment
+):
+    """Негативные кейсы strict receive проверяются прямо, без моков."""
+    operation = dict(SWAP_STRICT_RECEIVE_OPERATION)
+    mutation(operation)
+    payload = {"publicKey": ACCOUNT, "operations": [operation]}
+
+    error = validate_build_xdr_payload(payload)
+
+    assert error is not None
+    assert expected_fragment in error
+
+
+def test_path_receive_label_marks_direct_route():
+    record = {"source_amount": "12.5", "source_asset_code": "XLM", "path": []}
+
+    assert _path_receive_label(record, {}) == "send 12.5 XLM (direct)"
+
+
+def test_path_receive_label_marks_native_hop_as_xlm():
+    """У native-хопа нет asset_code: маршрут не должен стать "direct"."""
+    record = {
+        "source_amount": "12.5",
+        "source_asset_code": "EURMTL",
+        "path": [{"asset_type": "native"}],
+    }
+
+    assert _path_receive_label(record, {}) == "send 12.5 EURMTL (via XLM)"
+
+
+def test_path_receive_label_lists_all_hops():
+    record = {
+        "source_amount": "12.5",
+        "source_asset_code": "XLM",
+        "path": [
+            {"asset_type": "native"},
+            {"asset_type": "credit_alphanum4", "asset_code": "USD"},
+            {"asset_type": "credit_alphanum4", "asset_code": "EUR"},
+        ],
+    }
+
+    assert _path_receive_label(record, {}) == "send 12.5 XLM (via XLM, USD, EUR)"
+
+
+def test_path_receive_label_falls_back_to_xlm_for_native_source():
+    record = {"source_amount": "2", "path": []}
+
+    assert _path_receive_label(record, {}) == "send 2 XLM (direct)"
+
+
+def test_path_receive_label_keeps_colliding_routes_distinct():
+    record = {"source_amount": "12.5", "source_asset_code": "XLM", "path": []}
+    taken = {"send 12.5 XLM (direct)"}
+
+    assert _path_receive_label(record, taken) == "send 12.5 XLM (direct) #"
+
+
+@pytest.mark.asyncio
+async def test_lab_path_receive_rejects_bad_asset_without_network(client):
+    """Мусорный asset падает до запроса в Horizon — без подмен."""
+    response = await client.get(f"/lab/path_receive/INVALID/{ASSET}/10")
+
+    assert response.status_code == 200
+    assert await response.get_json() == {}
+
+
+@pytest.mark.asyncio
+async def test_lab_path_receive_rejects_bad_amount_without_network(client):
+    """Нечисловая сумма падает до запроса в Horizon — без подмен."""
+    response = await client.get(f"/lab/path_receive/XLM/{ASSET}/not_a_number")
+
+    assert response.status_code == 200
+    assert await response.get_json() == {}
 
 
 @pytest.mark.asyncio

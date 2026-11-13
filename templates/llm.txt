@@ -288,6 +288,18 @@ Supported operation types:
 - limit: string, required by current code. Empty string means None.
 - Builder loads pool data and creates a trustline for the LiquidityPoolAsset.
 
+25. swap_strict_receive
+- PathPaymentStrictReceive (exact destination amount).
+- selling: string, required. Source (send) asset.
+- buying: string, required. Destination (receive) asset.
+- amount: string or number, required. dest_amount: exactly this much is received.
+- destination: string or number, required. send_max: maximum you are ready to spend.
+- path: JSON string, required. Same asset object format as swap.
+- Destination account is the operation sourceAccount if present, else top-level publicKey.
+- Use GET /lab/path_receive/<selling>/<buying>/<amount> to get paths for the
+  exact-receive direction; it returns "send <source_amount> <code>" keys mapped to
+  JSON {"path": [...], "send_max": "..."}.
+
 Notes:
 - Builder loads live Horizon data for the root account and for some pool/dividend operations.
 - Numeric values are normalized through float2str() in many operations.

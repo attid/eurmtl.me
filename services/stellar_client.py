@@ -851,6 +851,19 @@ def decode_flags(flag_value):
     return flags
 
 
+def _decode_asset_path(path_json: str) -> list[Asset]:
+    """JSON-строка path из payload лабы -> список Asset для path payment."""
+    asset_path = []
+    for asset in json.loads(path_json):
+        if asset["asset_type"] == "native":
+            asset_path.append(Asset.native())
+        else:
+            asset_path.append(
+                decode_asset(f"{asset['asset_code']}-{asset['asset_issuer']}")
+            )
+    return asset_path
+
+
 async def stellar_build_xdr(data):
     from stellar_sdk import Server
 
@@ -1022,21 +1035,26 @@ async def stellar_build_xdr(data):
                 source=source_account,
             )
         if operation["type"] == "swap":
-            asset_path = []
-            for asset in json.loads(operation["path"]):
-                if asset["asset_type"] == "native":
-                    asset_path.append(decode_asset("XLM"))
-                else:
-                    asset_path.append(
-                        decode_asset(f"{asset['asset_code']}-{asset['asset_issuer']}")
-                    )
             transaction.append_path_payment_strict_send_op(
-                path=asset_path,
+                path=_decode_asset_path(operation["path"]),
                 destination=source_account if source_account else data["publicKey"],
                 send_asset=decode_asset(operation["selling"]),
                 dest_asset=decode_asset(operation["buying"]),
                 send_amount=float2str(operation["amount"]),
                 dest_min=float2str(operation["destination"]),
+                source=source_account,
+            )
+        if operation["type"] == "swap_strict_receive":
+            # amount - сколько получаем (dest_amount), destination - максимум
+            # отправки (send_max). Получатель - как у swap: sourceAccount
+            # операции либо top-level publicKey.
+            transaction.append_path_payment_strict_receive_op(
+                path=_decode_asset_path(operation["path"]),
+                destination=source_account if source_account else data["publicKey"],
+                send_asset=decode_asset(operation["selling"]),
+                send_max=float2str(operation["destination"]),
+                dest_asset=decode_asset(operation["buying"]),
+                dest_amount=float2str(operation["amount"]),
                 source=source_account,
             )
         if operation["type"] == "sell_passive":

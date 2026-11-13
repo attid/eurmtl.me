@@ -28,6 +28,21 @@ For behavior changes:
 3. Run focused tests.
 4. Run full relevant checks (`lint`, `types`, `test`).
 
+Тесты: моки и подмены запрещены (см. `AGENTS.md`, раздел 5 — правило
+категоричное, разрешение только в чате, plan-файл не считается).
+
+External API boundary (Horizon, Soroban RPC, сторонние HTTP API):
+
+- Мок-тест доказывает только «я вызвал мок так, как сам придумал». Он не
+  ловит несовместимость с реальной сигнатурой/форматом ответа.
+- Код, который дёргает внешний API, должен иметь живой e2e тест (только чтение,
+  без `submit`), см. `tests/live/test_lab_horizon_live.py`.
+- Целевое состояние: живые тесты идут в общем `just test`, без отдельного
+  `live`-набора и гейта. Сейчас `live` + `RUN_LIVE_TESTS=1` / `just test-live`
+  — временное разделение, которое снимается вместе с вырезанием моков.
+- Юнит-тесты на валидацию/форматирование пишутся как обычные вызовы реальных
+  функций (без подмен), а не через замоканный транспорт.
+
 For docs/process changes:
 
 1. Create or update an execution plan in `docs/exec-plans/active/`.

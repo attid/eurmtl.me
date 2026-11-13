@@ -3,6 +3,7 @@
 """
 
 import base64
+import json
 import pathlib
 import pytest
 from types import SimpleNamespace
@@ -491,7 +492,97 @@ class TestXDRConversion:
         assert operation["attributes"]["buying"]["code"] == "EURMTL"
         assert operation["attributes"]["amount"] == "1000"
         assert operation["attributes"]["destination"] == "821.2420659"
-        assert operation["attributes"]["path"] == []
+        # path - JSON-строка: только в таком виде lab-импорт кладет его в input
+        # и payload снова проходит валидацию build_xdr.
+        assert operation["attributes"]["path"] == "[]"
+
+    def test_decode_xdr_to_base64_serializes_strict_receive_for_lab_import(self):
+        source_keypair = Keypair.random()
+        issuer_keypair = Keypair.random()
+        source_account = Account(source_keypair.public_key, 123456)
+
+        transaction = (
+            TransactionBuilder(
+                source_account=source_account,
+                network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+                base_fee=100,
+            )
+            .append_path_payment_strict_receive_op(
+                destination=source_keypair.public_key,
+                send_asset=Asset("USDM", issuer_keypair.public_key),
+                send_max="1200",
+                dest_asset=Asset("EURMTL", issuer_keypair.public_key),
+                dest_amount="1000",
+                path=[Asset("USD", issuer_keypair.public_key)],
+            )
+            .set_timeout(300)
+            .build()
+        )
+
+        result = decode_xdr_to_base64(transaction.to_xdr(), return_json=True)
+
+        operation = result["operations"][0]
+
+        assert operation["name"] == "swap_strict_receive"
+        assert operation["attributes"]["selling"]["code"] == "USDM"
+        assert operation["attributes"]["buying"]["code"] == "EURMTL"
+        assert operation["attributes"]["amount"] == "1000"
+        assert operation["attributes"]["destination"] == "1200"
+        assert json.loads(operation["attributes"]["path"]) == [
+            {
+                "asset_type": "credit_alphanum4",
+                "asset_code": "USD",
+                "asset_issuer": issuer_keypair.public_key,
+            }
+        ]
+        assert (
+            operation["attributes"]["destinationAccount"] == source_keypair.public_key
+        )
+
+    def test_decode_xdr_to_base64_serializes_issued_path_assets(self):
+        """path в Horizon-формате: asset_type/asset_code/asset_issuer.
+
+        Только такой формат принимает /lab/build_xdr, поэтому round-trip
+        (импорт -> сборка) требует credit_alphanum4 и credit_alphanum12.
+        """
+        source_keypair = Keypair.random()
+        issuer_keypair = Keypair.random()
+        source_account = Account(source_keypair.public_key, 123456)
+        long_code_asset = Asset("LONGCODE12", issuer_keypair.public_key)
+
+        transaction = (
+            TransactionBuilder(
+                source_account=source_account,
+                network_passphrase=Network.PUBLIC_NETWORK_PASSPHRASE,
+                base_fee=100,
+            )
+            .append_path_payment_strict_send_op(
+                destination=source_keypair.public_key,
+                send_asset=Asset.native(),
+                send_amount="1000",
+                dest_asset=long_code_asset,
+                dest_min="1",
+                path=[Asset("USD", issuer_keypair.public_key), long_code_asset],
+            )
+            .set_timeout(300)
+            .build()
+        )
+
+        result = decode_xdr_to_base64(transaction.to_xdr(), return_json=True)
+        path = json.loads(result["operations"][0]["attributes"]["path"])
+
+        assert path == [
+            {
+                "asset_type": "credit_alphanum4",
+                "asset_code": "USD",
+                "asset_issuer": issuer_keypair.public_key,
+            },
+            {
+                "asset_type": "credit_alphanum12",
+                "asset_code": "LONGCODE12",
+                "asset_issuer": issuer_keypair.public_key,
+            },
+        ]
 
     def test_decode_xdr_to_base64_preserves_source_account_for_set_options_signer(
         self,

@@ -168,6 +168,15 @@ _BUILD_XDR_FIELDS: dict[str, dict[str, str]] = {
         "destination": "number",
         "path": "json_path",
     },
+    "swap_strict_receive": {
+        # amount - сумма к получению (dest_amount), destination - максимум
+        # отправки (send_max). Форма полей зеркалит "swap".
+        "selling": "asset",
+        "buying": "asset",
+        "amount": "number",
+        "destination": "number",
+        "path": "json_path",
+    },
     "sell_passive": {
         "selling": "asset",
         "buying": "asset",
@@ -304,6 +313,9 @@ def _is_swap_path(value) -> bool:
     except ValueError:
         return False
     if not isinstance(path, list):
+        return False
+    # Stellar XDR: Asset path<5> - больше пяти хопов собрать нельзя.
+    if len(path) > 5:
         return False
     for element in path:
         if not isinstance(element, dict):
@@ -757,6 +769,53 @@ async def cmd_path(asset_from, asset_for, asset_sum):
             )
             result[f"{record['destination_amount']} {destination_asset_code}"] = (
                 json.dumps(record["path"])
+            )
+    except Exception as e:
+        logger.info(f"Error: {e}")
+    return jsonify(result)
+
+
+def _path_receive_label(record: dict, taken_labels) -> str:
+    """Лейбл маршрута strict receive: сумма и актив отправки + хопы path.
+
+    Ключ словаря ответа — единственный идентификатор варианта в UI, поэтому
+    совпадающие лейблы разводятся суффиксом `#`. У native-хопа нет
+    `asset_code`: без подстановки XLM маршрут выглядел бы как `direct`.
+    """
+    source_asset_code = record.get("source_asset_code") or "XLM"
+    path_codes = [item.get("asset_code") or "XLM" for item in record["path"]]
+    route = f"via {', '.join(path_codes)}" if path_codes else "direct"
+    label = f"send {record['source_amount']} {source_asset_code} ({route})"
+    while label in taken_labels:
+        label += " #"
+    return label
+
+
+@blueprint.route("/lab/path_receive/<asset_from>/<asset_for>/<asset_sum>")
+async def cmd_path_receive(asset_from, asset_for, asset_sum):
+    """Подбор пути для PathPaymentStrictReceive.
+
+    asset_sum - сумма, которую хотим *получить* (destination_amount), поэтому
+    здесь strict_receive_paths, а не strict_send_paths как в /lab/path.
+    Ответ: "send <source_amount> <code>" -> JSON {"path", "send_max"}.
+    """
+    result = {}
+    try:
+        paths = (
+            Server(horizon_url="https://horizon.stellar.org")
+            .strict_receive_paths(
+                # stellar_sdk ждет список ассетов (или account id), а не
+                # одиночный Asset: convert_assets_to_horizon_param() итерирует его.
+                [decode_asset(asset_from)],
+                decode_asset(asset_for),
+                float2str(asset_sum),
+            )
+            .call()
+        )
+        for record in paths["_embedded"]["records"]:
+            label = _path_receive_label(record, result)
+            result[label] = json.dumps(
+                {"path": record["path"], "send_max": record["source_amount"]}
             )
     except Exception as e:
         logger.info(f"Error: {e}")

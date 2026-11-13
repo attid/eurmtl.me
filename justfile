@@ -9,6 +9,10 @@ test:
 test-fast:
     uv run --extra dev pytest tests -q --maxfail=1
 
+# Живые e2e-тесты против публичного Horizon (только чтение, без submit).
+test-live:
+    RUN_LIVE_TESTS=1 uv run --extra dev pytest tests/live -q
+
 lint:
     uv run --extra dev ruff check .
 

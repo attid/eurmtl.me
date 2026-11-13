@@ -13,6 +13,7 @@ from stellar_sdk import (
     TextMemo,
     TransactionEnvelope,
     PathPaymentStrictSend,
+    PathPaymentStrictReceive,
     ManageSellOffer,
     Transaction,
     Keypair,
@@ -91,6 +92,26 @@ def decode_xdr_to_base64(xdr, return_json=False):
                 "liquidityPoolId": asset.liquidity_pool_id,
             }
         return asset.to_dict()
+
+    def serialize_path(asset_path):
+        """path в формате Horizon, который принимает /lab/build_xdr.
+
+        Asset.to_dict() отдает type/code/issuer, а валидатор payload и парсер
+        path в stellar_build_xdr() читают asset_type/asset_code/asset_issuer
+        (как ответ /lab/path).
+        """
+        return json.dumps(
+            [
+                {"asset_type": "native"}
+                if asset.is_native()
+                else {
+                    "asset_type": asset.type,
+                    "asset_code": asset.code,
+                    "asset_issuer": asset.issuer,
+                }
+                for asset in asset_path
+            ]
+        )
 
     fee = str(int(transaction.fee / len(transaction.operations)))
     new_json["attributes"] = {
@@ -273,11 +294,27 @@ def decode_xdr_to_base64(xdr, return_json=False):
                 "sendAsset": operation.send_asset.to_dict(),
                 "selling": operation.send_asset.to_dict(),
                 "destinationAccount": operation.destination.account_id,
-                "path": [asset.to_dict() for asset in operation.path],
+                "path": serialize_path(operation.path),
                 "destMin": operation.dest_min,
                 "destination": operation.dest_min,
                 "sendAmount": operation.send_amount,
                 "amount": operation.send_amount,
+                "destAsset": operation.dest_asset.to_dict(),
+                "buying": operation.dest_asset.to_dict(),
+            }
+        elif isinstance(operation, PathPaymentStrictReceive):
+            # amount - сумма к получению (dest_amount), destination - максимум
+            # отправки (send_max): та же форма, что у "swap".
+            op_json["name"] = "swap_strict_receive"
+            op_json["attributes"] = {
+                "sendAsset": operation.send_asset.to_dict(),
+                "selling": operation.send_asset.to_dict(),
+                "destinationAccount": operation.destination.account_id,
+                "path": serialize_path(operation.path),
+                "sendMax": operation.send_max,
+                "destination": operation.send_max,
+                "destAmount": operation.dest_amount,
+                "amount": operation.dest_amount,
                 "destAsset": operation.dest_asset.to_dict(),
                 "buying": operation.dest_asset.to_dict(),
             }
@@ -1284,7 +1321,7 @@ async def decode_xdr_to_text(xdr, only_op_number=None):
             if not simulated_ledger.is_asset_new(operation.dest_asset):
                 result.append(await check_asset(operation.dest_asset))
             result.append(
-                f"    Продажа {address_id_to_link(operation.destination.account_id)}, Получаем {await asset_to_link(operation.send_asset)} max {operation.send_max} в обмен на {await asset_to_link(operation.dest_asset)} {operation.dest_amount} "
+                f"    Продажа {address_id_to_link(operation.destination.account_id)}, получаем {await asset_to_link(operation.dest_asset)} {operation.dest_amount}, шлём {await asset_to_link(operation.send_asset)} max {operation.send_max} "
             )
             continue
         if type(operation).__name__ == "ManageData":

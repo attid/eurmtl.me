@@ -593,7 +593,7 @@ function fetchDataEntry(buttonElement) {
     fetchDataAndShowDropdown(`/lab/data/${keyToUse}`, 'data'+keyToUse, $row, $input);
 }
 
-function generatePathSelector(fieldName = "path", labelName = "Path") {
+function generatePathSelector(fieldName = "path", labelName = "Path", fetchFn = "fetchPath") {
     var uid = get_uid();
     return `
 <div class="row mb-3">
@@ -602,7 +602,7 @@ function generatePathSelector(fieldName = "path", labelName = "Path") {
         <input type="text" class="form-control" data-type="${fieldName}" id="${fieldName}-${uid}" data-validation="text" placeholder="Choose path" required>
     </div>
     <div class="col-2 d-flex align-items-end">
-        <button type="button" class="btn btn-icon btn-primary" data-bs-toggle="tooltip" title="Fetch Path" onclick="fetchPath(this, '${fieldName}-${uid}')">
+        <button type="button" class="btn btn-icon btn-primary" data-bs-toggle="tooltip" title="Fetch Path" onclick="${fetchFn}(this, '${fieldName}-${uid}')">
             <i class="ti ti-search"></i>
         </button>
     </div>
@@ -622,6 +622,102 @@ function fetchPath(buttonElement, pathFieldId) {
     var publicKey = `${sellingAsset}/${buyingAsset}/${amount}`;
 
     fetchDataAndShowDropdown(`/lab/path/${publicKey}`, 'path'+publicKey, $row, $input);
+}
+
+function fetchPathReceive(buttonElement, pathFieldId) {
+    var $button = $(buttonElement);
+    var $row = $button.closest('.row');
+    var $input = $('#' + pathFieldId);
+    var $operationBlock = $button.closest('.card-body');
+
+    var sellingAsset = $.trim($operationBlock.find('[data-type="selling"]').val() || '');
+    var buyingAsset = $.trim($operationBlock.find('[data-type="buying"]').val() || '');
+    var amount = $.trim($operationBlock.find('[data-type="amount"]').val() || '');
+
+    if (!sellingAsset || !buyingAsset || !amount) {
+        showToast('Заполните Selling, Buying и Amount to receive', 'warning');
+        return;
+    }
+
+    // Пути не кэшируем: ликвидность меняется постоянно.
+    showToast('Подождите, идет загрузка', 'info');
+    $.ajax({
+        url: `/lab/path_receive/${sellingAsset}/${buyingAsset}/${amount}`,
+        type: 'GET',
+        success: function(response) {
+            if (!response || !Object.keys(response).length) {
+                showToast('No path found for this pair and amount', 'warning');
+                return;
+            }
+            showPathReceiveDropdown($row, $input, response);
+        },
+        error: function(xhr, status, error) {
+            console.error('Не удалось получить данные:', error);
+            showToast('Ошибка при загрузке данных', 'danger');
+        }
+    });
+}
+
+function positionDropdown($row, $input, $dropdown) {
+    $row.append($dropdown);
+
+    // Обновленное позиционирование
+    $input.parent().css('position', 'relative');
+    $dropdown.css({
+        top: $input.outerHeight(),
+        left: 0,
+        position: 'absolute',
+        width: $input.outerWidth(),
+        'z-index': 1000
+    });
+
+    // Показываем dropdown
+    $dropdown.addClass('show');
+
+    // Закрываем dropdown при клике вне его
+    setTimeout(function() {
+        var clickHandler = function(event) {
+            if (!$(event.target).closest($dropdown).length &&
+                !$(event.target).is($input) &&
+                !$(event.target).is($row.find('button'))) {
+                $dropdown.removeClass('show');
+                $(document).off('click', clickHandler);
+            }
+        };
+        $(document).on('click', clickHandler);
+    }, 100);
+}
+
+// Подсказки strict receive: клик по варианту ставит и path, и Maximum send amount,
+// чтобы путь и сумма оставались согласованными (source_amount от Horizon).
+function showPathReceiveDropdown($row, $input, records) {
+    var dropdownId = 'dropdown-' + new Date().getTime();
+
+    $('.dropdown-menu').remove();
+
+    var $dropdown = $('<div>').addClass('dropdown-menu').attr('id', dropdownId);
+    var $cardBody = $row.closest('.card-body');
+
+    $.each(records, function(label, payload) {
+        var $a = $('<a>').addClass('dropdown-item').text(label).attr('href', '#');
+        $a.on('click', function(e) {
+            e.preventDefault();
+            var parsed = {};
+            try {
+                parsed = JSON.parse(payload);
+            } catch (err) {
+                parsed = {};
+            }
+            $input.val(parsed.path ? JSON.stringify(parsed.path) : '[]').trigger('change');
+            if (parsed.send_max !== undefined) {
+                $cardBody.find('input[data-type="destination"]').val(parsed.send_max).trigger('change');
+            }
+            $dropdown.removeClass('show');
+        });
+        $dropdown.append($a);
+    });
+
+    positionDropdown($row, $input, $dropdown);
 }
 
 function getBlockCounter() {
@@ -1125,6 +1221,26 @@ function generateCardSwap() {
 </div>
     `;
 }
+function generateCardSwapStrictReceive() {
+    var blockId = getBlockCounter();
+    return `
+<div class="card">
+    <div class="card-body gather-block" data-type="swap_strict_receive" data-index="${blockId}">
+        ${generateCardHeader("Swap (strict receive)", blockId)}
+
+        ${generateAssetSelector("selling", "Selling", "", "Asset you send")}
+        ${generateAssetSelector("buying", "Buying", "", "Asset you want to receive")}
+
+        ${generateInput("amount", "Amount to receive (exact)", "float", "", "Destination amount: exactly this much is received")}
+        ${generateInput("destination", "Maximum send amount", "float", "", "send_max: maximum you are ready to spend")}
+
+        ${generatePathSelector("path", "Path", "fetchPathReceive")}
+
+        ${generateAccountSelector("sourceAccount", "Source Account", "", "Optional per-op source; receives the payment and defaults to top-level public key")}
+    </div>
+</div>
+    `;
+}
 function generateCardLiquidityPoolDeposit() {
     var blockId = getBlockCounter();
     return `
@@ -1258,6 +1374,11 @@ function getCardByName(selectedOperation){
             break;
         case 'swap':
             newCardHTML = generateCardSwap();
+            break;
+        case 'swap_strict_receive':
+        case 'swapStrictReceive':
+        case 'pathPaymentStrictReceive':
+            newCardHTML = generateCardSwapStrictReceive();
             break;
         case 'setTrustLineFlags':
         case 'set_trust_line_flags':
